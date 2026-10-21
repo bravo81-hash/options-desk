@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>try { const t = localStorage.getItem("od.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<style>
+/* Layout: trading-desk board. Regime strip of instruments on top, then chart panels on a
+   12-col grid. Up/down colours reuse the Pine tables (teal / red); warning states reuse the
+   Pine panes (white / fuchsia / red). Series slots follow the validated categorical order. */
+:root{
+  --bg:#e8ecf0; --panel:#fbfcfd; --ink:#11171f; --muted:#5a6573; --faint:#8a95a3; --line:#d6dce3; --grid:#e6eaef; --soft:#eef2f6;
+  --accent:#b85f00;
+  --up:#1b8f84; --down:#d64545; --warn:#b02a9d; --info:#2a78d6;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c1015; --panel:#141a21; --ink:#e6ebf1; --muted:#93a0af; --faint:#6b7684; --line:#26303b; --grid:#1e262f; --soft:#1a222b;
+  --accent:#f0a030; --up:#2fbfa9; --down:#ff6b6b; --warn:#e45fd5; --info:#3987e5;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1015; --panel:#141a21; --ink:#e6ebf1; --muted:#93a0af; --faint:#6b7684; --line:#26303b; --grid:#1e262f; --soft:#1a222b;
+  --accent:#f0a030; --up:#2fbfa9; --down:#ff6b6b; --warn:#e45fd5; --info:#3987e5;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; color-scheme:dark}
+.embedded .standalone{display:none}
+.embedded .wrap{padding-block:0 24px}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1360px;margin:0 auto;padding-inline:16px;padding-block:14px 40px;display:flex;flex-direction:column;gap:14px}
+h1,h2{font-family:var(--f-display);font-weight:600;margin:0;letter-spacing:.01em;text-wrap:balance}
+h1{font-size:28px} h2{font-size:16px;text-transform:uppercase;letter-spacing:.07em}
+h3{font-family:var(--f-display);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0}
+.mono,td.n,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:12px}
+header.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.topmeta{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+button{font:inherit;font-family:var(--f-display);font-weight:600;letter-spacing:.05em;text-transform:uppercase;font-size:13px;
+  background:var(--ink);color:var(--panel);border:0;border-radius:4px;padding:7px 14px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);padding:4px 10px;font-size:12px}
+button:focus-visible,input:focus-visible,th:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.5;cursor:default}
+.demo{background:var(--accent);color:var(--panel);font-family:var(--f-display);font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:6px 12px;border-radius:4px}
+
+/* regime strip */
+.strip{display:grid;grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.strip>div{background:var(--panel);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.lbl{font-family:var(--f-display);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.big{font-family:var(--f-display);font-weight:700;font-size:26px;line-height:1.05}
+.regime{border-left:6px solid var(--faint)}
+.seg{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}
+.seg i{height:16px;border-radius:2px;background:var(--soft);border:1px solid var(--line)}
+.tilerow{display:flex;align-items:center;gap:12px;min-width:0}
+.tilerow>svg,.tilerow>span>svg{flex:0 0 auto}
+
+/* grid & panels */
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0;transition:opacity .2s}
+.panel.stale{opacity:.55}
+.panel>header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.c4{grid-column:span 4}.c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media (max-width:1060px){.c4,.c5,.c6,.c7,.c8{grid-column:span 12}.strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:540px){.strip{grid-template-columns:minmax(0,1fr)}}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media (max-width:760px){.two{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:1180px){.two.stack{grid-template-columns:minmax(0,1fr)}}
+.rlist{display:flex;flex-direction:column;gap:4px}
+.rrow{display:grid;grid-template-columns:minmax(0,10em) minmax(0,1fr);gap:12px;align-items:center;padding-block:4px;border-bottom:1px solid var(--soft)}
+.rrow:last-child{border-bottom:0}
+.rrow .who{display:flex;flex-direction:column;gap:3px;min-width:0}
+.sub{display:flex;flex-direction:column;gap:6px;min-width:0}
+.chart{position:relative;width:100%;min-width:0}
+.chart svg{display:block;width:100%;overflow:visible}
+.chart text{font-family:var(--f-mono);font-size:10.5px;fill:var(--faint)}
+.chart .lab{font-family:var(--f-body);font-size:11px;fill:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.legend i.box{height:10px;width:10px;border-radius:2px}
+#tip{position:fixed;z-index:10;pointer-events:none;background:var(--ink);color:var(--panel);font-size:12px;line-height:1.4;padding:6px 9px;border-radius:4px;max-width:260px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+#tip b{font-family:var(--f-mono);font-weight:500}
+#tip .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-family:var(--f-display);font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:11.5px;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.sort{cursor:pointer} th.sort[aria-sort]{color:var(--ink)}
+td{padding:5px 8px;border-bottom:1px solid var(--soft);white-space:nowrap}
+td.n,th.n{text-align:right}
+td.heat{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+tr:last-child td{border-bottom:0}
+.pos{color:var(--up)} .neg{color:var(--down)} .wrn{color:var(--warn)} .acc{color:var(--accent)}
+.chip{display:inline-block;font-family:var(--f-display);font-weight:600;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.state{display:block;padding:9px 11px;border-radius:4px;background:var(--soft);font-size:13px}
+.state.err{color:var(--down)}
+.state.err button{margin-left:8px}
+.minibar{display:inline-block;width:56px;height:8px;background:var(--soft);border-radius:2px;position:relative;vertical-align:middle;margin-right:6px;overflow:hidden}
+.minibar>span{position:absolute;inset:0 auto 0 0;background:var(--info)}
+
+/* warning grid */
+.wgrid{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px 10px;align-items:center}
+.wgrid .rowname{font-size:12.5px;white-space:nowrap}
+.wgrid .reading{font-family:var(--f-mono);font-size:12px;text-align:right;white-space:nowrap}
+.hist{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px}
+.hist i{display:block;height:12px;border-radius:1px}
+.k-white{background:var(--soft);box-shadow:inset 0 0 0 1px var(--line)}
+.k-fuchsia{background:var(--warn)} .k-red{background:var(--down)} .k-green{background:var(--up)} .k-aqua{background:var(--info)}
+.seg i.k-fuchsia{background:var(--warn);border-color:var(--warn)} .seg i.k-red{background:var(--down);border-color:var(--down)} .seg i.k-green{background:var(--up)} .seg i.k-aqua{background:var(--info)}
+.k-gray{background:transparent;box-shadow:inset 0 0 0 1px var(--faint)}
+.k-faint{background:color-mix(in srgb,var(--warn) 40%,var(--soft))}
+
+/* bars list */
+.blist{display:flex;flex-direction:column;gap:7px}
+.brow{display:grid;grid-template-columns:minmax(0,8.5em) minmax(0,1fr) 3.6em;gap:10px;align-items:center;font-size:12.5px}
+.btrack{position:relative;height:12px;background:var(--soft);border-radius:2px}
+.btrack>span{position:absolute;inset:0 auto 0 0;border-radius:0 2px 2px 0;background:var(--s1)}
+.btrack>em{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--faint)}
+
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.kv>div{display:flex;flex-direction:column;gap:2px;padding:9px 11px;background:var(--soft);border-radius:4px;min-width:0}
+.kv b{font-family:var(--f-display);font-weight:600;font-size:20px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input[type=text]{font:inherit;font-family:var(--f-mono);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 9px;min-width:0;flex:1 1 220px}
+.tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:12px;background:var(--soft);border:1px solid var(--line);border-radius:3px;padding:2px 4px 2px 8px}
+.tag button{background:transparent;color:var(--muted);padding:0 4px;font-size:14px;border:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:5px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card .sym{font-family:var(--f-mono);font-weight:500}
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.toggle button{background:transparent;color:var(--muted);border:0;border-radius:0;padding:4px 11px;font-size:12px}
+.toggle button+button{border-left:1px solid var(--line)}
+.toggle button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+select{font:inherit;font-size:12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
+select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{font-size:12px;color:var(--muted);max-width:80ch;margin:0}
+@media (prefers-reduced-motion:no-preference){.loading{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{50%{opacity:.45}}}
+</style>
+<link rel="stylesheet" href="compact.css">
+<link rel="stylesheet" href="vixcond.css">
+<script src="vixcond.js"></script>
+<script src="subtabs.js"></script>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="standalone">Market</h1>
+      <div class="muted small">VIX family and indexes from IBKR (CBOE when TWS is off) · ETFs from yfinance · breadth computed from index members · account from TWS · read-only</div>
+    </div>
+    <div class="topmeta">
+      <span id="demoFlag" hidden class="demo">Demo data, not market prices</span>
+      <span class="muted small" id="updated">Loading…</span>
+      <label class="muted small" for="autoSel">Auto-refresh</label>
+      <select id="autoSel"><option value="0">Off</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option><option value="30">Every 30 min</option></select>
+      <span class="muted small mono" id="nextIn"></span>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <section class="strip" aria-label="Regime summary">
+    <div class="regime" id="regimeBox"><span class="lbl">Regime</span><span class="big" id="regime">…</span><span class="small muted" id="regimeWhy"></span></div>
+    <div><span class="lbl">Market warnings</span><span class="big" id="warnCount">–</span><div class="seg" id="warnSeg"><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="small muted" id="warnOdds"></span></div>
+    <div><span class="lbl">S&amp;P 500 stocks above 50DMA</span><div class="tilerow"><span id="gauge"></span><div class="sub"><span class="big" id="s5fiBig">–</span><span class="small muted" id="s5fiSub"></span></div></div></div>
+    <div><span class="lbl">VIX / VIX3M (IVTS)</span><div class="tilerow"><div class="sub"><span class="big" id="ivtsBig">–</span><span class="small muted" id="ivtsSub"></span></div></div><div class="chart" id="ivtsSpark"></div></div>
+  </section>
+
+  <div class="grid" data-subs id="mdGrid">
+    <section class="panel c12" id="pVixc" data-sub="Overview"><header><h2>VIX conditions</h2><span class="small muted">active conditions, what followed historically, and the size that implies · full table on Today's pick</span></header><div id="vcBody"></div></section>
+    <section class="panel c7" id="pWarn" data-sub="Overview">
+      <header><h2>SPY and market warnings</h2><span class="small muted">same rules as Market Warnings v2</span></header>
+      <div id="warnBody" class="sub"><div class="state loading">Loading SPY, ES, VIX and breadth history…</div></div>
+    </section>
+
+    <section class="panel c5" id="pBreadth" data-sub="Overview">
+      <header><h2>Breadth</h2><span class="small muted">% of index members above their moving average</span></header>
+      <div id="breadthBody" class="sub"><div class="state loading">Loading breadth indices…</div></div>
+    </section>
+
+    <section class="panel c12" id="pVol" data-sub="Volatility">
+      <header><h2>Volatility</h2><span class="small muted">VIX family from IBKR (CBOE fallback) · bands, term structure, implied vs realised, VIX/VIX3M</span></header>
+      <div id="volBody" class="sub"><div class="state loading">Loading VIX term structure…</div></div>
+    </section>
+
+    <section class="panel c12" id="pSect" data-sub="Sectors">
+      <header><h2>Sectors</h2><span class="small muted">what rotation says about risk appetite, leadership and SPX vs RUT · br = % of the sector's stocks above their 50DMA</span></header>
+      <div id="sectBody" class="sub"><div class="state loading">Loading 13 sector ETFs and 11 sector breadth indices…</div></div>
+    </section>
+
+    <section class="panel c6" id="pCross" data-sub="Cross-asset &amp; calendar">
+      <header><h2>Cross-asset</h2><span class="small muted">ratios vs their 20-day SMA · Canary 13612W momentum</span></header>
+      <div id="crossBody" class="sub"><div class="state loading">Loading ratio and Canary inputs…</div></div>
+    </section>
+
+    <section class="panel c6" id="pCal" data-sub="Cross-asset &amp; calendar">
+      <header><h2>US economic calendar</h2><span class="small muted">Forex Factory feed</span><div class="row"><span class="small muted">next 7 days</span><div class="toggle" role="group" aria-label="Importance" id="calToggle"><button type="button" data-f="medium">Medium</button><button type="button" data-f="high">High</button><button type="button" data-f="both">Both</button></div></div></header>
+      <div id="calBody"><div class="state loading">Loading calendar…</div></div>
+    </section>
+
+    <section class="panel c12" id="pAcct" data-sub="Accounts &amp; watchlist">
+      <header><h2>Accounts</h2><span class="small muted">TWS · view only, this app never places orders</span></header>
+      <div id="acctBody" class="sub"><div class="state loading">Loading account…</div></div>
+    </section>
+
+    <section class="panel c12" id="pWatch" data-sub="Accounts &amp; watchlist">
+      <header><h2>Watchlist signals</h2><span class="small muted">STFS v2.5 and BB + RSI rules recomputed from daily / weekly bars</span></header>
+      <form class="row" id="watchForm" autocomplete="off">
+        <label class="lbl" for="watchInput">Add symbol</label>
+        <input type="text" id="watchInput" placeholder="EXCHANGE:TICKER, e.g. NASDAQ:AAPL">
+        <button type="submit">Add</button>
+      </form>
+      <div class="row" id="watchTags"></div>
+      <div id="watchBody"></div>
+      <p class="note">An approximation for scanning. It uses the default STFS inputs (both directions, short-month filter on, 3-week reversal window, 5-day trigger) and treats the latest bar as closed. Confirm any setup on the TradingView chart before acting.</p>
+    </section>
+  </div>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const TV = "Market data", IB = "TWS";
+if (window.self !== window.top) document.documentElement.classList.add("embedded");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ok = (v) => v != null && isFinite(v);
+const fmt = (v, d = 2) => ok(v) ? Number(v).toFixed(d) : "–";
+const sgn = (v, d = 1) => ok(v) ? (v > 0 ? "+" : "") + Number(v).toFixed(d) : "–";
+const cls = (v) => !ok(v) ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+const money = (v, cur) => ok(v) ? Number(v).toLocaleString(undefined, {maximumFractionDigits: 2, minimumFractionDigits: 2}) + (cur ? " " + cur : "") : "–";
+const last = (a) => a[a.length - 1];
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const shortDate = (d) => { const [, m, dd] = d.split("-"); return `${MON[+m - 1]} ${+dd}`; };
+
+/* ================================================================== */
+/* Connector access: queue (2 at a time), cache, transient retries     */
+let mcp = null, DEMO = false;
+const MAX_CONC = 2; let running = 0; const waiting = [];
+const slot = () => new Promise((res) => { if (running < MAX_CONC) { running++; res(); } else waiting.push(res); });
+const release = () => { running--; const n = waiting.shift(); if (n) { running++; n(); } };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const TRANSIENT = /handshake|timeout|timed out|\b429\b|\b5\d\d\b|EOF|reset|temporar|unavailable|dial/i;
+let forceFresh = false;
+
+async function localCall(tool, input) {
+  let url;
+  if (tool === "mcp-tv-get-ohlcv") url = "/api/md/ohlcv?" + new URLSearchParams({symbol: input.symbol, interval: input.interval || "1D", count: input.count || 300, adj: input.adj ? "1" : "0"});
+  else if (tool === "mcp-tv-get-economic-calendar") url = "/api/md/calendar?" + new URLSearchParams({date_from: input.date_from || "", date_to: input.date_to || ""});
+  else throw {code: "other", message: "Unknown data request " + tool};
+  const r = await fetch(url);
+  if (!r.ok) throw {code: "server_unavailable", server: "Options Desk server", message: `HTTP ${r.status}`, retryable: true};
+  return r.json();
+}
+
+async function call(server, tool, input, staleMs = 300000) {
+  await slot();
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const p = await localCall(tool, input);
+        if (p && typeof p === "object" && p.success === false) throw {code: "tool_error", server, message: typeof p.error === "string" ? p.error : JSON.stringify(p.error || p)};
+        return {payload: p, storedAt: Date.now()};
+      } catch (e) {
+        const transient = e && (e.retryable || (e.code === "tool_error" && TRANSIENT.test(String(e.message))));
+        if (!transient || attempt >= 2) throw e;
+        await sleep(Math.min(e.retryAfterMs || (1200 * (attempt + 1) ** 2 + Math.random() * 900), 10000));
+      }
+    }
+  } finally { release(); }
+}
+
+function errorHtml(e, what) {
+  const code = e && e.code, s = (e && e.server) || what;
+  const m = String((e && e.message) || "");
+  let msg;
+  switch (code) {
+    case "needs_reauth": msg = `<b>${esc(s)} needs reconnecting.</b> Reconnect it in claude.ai Settings → Connectors, then press Retry.`; break;
+    case "server_not_connected": msg = `<b>${esc(s)} isn't connected.</b> Add it in claude.ai Settings → Connectors.`; break;
+    case "selection_required": msg = `<b>Choose which ${esc(s)} connector to use</b> when prompted, then press Retry.`; break;
+    case "not_in_manifest": msg = `<b>${esc(s)} is turned off for this page.</b> Allow it from the artifact's Permissions menu.`; break;
+    case "blocked_by_policy": case "approval_required": msg = `<b>Your organization's policy blocks this ${esc(s)} tool here.</b>`; break;
+    case "server_unavailable": case "rate_limited": msg = `<b>${esc(s)} didn't answer in time.</b> Try again in a minute.`; break;
+    case "not_granted": case "capability_disabled": case "capability_removed": msg = `<b>Connectors aren't available in this view.</b> Open the page on claude.ai while signed in.`; break;
+    case "tool_error": msg = TRANSIENT.test(m) ? `<b>${esc(s)} had a temporary data-feed problem</b> and three attempts failed. Try again in a minute.` : `<b>${esc(s)} returned an error:</b> ${esc(m.slice(0, 200))}`; break;
+    default: msg = `<b>Couldn't load ${esc(what)}.</b> ${esc(m.slice(0, 200))}`;
+  }
+  return `<div class="state err">${msg}</div>`;
+}
+
+/* ================================================================== */
+/* Bars: one request per symbol per refresh, shared by every section   */
+const dateKey = (t) => new Date((t + 6 * 3600) * 1000).toISOString().slice(0, 10); // ES session opens 22:00 UTC -> next day
+const NEED = {"AMEX:SPY": 320, "CME_MINI:ES1!": 200, "CBOE:VIX": 300, "CBOE:VIX3M": 300, "CBOE:VIX9D": 40, "CBOE:VIX6M": 40, "CBOE:VIX1Y": 40,
+  "CBOE:VVIX": 300, "CBOE:SKEW": 300, "CBOE:RVX": 160, "CBOE:SPX": 160, "RUSSELL:RUT": 160,
+  "INDEX:S5FI": 200, "INDEX:S5TH": 200, "INDEX:S5TW": 200, "AMEX:XLU": 130, "AMEX:HYG": 130, "NASDAQ:TLT": 130, "NASDAQ:WOOD": 130, "AMEX:GLD": 130,
+  "AMEX:EEM": 270, "AMEX:AGG": 270, "NASDAQ:IEF": 270};
+let memo = new Map(), oldestStamp = null;
+const stamp = (s) => { if (s && (oldestStamp == null || s < oldestStamp)) oldestStamp = s; };
+// adj = dividend-adjusted closes (sectors, cross-asset ratios). Raw closes stay the default for the warnings
+// and the watchlist so they match TradingView and the Pine scripts.
+function bars(symbol, interval = "1D", count, adj = false) {
+  const n = count || NEED[symbol] || 90, key = symbol + "|" + interval + (adj ? "|adj" : "");
+  if (memo.has(key)) return memo.get(key);
+  const p = (async () => {
+    if (DEMO) return demoBars(symbol, n, interval);
+    const {payload, storedAt} = await call(TV, "mcp-tv-get-ohlcv", {symbol, count: n, interval, format: "columns", adj});
+    stamp(storedAt);
+    const b = payload && payload.bars;
+    if (!b || !b.c || !b.c.length) throw {code: "tool_error", server: TV, message: `No bars for ${symbol}`};
+    return {sym: symbol, t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: (b.v || []).map((x) => x == null ? 0 : x), d: b.t.map(dateKey)};
+  })();
+  p.catch(() => memo.delete(key)); // a failed symbol can be retried
+  memo.set(key, p);
+  return p;
+}
+const idxAt = (s, d) => { let lo = 0, hi = s.d.length - 1, ix = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (s.d[m] <= d) { ix = m; lo = m + 1; } else hi = m - 1; } return ix; };
+const at = (s, vals, d) => { if (!s) return null; const i = idxAt(s, d); return i < 0 ? null : vals[i]; };
+
+/* Demo bars (only with #demo and no connectors): deterministic random walks, clearly flagged. */
+function demoBars(symbol, n, interval) {
+  let seed = [...symbol].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const isBreadth = symbol.startsWith("INDEX:"), isVix = symbol.startsWith("CBOE:");
+  const step = interval === "1W" ? 7 * 86400 : 86400, t0 = Math.floor(Date.now() / 1000 / 86400) * 86400 + 13.5 * 3600 - n * step;
+  const t = [], o = [], h = [], l = [], c = [], v = []; let x = isBreadth ? 55 : isVix ? 16 + (symbol.length % 4) : 50 + rnd() * 400;
+  for (let i = 0; i < n; i++) {
+    const prev = x;
+    if (isBreadth) x = Math.max(3, Math.min(97, x + (rnd() - 0.5) * 9 + (55 - x) * 0.04));
+    else if (isVix) x = Math.max(9, x + (rnd() - 0.5) * 1.6 + (17 - x) * 0.06);
+    else x = x * (1 + (rnd() - 0.48) * 0.022);
+    t.push(t0 + i * step); o.push(prev); c.push(x); h.push(Math.max(prev, x) * (1 + rnd() * 0.006)); l.push(Math.min(prev, x) * (1 - rnd() * 0.006)); v.push(isBreadth || isVix ? 0 : 1e6 * (20 + rnd() * 30));
+  }
+  return {sym: symbol, t, o, h, l, c, v, d: t.map(dateKey)};
+}
+
+/* ================================================================== */
+/* Pine-equivalent maths                                               */
+function sma(a, n) { const o = Array(a.length).fill(null); for (let i = n - 1; i < a.length; i++) { let s = 0, good = true; for (let k = i - n + 1; k <= i; k++) { if (a[k] == null) { good = false; break; } s += a[k]; } if (good) o[i] = s / n; } return o; }
+function stdev(a, n) { const m = sma(a, n); return a.map((_, i) => { if (m[i] == null) return null; let s = 0; for (let k = i - n + 1; k <= i; k++) s += (a[k] - m[i]) ** 2; return Math.sqrt(s / n); }); }
+function emaLike(a, n, alpha) { const o = Array(a.length).fill(null); let prev = null, run = 0, sum = 0;
+  for (let i = 0; i < a.length; i++) { const x = a[i];
+    if (prev == null) { if (x == null) { run = 0; sum = 0; continue; } run++; sum += x; if (run > n) sum -= a[i - n]; if (run >= n) { prev = sum / n; o[i] = prev; } }
+    else if (x != null) { prev = alpha * x + (1 - alpha) * prev; o[i] = prev; } }
+  return o; }
+const ema = (a, n) => emaLike(a, n, 2 / (n + 1));
+const rma = (a, n) => emaLike(a, n, 1 / n);
+function wma(a, n) { const o = Array(a.length).fill(null), den = n * (n + 1) / 2; for (let i = n - 1; i < a.length; i++) { let s = 0, good = true; for (let k = 0; k < n; k++) { const x = a[i - n + 1 + k]; if (x == null) { good = false; break; } s += x * (k + 1); } if (good) o[i] = s / den; } return o; }
+function hma(a, n) { const h = wma(a, Math.floor(n / 2)), f = wma(a, n); return wma(h.map((x, i) => x == null || f[i] == null ? null : 2 * x - f[i]), Math.floor(Math.sqrt(n))); }
+const change = (a) => a.map((x, i) => i === 0 || x == null || a[i - 1] == null ? null : x - a[i - 1]);
+const tr = (s) => s.c.map((_, i) => i === 0 ? s.h[0] - s.l[0] : Math.max(s.h[i] - s.l[i], Math.abs(s.h[i] - s.c[i - 1]), Math.abs(s.l[i] - s.c[i - 1])));
+function rsi(a, n) { const ch = change(a), up = rma(ch.map((x) => x == null ? null : Math.max(x, 0)), n), dn = rma(ch.map((x) => x == null ? null : Math.max(-x, 0)), n);
+  return up.map((u, i) => u == null || dn[i] == null ? null : dn[i] === 0 ? 100 : u === 0 ? 0 : 100 - 100 / (1 + u / dn[i])); }
+const highest = (a, n) => a.map((_, i) => i < n - 1 ? null : Math.max(...a.slice(i - n + 1, i + 1)));
+const zs = (a, n) => { const m = sma(a, n), sd = stdev(a, n); return a.map((x, i) => m[i] == null || !sd[i] ? null : (x - m[i]) / sd[i]); };
+const ret = (c, i, k) => i - k < 0 || !c[i - k] ? null : (c[i] / c[i - k] - 1) * 100;
+
+/* ================================================================== */
+/* Charts: measured-width SVG, solid hairline grid, crosshair tooltip  */
+const tip = $("tip");
+function showTip(html, x, y) { tip.innerHTML = html; tip.hidden = false; const r = tip.getBoundingClientRect(); let L = x + 14, T = y + 14; if (L + r.width > innerWidth - 8) L = x - r.width - 14; if (T + r.height > innerHeight - 8) T = y - r.height - 14; tip.style.left = L + "px"; tip.style.top = T + "px"; }
+const hideTip = () => { tip.hidden = true; };
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo || 1, raw = span / n, mag = 10 ** Math.floor(Math.log10(raw)), st = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw;
+  const out = []; for (let v = Math.ceil(lo / st) * st; v <= hi + 1e-9; v += st) out.push(+v.toFixed(10)); return out;
+}
+const charts = new Set();
+const ro = new ResizeObserver((ents) => ents.forEach((e) => { const el = e.target; if (el._draw && Math.abs(el.clientWidth - (el._w || 0)) > 4) el._draw(); }));
+function mount(el, draw) { el._draw = () => { el._w = el.clientWidth; draw(el.clientWidth || 600); }; if (!charts.has(el)) { charts.add(el); ro.observe(el); } el._draw(); }
+
+/* lineChart: {dates, series:[{name,vals,color,width,dash,area}], band:{lo,hi}, refs:[{y,label}], shade:[colorOrNull per index],
+               yMin,yMax, h, fy, endLabels, fmtTip} */
+function lineChart(el, cfg) {
+  mount(el, (W) => {
+    const H = cfg.h || 180, mL = 40, mR = cfg.endLabels ? 64 : 12, mT = 8, mB = 22, pw = W - mL - mR, ph = H - mT - mB, n = cfg.dates.length;
+    const all = []; cfg.series.forEach((s) => s.vals.forEach((v) => ok(v) && all.push(v)));
+    if (cfg.band) [cfg.band.lo, cfg.band.hi].forEach((a) => a.forEach((v) => ok(v) && all.push(v)));
+    (cfg.refs || []).forEach((r) => all.push(r.y));
+    let lo = cfg.yMin ?? Math.min(...all), hi = cfg.yMax ?? Math.max(...all); if (hi === lo) { hi += 1; lo -= 1; }
+    if (cfg.yMin == null || cfg.yMax == null) { const pad = (hi - lo) * 0.06; if (cfg.yMin == null) lo -= pad; if (cfg.yMax == null) hi += pad; }
+    const X = (i) => mL + (n <= 1 ? 0 : i * pw / (n - 1)), Y = (v) => mT + ph - (v - lo) * ph / (hi - lo);
+    const fy = cfg.fy || ((v) => Math.abs(hi - lo) < 5 ? v.toFixed(2) : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v.toFixed(1)).toString());
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.label || "chart")}">`;
+    if (cfg.shade) { const bw = pw / Math.max(n - 1, 1); cfg.shade.forEach((c, i) => { if (c) s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${mT}" width="${(bw + 0.6).toFixed(1)}" height="${ph}" fill="${c}"/>`; }); }
+    niceTicks(lo, hi, cfg.ticks || 4).forEach((v) => { if (v < lo || v > hi) return; s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${fy(v)}</text>`; });
+    const xt = Math.max(2, Math.min(5, n, Math.floor(pw / 72))); for (let k = 0; k < xt; k++) { const i = Math.round(k * (n - 1) / Math.max(xt - 1, 1)); s += `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="${k === 0 ? "start" : k === xt - 1 ? "end" : "middle"}">${shortDate(cfg.dates[i])}</text>`; }
+    (cfg.refs || []).forEach((r) => { s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(r.y).toFixed(1)}" y2="${Y(r.y).toFixed(1)}" stroke="${r.color || "var(--faint)"}" stroke-width="1" stroke-dasharray="4 3"/>${r.label ? `<text x="${mL + pw + 4}" y="${(Y(r.y) + 3.5).toFixed(1)}">${esc(r.label)}</text>` : ""}`; });
+    const path = (vals) => { let d = "", pen = false; vals.forEach((v, i) => { if (!ok(v)) { pen = false; return; } d += (pen ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); pen = true; }); return d; };
+    if (cfg.band) { const up = [], dn = []; cfg.dates.forEach((_, i) => { if (ok(cfg.band.lo[i]) && ok(cfg.band.hi[i])) { up.push(`${X(i).toFixed(1)},${Y(cfg.band.hi[i]).toFixed(1)}`); dn.unshift(`${X(i).toFixed(1)},${Y(cfg.band.lo[i]).toFixed(1)}`); } }); if (up.length) s += `<polygon points="${up.concat(dn).join(" ")}" fill="var(--s1)" opacity=".12"/>`; }
+    cfg.series.forEach((se) => {
+      if (se.area) { const pts = []; se.vals.forEach((v, i) => ok(v) && pts.push(`${X(i).toFixed(1)},${Y(v).toFixed(1)}`)); if (pts.length) s += `<polygon points="${X(se.vals.findIndex(ok)).toFixed(1)},${mT + ph} ${pts.join(" ")} ${X(n - 1).toFixed(1)},${mT + ph}" fill="${se.color}" opacity=".10"/>`; }
+      s += `<path d="${path(se.vals)}" fill="none" stroke="${se.color}" stroke-width="${se.width || 2}" ${se.dash ? `stroke-dasharray="${se.dash}"` : ""} stroke-linejoin="round" stroke-linecap="round"/>`;
+    });
+    if (cfg.dots) cfg.dots.forEach((dt) => { if (ok(dt.v)) s += `<circle cx="${X(dt.i).toFixed(1)}" cy="${Y(dt.v).toFixed(1)}" r="4" fill="${dt.color}" stroke="var(--panel)" stroke-width="2"/>`; });
+    if (cfg.endLabels) {
+      const labs = cfg.series.filter((se) => se.label !== false).map((se) => { const i = se.vals.length - 1; return {y: Y(se.vals[i]), se, v: se.vals[i]}; }).filter((o) => ok(o.v)).sort((a, b) => a.y - b.y);
+      for (let k = 1; k < labs.length; k++) if (labs[k].y - labs[k - 1].y < 13) labs[k].y = labs[k - 1].y + 13;
+      labs.forEach((o) => { const i = o.se.vals.length - 1; s += `<circle cx="${X(i).toFixed(1)}" cy="${Y(o.v).toFixed(1)}" r="3.5" fill="${o.se.color}" stroke="var(--panel)" stroke-width="2"/><text class="lab" x="${mL + pw + 8}" y="${(o.y + 4).toFixed(1)}">${esc(o.se.short || "")}${o.se.short ? " " : ""}${(cfg.fe || fy)(o.v)}</text>`; });
+    }
+    s += `<line class="xh" x1="0" x2="0" y1="${mT}" y2="${mT + ph}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/><rect class="hit" x="${mL}" y="${mT}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;
+    el.innerHTML = s;
+    const svg = el.firstChild, xh = svg.querySelector(".xh"), hit = svg.querySelector(".hit");
+    const move = (ev) => {
+      const r = svg.getBoundingClientRect(), px = ev.clientX - r.left, i = Math.max(0, Math.min(n - 1, Math.round((px - mL) / pw * (n - 1))));
+      xh.setAttribute("x1", X(i)); xh.setAttribute("x2", X(i)); xh.setAttribute("visibility", "visible");
+      const rows = cfg.series.filter((se) => se.tip !== false).map((se) => `<div><span class="sw" style="background:${se.color}"></span>${esc(se.name)} <b>${ok(se.vals[i]) ? (cfg.ft || fy)(se.vals[i]) : "–"}</b></div>`).join("");
+      showTip(`<div>${esc(shortDate(cfg.dates[i]))} ${cfg.dates[i].slice(0, 4)}</div>${rows}${cfg.extraTip ? cfg.extraTip(i) : ""}`, ev.clientX, ev.clientY);
+    };
+    hit.addEventListener("pointermove", move); hit.addEventListener("pointerdown", move);
+    hit.addEventListener("pointerleave", () => { xh.setAttribute("visibility", "hidden"); hideTip(); });
+  });
+}
+const legend = (items) => `<div class="legend">${items.map(([name, color, box]) => `<span><i class="${box ? "box" : ""}" style="background:${color}"></i>${esc(name)}</span>`).join("")}</div>`;
+
+/* ================================================================== */
+/* Data definitions                                                    */
+const SECTORS = [
+  ["Technology", "AMEX:XLK", "INDEX:SKFI"], ["Financials", "AMEX:XLF", "INDEX:SFFI"], ["Communications", "AMEX:XLC", "INDEX:SLFI"],
+  ["Cons. Disc.", "AMEX:XLY", "INDEX:SYFI"], ["Industrials", "AMEX:XLI", "INDEX:SIFI"], ["Healthcare", "AMEX:XLV", "INDEX:SVFI"],
+  ["Staples", "AMEX:XLP", "INDEX:SPFI"], ["Energy", "AMEX:XLE", "INDEX:SEFI"], ["Utilities", "AMEX:XLU", "INDEX:SUFI"],
+  ["Real Estate", "AMEX:XLRE", "INDEX:SSFI"], ["Materials", "AMEX:XLB", "INDEX:SBFI"], ["Semis", "NASDAQ:SMH", null], ["Homebuilders", "AMEX:XHB", null]];
+const S = {};
+const settle = (ps) => Promise.allSettled(ps).then((r) => r.map((x) => x.status === "fulfilled" ? x.value : null));
+const firstErr = async (ps) => { const r = await Promise.allSettled(ps); const f = r.find((x) => x.status === "rejected"); return f ? f.reason : {code: "other", message: "No data returned."}; };
+
+/* ============================ Warnings ============================= */
+async function loadWarnings() {
+  const spy = await bars("AMEX:SPY");
+  const syms = ["CME_MINI:ES1!", "CBOE:VIX", "CBOE:VIX3M", "INDEX:S5FI", "INDEX:S5TH"];
+  const [es, vix, vix3m, s5fi, s5th] = await settle(syms.map((s) => bars(s)));
+  const c = spy.c, h = hma(c, 15), s = sma(c, 50), e21 = ema(c, 21);
+  const atrZ = zs(ema(tr(spy), 20), 20);
+  let cum = 0; const obvZ = zs(c.map((x, i) => (cum += i ? Math.sign(x - c[i - 1]) * spy.v[i] : 0)), 20);
+  const fiEq = ema(change(c).map((x, i) => x == null ? null : x * spy.v[i]), 13).map((x) => x == null ? null : x / 1e6);
+  const fiEs = es ? ema(change(es.c).map((x, i) => x == null ? null : x * es.v[i]), 13).map((x) => x == null ? null : x / 1e6) : null;
+  const hi20 = highest(c, 20), N0 = Math.max(60, c.length - 120);
+  const rows = [];
+  for (let i = N0; i < c.length; i++) {
+    const d = spy.d[i];
+    const dsum = s[i] == null || h[i] == null || s[i - 1] == null || h[i - 1] == null ? null : (s[i] > s[i - 1] ? 1 : -1) + (h[i] > h[i - 1] ? 1 : -1) + (h[i] > s[i] ? 1 : -1) + (c[i] > h[i] ? 1 : -1);
+    const v1 = at(vix, vix && vix.c, d), v3 = at(vix3m, vix3m && vix3m.c, d), ivts = v1 && v3 ? v1 / v3 : null;
+    const fe = es ? at(es, fiEs, d) : null;
+    const ix = s5fi ? idxAt(s5fi, d) : -1, br50 = ix >= 0 ? s5fi.c[ix] : null, br50ago = ix >= 20 ? s5fi.c[ix - 20] : null, br200 = at(s5th, s5th && s5th.c, d);
+    const brLow = ok(br200) && br200 < 50, brDiv = ok(hi20[i]) && c[i] >= hi20[i] && ok(br50) && ok(br50ago) && br50 < br50ago;
+    const fiN = (ok(fiEq[i]) && fiEq[i] <= -141 ? 1 : 0) + (ok(fe) && fe <= -15 ? 1 : 0);
+    const r = {i, d, dsum, atrZ: atrZ[i], obvZ: obvZ[i], ivts, fiEq: fiEq[i], fiEs: fe, br50, br200, brDiv, brN: (brLow ? 1 : 0) + (brDiv ? 1 : 0), fiN};
+    r.col = [
+      r.dsum == 4 ? "green" : r.dsum == 2 ? "aqua" : r.dsum == -4 ? "red" : r.dsum == -2 ? "fuchsia" : r.dsum == null ? "gray" : "white",
+      !ok(r.atrZ) ? "gray" : r.atrZ >= 2 ? "red" : r.atrZ >= 1 ? "fuchsia" : "white",
+      !ok(r.obvZ) ? "gray" : r.obvZ <= -2 ? "red" : r.obvZ < -1 ? "fuchsia" : "white",
+      !ok(r.ivts) ? "gray" : r.ivts >= 1 ? "red" : r.ivts >= 0.9 ? "fuchsia" : "white",
+      r.fiN == 2 ? "red" : r.fiN == 1 ? "fuchsia" : !es && !ok(r.fiEq) ? "gray" : "white",
+      !s5fi && !s5th ? "gray" : r.brN == 2 ? "red" : r.brN == 1 ? "fuchsia" : "white"];
+    r.total = (r.dsum != null && r.dsum < 0 ? 1 : 0) + (r.atrZ >= 1 ? 1 : 0) + (r.obvZ < -1 ? 1 : 0) + (r.ivts >= 0.9 ? 1 : 0) + (r.fiN > 0 ? 1 : 0) + (r.brN > 0 ? 1 : 0);
+    rows.push(r);
+  }
+  const L = last(rows); S.warn = L; S.spy = spy;
+  if (vix && vix3m) S.ivtsSeries = {dates: rows.map((r) => r.d), vals: rows.map((r) => r.ivts)};
+  const missing = syms.filter((_, k) => ![es, vix, vix3m, s5fi, s5th][k]);
+  const totCol = (t) => t >= 5 ? "color-mix(in srgb, var(--down) 28%, transparent)" : t >= 4 ? "color-mix(in srgb, var(--warn) 24%, transparent)" : t >= 3 ? "color-mix(in srgb, var(--warn) 11%, transparent)" : null;
+  const names = ["DSSTFS (trend stack)", "ATR z-score", "OBV z-score", "VIX/VIX3M ≥ 0.90", "Force Index", "Breadth"];
+  const reads = [fmt(L.dsum, 0), fmt(L.atrZ), fmt(L.obvZ), fmt(L.ivts, 3), `${fmt(L.fiEq, 0)} / ${fmt(L.fiEs, 0)}`, `${fmt(L.br50, 0)}% / ${fmt(L.br200, 0)}%${L.brDiv ? " div" : ""}`];
+  const show = rows.slice(-60);
+  $("warnBody").innerHTML = `<div class="chart" id="spyChart"></div>
+    ${legend([["SPY close", "var(--ink)"], ["21 EMA", "var(--accent)"], ["50 SMA", "var(--s1)"], ["3 warnings", "color-mix(in srgb, var(--warn) 18%, var(--panel))", 1], ["4", "color-mix(in srgb, var(--warn) 35%, var(--panel))", 1], ["5+", "color-mix(in srgb, var(--down) 40%, var(--panel))", 1]])}
+    <div class="sub"><h3>Warning components · last 60 sessions, latest right</h3>
+    <div class="wgrid">${names.map((nm, k) => `<span class="rowname">${nm}</span><div class="hist">${show.map((r) => `<i class="k-${r.col[k]}" title="${r.d}: ${r.col[k]}"></i>`).join("")}</div><span class="reading">${esc(reads[k])}</span>`).join("")}
+    <span class="rowname"><b>Total</b></span><div class="hist">${show.map((r) => `<i class="${r.total >= 5 ? "k-red" : r.total >= 4 ? "k-fuchsia" : r.total >= 3 ? "k-faint" : "k-white"}" title="${r.d}: ${r.total}/6"></i>`).join("")}</div><span class="reading"><b>${L.total}/6</b></span></div>
+    <span class="small muted">Readings: DSTFS sum · ATR and OBV z · VIX/VIX3M · Force Index SPY / ES (millions) · % S&amp;P above 50D / 200D. White = clear, fuchsia = warning, red = strong, outlined = no data. As of ${esc(L.d)}.${missing.length ? ` Missing: ${esc(missing.join(", "))}.` : ""}</span></div>`;
+  lineChart($("spyChart"), {label: "SPY with warning shading", h: 220, dates: rows.map((r) => r.d),
+    series: [{name: "SPY", short: "SPY", vals: rows.map((r) => c[r.i]), color: "var(--ink)", width: 1.8},
+             {name: "21 EMA", vals: rows.map((r) => e21[r.i]), color: "var(--accent)", width: 1.4, label: false},
+             {name: "50 SMA", vals: rows.map((r) => s[r.i]), color: "var(--s1)", width: 1.4, label: false}],
+    shade: rows.map((r) => totCol(r.total)), endLabels: true, fy: (v) => v.toFixed(0), ft: (v) => v.toFixed(2),
+    extraTip: (i) => `<div>Warnings <b>${rows[i].total}/6</b></div>`});
+  const seg = $("warnSeg").children; L.col.forEach((cc, k) => { seg[k].className = "k-" + cc; });
+  $("warnCount").textContent = `${L.total} of 6`;
+  S.warnTested = L.total - (L.brN > 0 ? 1 : 0);
+  oddsLines(); $("warnCount").className = "big " + (L.total >= 5 ? "neg" : L.total >= 3 ? "wrn" : "");
+  renderIvtsTile();
+}
+
+/* ============================ Breadth ============================== */
+function gauge(v) {
+  const W = 92, H = 54, cx = 46, cy = 48, R = 38, a = (p) => Math.PI * (1 - p / 100), pt = (p, r) => [cx + r * Math.cos(a(p)), cy - r * Math.sin(a(p))];
+  const P = (p, r) => pt(p, r).map((x) => x.toFixed(1)).join(",");
+  const arc = (p0, p1, col) => `<path d="M${P(p0, R)} A${R} ${R} 0 0 1 ${P(p1, R)}" stroke="${col}" stroke-width="9" fill="none"/>`;
+  const nd = pt(ok(v) ? v : 0, R - 2);
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="gauge ${fmt(v, 0)} percent">${arc(0, 20, "var(--up)")}${arc(20.6, 79.4, "var(--soft)")}${arc(80, 100, "var(--warn)")}
+    ${ok(v) ? `<line x1="${cx}" y1="${cy}" x2="${nd[0].toFixed(1)}" y2="${nd[1].toFixed(1)}" stroke="var(--ink)" stroke-width="2.5" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="4" fill="var(--ink)"/>` : ""}</svg>`;
+}
+async function loadBreadth() {
+  const main = await settle(["INDEX:S5TW", "INDEX:S5FI", "INDEX:S5TH"].map((s) => bars(s)));
+  const others = await settle(["INDEX:NDFI"].map((s) => bars(s, "1D", 30)));
+  if (!main.some(Boolean)) throw (await firstErr([bars("INDEX:S5FI")]));
+  const ref = main[1] || main[0] || main[2], n = Math.min(120, ref.c.length), dates = ref.d.slice(-n);
+  const ser = [["above 20DMA", "20D", main[0], "var(--s1)"], ["above 50DMA", "50D", main[1], "var(--s2)"], ["above 200DMA", "200D", main[2], "var(--s3)"]].filter((x) => x[2]);
+  const cmp = [["S&P 500", main[1]], ["Nasdaq 100", others[0]]];
+  $("breadthBody").innerHTML = `<div class="chart" id="brChart"></div>${legend(ser.map(([nm, , , col]) => ["% " + nm, col]))}
+    <div class="sub"><h3>Above 50DMA by index · today vs 5 sessions ago</h3><div class="blist">${cmp.map(([nm, b]) => {
+      if (!b) return `<div class="brow"><span>${nm}</span><span class="small muted">unavailable</span><span></span></div>`;
+      const v = last(b.c), p = b.c[b.c.length - 6];
+      return `<div class="brow" title="${nm}: ${fmt(v, 1)}% (5 sessions ago ${fmt(p, 1)}%)"><span>${nm}</span><span class="btrack"><span style="width:${Math.max(0, Math.min(100, v))}%"></span><em style="left:${Math.max(0, Math.min(100, p))}%"></em><em style="left:20%;opacity:.35"></em><em style="left:80%;opacity:.35"></em></span><span class="mono small" style="text-align:right">${fmt(v, 0)}% <span class="${cls(v - p)}">${v > p ? "▲" : v < p ? "▼" : "="}</span></span></div>`;
+    }).join("")}</div><span class="small muted">Thin tick = 5 sessions ago. Faint ticks at 20 (washout) and 80 (stretched).</span></div>`;
+  lineChart($("brChart"), {label: "Percent of S&P 500 stocks above moving averages", h: 210, dates, yMin: 0, yMax: 100, ticks: 5,
+    series: ser.map(([nm, sh, b, col]) => ({name: "% " + nm, short: sh, vals: dates.map((d) => at(b, b.c, d)), color: col})),
+    refs: [{y: 80, label: "80"}, {y: 20, label: "20"}], endLabels: true, fy: (v) => v.toFixed(0), ft: (v) => v.toFixed(1) + "%"});
+  if (main[1]) {
+    const v = last(main[1].c), p = main[1].c[main[1].c.length - 6]; S.s5fi = v;
+    $("gauge").innerHTML = gauge(v); $("s5fiBig").textContent = fmt(v, 0) + "%";
+    $("s5fiSub").textContent = `${v > p ? "▲ rising" : "▼ falling"} vs 5 sessions · ${v >= 80 ? "stretched" : v <= 20 ? "washed out" : "mid-range"}`;
+  }
+  renderRegime();
+}
+
+/* ============================ Volatility =========================== */
+function renderIvtsTile() {
+  const iv = S.ivtsSeries; if (!iv) return;
+  const v = last(iv.vals.filter(ok));
+  $("ivtsBig").textContent = fmt(v, 3); $("ivtsBig").className = "big " + ivtsBand(v).cls;
+  const dates = iv.dates.slice(-60), vals = iv.vals.slice(-60);
+  lineChart($("ivtsSpark"), {label: "IVTS last 60 sessions", h: 70, dates, series: [{name: "IVTS", vals, color: "var(--s1)", width: 1.6, area: true}],
+    refs: [{y: 0.9, color: "var(--warn)"}, {y: 1, color: "var(--down)"}], fy: (x) => x.toFixed(2), ft: (x) => x.toFixed(3), ticks: 2});
+  const B = ivtsBand(v); $("ivtsSub").textContent = `${B.label} · ${B.a14} · ${B.cal}`;
+}
+async function loadVol() {
+  const syms = [["9D", "CBOE:VIX9D"], ["VIX", "CBOE:VIX"], ["3M", "CBOE:VIX3M"], ["6M", "CBOE:VIX6M"], ["1Y", "CBOE:VIX1Y"]];
+  const extra = ["CBOE:VVIX", "CBOE:SKEW", "CBOE:RVX", "CBOE:SPX", "RUSSELL:RUT"];
+  const [r, ex] = await Promise.all([settle(syms.map(([, s]) => bars(s))), settle(extra.map((s) => bars(s)))]);
+  const [vvix, skew, rvx, spx, rut] = ex;
+  const vix = r[1]; if (!vix) throw (await firstErr([bars("CBOE:VIX")]));
+  const n = Math.min(120, vix.c.length), dates = vix.d.slice(-n), m = sma(vix.c, 20), sd = stdev(vix.c, 20), z = zs(vix.c, 20);
+  const off = vix.c.length - n, vals = vix.c.slice(-n), lo = m.slice(-n).map((x, i) => x == null ? null : x - 2 * sd[off + i]), hi = m.slice(-n).map((x, i) => x == null ? null : x + 2 * sd[off + i]);
+  const dots = vals.map((v, i) => ({i, v, z: z[off + i]})).filter((o) => o.z >= 1).map((o) => ({i: o.i, v: o.v, color: o.z >= 2 ? "var(--down)" : "var(--warn)"}));
+  // every tenor on the same date: the latest date all available series share, then lag in VIX sessions
+  const maps = r.map((b) => { const o = {}; if (b) b.d.forEach((d, i) => { o[d] = b.c[i]; }); return o; });
+  const common = vix.d.filter((d) => r.every((b, k) => !b || d in maps[k]));
+  const curveAt = (lag) => { const d = common[common.length - 1 - lag]; return r.map((b, k) => b && d in maps[k] ? maps[k][d] : null); };
+  const curveDate = last(common);
+  const now = curveAt(0), wk = curveAt(5), mo = curveAt(21);
+  const back = ok(now[1]) && ok(now[2]) && now[1] > now[2], contango = now.slice(0, 4).every(ok) && now[0] < now[1] && now[1] < now[2] && now[2] < now[3];
+  const st = back ? ["Backwardation", "neg"] : contango ? ["Full contango", "pos"] : ["Mixed", "wrn"];
+  // realised vol (20 sessions, annualised), keyed by date
+  const rv = (b) => { if (!b) return null; const lr = b.c.map((x, i) => i ? Math.log(x / b.c[i - 1]) : null), out = {};
+    b.d.forEach((d, i) => { if (i < 20) return; let s = 0, q = 0; for (let k = i - 19; k <= i; k++) { s += lr[k]; q += lr[k] * lr[k]; } out[d] = Math.sqrt(Math.max((q - s * s / 20) / 19, 0) * 252) * 100; }); return out; };
+  const byDate = (b) => { const o = {}; if (b) b.d.forEach((d, i) => { o[d] = b.c[i]; }); return o; };
+  const rvS = rv(spx), rvR = rv(rut), rvxD = byDate(rvx), v3 = r[2] ? byDate(r[2]) : {};
+  const pctile = (a, v) => { const w = a.slice(-252).filter(ok); return w.length && ok(v) ? 100 * w.filter((x) => x <= v).length / w.length : null; };
+  const vNow = maps[1][curveDate] ?? last(vix.c), lastOf = (b) => b ? (curveDate in (b._m || (b._m = Object.fromEntries(b.d.map((d, i) => [d, b.c[i]])))) ? b._m[curveDate] : last(b.c)) : null;
+  const ivts = ok(now[1]) && ok(now[2]) ? now[1] / now[2] : null, r9 = ok(now[0]) && ok(now[1]) ? now[0] / now[1] : null;
+  const rvsNow = rvS ? rvS[last(spx.d)] : null, rvrNow = rvR ? rvR[last(rut.d)] : null, rvxNow = lastOf(rvx);
+  const kpi = (lab, val, sub, k = "") => `<div><span class="lbl">${lab}</span><b class="${k}">${val}</b><span class="small muted">${sub}</span></div>`;
+  const ivtsK = !ok(ivts) ? "" : ivts >= 1 ? "neg" : ivts >= 0.9 ? "wrn" : "";
+  const vrpS = ok(rvsNow) ? vNow - rvsNow : null, vrpR = ok(rvrNow) && ok(rvxNow) ? rvxNow - rvrNow : null;
+  $("volBody").innerHTML = `<div class="kv" style="margin-bottom:14px">
+      ${kpi("VIX", fmt(vNow, 2), `z20 ${sgn(last(z), 2)} · ${fmt(pctile(vix.c, vNow), 0)}th pct (1y)`, last(z) >= 2 ? "neg" : last(z) >= 1 ? "wrn" : "")}
+      ${kpi("VIX9D / VIX", fmt(r9, 3), r9 >= 1 ? "front-end stress" : "near-term calm", r9 >= 1 ? "neg" : "")}
+      ${kpi("VIX / VIX3M", fmt(ivts, 3), `${ivtsBand(ivts).label} · ${ivtsBand(ivts).a14} · ${ivtsBand(ivts).cal}`, ivtsBand(ivts).cls)}
+      ${kpi("VVIX", fmt(lastOf(vvix), 1), `vol of VIX · ${fmt(pctile(vvix ? vvix.c : [], lastOf(vvix)), 0)}th pct (1y)`, lastOf(vvix) >= 110 ? "wrn" : "")}
+      ${kpi("SKEW", fmt(lastOf(skew), 1), `tail demand · ${fmt(pctile(skew ? skew.c : [], lastOf(skew)), 0)}th pct (1y)`)}
+      ${kpi("SPX · VIX − RV20", sgn(vrpS, 1), `realised ${fmt(rvsNow, 1)} · sellers want > 0`, !ok(vrpS) ? "" : vrpS < 0 ? "neg" : "pos")}
+      ${kpi("RUT · RVX − RV20", sgn(vrpR, 1), `RVX ${fmt(rvxNow, 1)} · realised ${fmt(rvrNow, 1)}`, !ok(vrpR) ? "" : vrpR < 0 ? "neg" : "pos")}
+    </div>
+    <div class="two">
+    <div class="sub"><h3>VIX · 20-day ±2σ band</h3><div class="chart" id="vixChart"></div>${legend([["VIX", "var(--ink)"], ["20D mean", "var(--s1)"], ["±2σ band", "color-mix(in srgb, var(--s1) 25%, var(--panel))", 1], ["≥ +1σ", "var(--warn)", 1], ["≥ +2σ", "var(--down)", 1]])}</div>
+    <div class="sub"><h3>Term structure <span class="chip ${st[1]}" style="margin-left:6px">${st[0]}</span></h3><div class="chart" id="termChart"></div>${legend([["Today", "var(--s1)"], ["1 week ago", "var(--s2)"], ["1 month ago", "var(--s3)"]])}</div>
+    <div class="sub"><h3>Implied vs realised · 120 sessions</h3><div class="chart" id="vrpChart"></div>${legend([["VIX", "var(--s1)"], ["RVX", "var(--s2)"], ["dashed: 20-day realised (SPX, RUT)", "var(--muted)"]])}</div>
+    <div class="sub"><h3>VIX / VIX3M · 1 year</h3><div class="chart" id="ivtsChart"></div>${legend([["VIX/VIX3M", "var(--s3)"], ["0.834: June calendar losses at or below", "var(--info)"], ["0.90 warning", "var(--warn)"], ["1.00 backwardation", "var(--down)"]])}</div>
+    </div>`;
+  lineChart($("vixChart"), {label: "VIX with 20-day bands", h: 200, dates, band: {lo, hi},
+    series: [{name: "VIX", short: "VIX", vals, color: "var(--ink)", width: 1.8}, {name: "20D mean", vals: m.slice(-n), color: "var(--s1)", width: 1.2, label: false}],
+    dots, endLabels: true, fy: (v) => v.toFixed(0), ft: (v) => v.toFixed(2), extraTip: (i) => `<div>z-score <b>${sgn(z[off + i], 2)}</b></div>`});
+  if (rvS) lineChart($("vrpChart"), {label: "Implied vs realised volatility", h: 200, dates,
+    series: [{name: "VIX", short: "VIX", vals, color: "var(--s1)", width: 1.8}, {name: "SPX realised 20D", short: "SPX RV", vals: dates.map((d) => rvS[d] ?? null), color: "var(--s1)", width: 1.3, dash: "4 3"},
+      {name: "RVX", short: "RVX", vals: dates.map((d) => rvxD[d] ?? null), color: "var(--s2)", width: 1.8}, {name: "RUT realised 20D", short: "RUT RV", vals: dates.map((d) => rvR ? rvR[d] ?? null : null), color: "var(--s2)", width: 1.3, dash: "4 3"}],
+    endLabels: true, fy: (v) => v.toFixed(0), ft: (v) => v.toFixed(1)});
+  else $("vrpChart").innerHTML = `<div class="state">No SPX/RUT index bars yet (they come from TWS).</div>`;
+  const N2 = Math.min(252, vix.c.length), d2 = vix.d.slice(-N2), iv2 = d2.map((d, i) => ok(v3[d]) ? vix.c[vix.c.length - N2 + i] / v3[d] : null);
+  lineChart($("ivtsChart"), {label: "VIX/VIX3M one year", h: 200, dates: d2, series: [{name: "VIX/VIX3M", short: "", vals: iv2, color: "var(--s3)", width: 1.6, area: true}],
+    refs: [{y: 0.834, color: "var(--info)"}, {y: 0.9, color: "var(--warn)"}, {y: 1, color: "var(--down)"}], endLabels: true, fy: (x) => x.toFixed(2), ft: (x) => x.toFixed(3)});
+  const sets = [[now, "var(--s1)", "Today"], [wk, "var(--s2)", "1 week ago"], [mo, "var(--s3)", "1 month ago"]];
+  const el = $("termChart"), K = syms.length;
+  mount(el, (W) => {
+    const H = 200, mL = 40, mR = 16, mT = 14, mB = 24, pw = W - mL - mR, ph = H - mT - mB;
+    const all = sets.flatMap(([a]) => a.filter(ok)); let lo2 = Math.min(...all), hi2 = Math.max(...all); const pad = (hi2 - lo2) * 0.15 || 1; lo2 -= pad; hi2 += pad;
+    const X = (i) => mL + i * pw / (K - 1), Y = (v) => mT + ph - (v - lo2) * ph / (hi2 - lo2);
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="VIX term structure">`;
+    niceTicks(lo2, hi2, 4).forEach((v) => { if (v >= lo2 && v <= hi2) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${v}</text>`; });
+    const anc = (i) => i === 0 ? "start" : i === K - 1 ? "end" : "middle";
+    syms.forEach(([lab], i) => { s += `<text x="${X(i)}" y="${H - 6}" text-anchor="${anc(i)}">${lab}</text>`; });
+    sets.slice().reverse().forEach(([a, col]) => { const pts = a.map((v, i) => ok(v) ? `${X(i).toFixed(1)},${Y(v).toFixed(1)}` : null).filter(Boolean); s += `<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="2"/>`;
+      a.forEach((v, i) => { if (ok(v)) s += `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="4" fill="${col}" stroke="var(--panel)" stroke-width="2"/>`; }); });
+    now.forEach((v, i) => { if (ok(v)) s += `<text class="lab" x="${X(i).toFixed(1)}" y="${(Y(v) - 9).toFixed(1)}" text-anchor="${anc(i)}">${v.toFixed(1)}</text>`; });
+    syms.forEach((_, i) => { s += `<rect class="ts" data-i="${i}" x="${(X(i) - pw / (2 * (K - 1))).toFixed(1)}" y="${mT}" width="${(pw / (K - 1)).toFixed(1)}" height="${ph}" fill="transparent"/>`; });
+    el.innerHTML = s + "</svg>";
+    el.querySelectorAll(".ts").forEach((rc) => { const i = +rc.dataset.i;
+      const f = (ev) => showTip(`<div>${esc(syms[i][1].split(":")[1])}</div>${sets.map(([a, col, nm]) => `<div><span class="sw" style="background:${col}"></span>${nm} <b>${fmt(a[i], 2)}</b></div>`).join("")}`, ev.clientX, ev.clientY);
+      rc.addEventListener("pointermove", f); rc.addEventListener("pointerdown", f); rc.addEventListener("pointerleave", hideTip); });
+  });
+}
+
+/* ============================ Sectors ============================== */
+let sectRows = [], sectSort = {k: "rs", dir: -1};
+async function loadSectors() {
+  const spy = await bars("AMEX:SPY", "1D", undefined, true);
+  const etfs = await settle(SECTORS.map(([, s]) => bars(s, "1D", undefined, true)));
+  const brs = await settle(SECTORS.map(([, , b]) => b ? bars(b, "1D", 30) : Promise.resolve(null)));
+  if (!etfs.some(Boolean)) throw (await firstErr([bars(SECTORS[0][1])]));
+  const spyRet = (dEnd, dStart) => { const a = at(spy, spy.c, dEnd), b = at(spy, spy.c, dStart); return a && b ? (a / b - 1) * 100 : null; };
+  sectRows = SECTORS.map(([name, sym], k) => {
+    const b = etfs[k]; if (!b) return {name, sym, na: true};
+    const c = b.c, i = c.length - 1;
+    const leg = (j, len) => { const r = ret(c, j, len), sr = j - len >= 0 ? spyRet(b.d[j], b.d[j - len]) : null; return ok(r) && ok(sr) ? r - sr : null; };
+    const trail = []; for (let L = 5; L >= 0; L--) trail.push({x: leg(i - L, 20), y: leg(i - L, 5)});
+    const m20 = last(sma(c, 20)), m50 = last(sma(c, 50)), br = brs[k];
+    const brNow = br ? last(br.c) : null, brThen = br ? br.c[br.c.length - 6] : null;
+    return {name, sym, d1: ret(c, i, 1), d5: ret(c, i, 5), d20: ret(c, i, 20), rs: leg(i, 20), mom: leg(i, 5), rsThen: leg(i - 5, 20), trail,
+      ab20: c[i] > m20, ab50: c[i] > m50, br: brNow, brThen, thin: ok(brNow) && c[i] > m50 && brNow < 50};
+  });
+  const ranked = (key) => { const vals = sectRows.filter((r) => ok(r[key])).map((r) => r[key]).sort((a, b) => b - a); sectRows.forEach((r) => { r[key + "Rank"] = ok(r[key]) ? vals.indexOf(r[key]) + 1 : null; }); };
+  ranked("rs"); ranked("rsThen");
+  const g = (s) => sectRows.find((r) => r.sym === s) || {};
+  const avg = (a) => a.every(ok) ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const off = avg([g("AMEX:XLK").d20, g("AMEX:XLY").d20, g("AMEX:XLC").d20]), def = avg([g("AMEX:XLP").d20, g("AMEX:XLU").d20, g("AMEX:XLV").d20]);
+  S.sect = {offDef: ok(off) && ok(def) ? off - def : null, b20: ret(spy.c, spy.c.length - 1, 20)};
+  $("sectBody").innerHTML = `<div class="two stack"><div class="sub"><h3>What the sectors say</h3><div id="sectRead"></div>
+    <h3 style="margin-top:8px">Offense ÷ defense · 90 sessions</h3><div class="chart" id="offDef"></div>
+    <span class="small muted">XLK + XLY + XLC vs XLP + XLU + XLV, equal weight, rebased to 100. Rising = money moving into risk (calmer markets, kinder to short puts); falling = rotation into defensives, which often comes before volatility picks up.</span>
+    <h3 style="margin-top:8px">Strength vs SPY · 20 days</h3><div id="rsBars"></div></div>
+    <div class="sub"><h3>Returns and breadth</h3><div id="sectTable"></div></div></div>`;
+  drawSectorRead(etfs); renderSectorTable(); renderRegime();
+}
+function drawSectorRead(etfs) {
+  const g = (s) => sectRows.find((r) => r.sym === s) || {};
+  const live = sectRows.filter((r) => !r.na && ok(r.rs));
+  const beat = live.filter((r) => r.rs > 0), above50 = live.filter((r) => r.ab50);
+  const od = S.sect.offDef;
+  // offense / defense ratio series
+  const byKey = (sym) => { const k = SECTORS.findIndex(([, s]) => s === sym); return k >= 0 ? etfs[k] : null; };
+  const offS = ["AMEX:XLK", "AMEX:XLY", "AMEX:XLC"].map(byKey), defS = ["AMEX:XLP", "AMEX:XLU", "AMEX:XLV"].map(byKey);
+  let ratio = null, dates = null;
+  if (offS.every(Boolean) && defS.every(Boolean)) {
+    const n = Math.min(90, ...offS.concat(defS).map((b) => b.c.length));
+    dates = offS[0].d.slice(-n);
+    const norm = (b) => { const c = b.c.slice(-n); return c.map((x) => x / c[0]); };
+    const o = offS.map(norm), d = defS.map(norm);
+    ratio = dates.map((_, i) => 100 * (o[0][i] + o[1][i] + o[2][i]) / (d[0][i] + d[1][i] + d[2][i]));
+  }
+  const rM = ratio ? sma(ratio, 20) : null, rNow = ratio ? last(ratio) : null, rSma = rM ? last(rM) : null, r5 = ratio && ratio.length > 6 ? ratio[ratio.length - 6] : null;
+  const riskOn = ok(od) ? od > 0 : null;
+  const rut = ["AMEX:XLF", "AMEX:XLI", "AMEX:XLV"].map((s) => g(s).rs).filter(ok), rutRs = rut.length ? rut.reduce((a, b) => a + b, 0) / rut.length : null;
+  const items = [
+    [riskOn == null ? "" : riskOn ? "pos" : "wrn", "Risk appetite",
+      riskOn == null ? "not enough data" : `${riskOn ? "Offense" : "Defense"} leading by ${fmt(Math.abs(od), 1)} pts over 20 days${ok(rNow) && ok(rSma) ? `, ratio ${rNow > rSma ? "above" : "below"} its 20-day average and ${rNow > r5 ? "rising" : "falling"} this week` : ""}.`,
+      riskOn == null ? "" : riskOn ? "Historically calmer weeks follow (5% drop ~15% of the time)." : "Historically rougher weeks follow (5% drop ~25% of the time vs ~15% when offense leads) — counted in Trade readiness."],
+    [beat.length >= 6 ? "pos" : beat.length <= 3 ? "wrn" : "", "Leadership",
+      `${beat.length} of ${live.length} sectors beat SPY over 20 days; ${above50.length} of ${live.length} are above their 50-day average.`,
+      beat.length <= 3 ? `Narrow: only ${beat.map((r) => r.sym.split(":")[1]).join(", ") || "a few sectors"} beat SPY — the index is carried by its biggest names, so it can drop faster than breadth suggests.` : beat.length >= 6 ? "Broad: rallies are better supported, dips tend to be bought." : "Mixed leadership."],
+    [!ok(rutRs) ? "" : rutRs > 0 ? "pos" : "wrn", "SPX vs RUT",
+      ok(rutRs) ? `RUT-heavy sectors (Financials, Industrials, Health Care) ${rutRs > 0 ? "outperform" : "underperform"} SPY by ${fmt(Math.abs(rutRs), 1)} pts on average.` : "not enough data",
+      ok(rutRs) ? (rutRs > 0 ? "Small-cap sectors in favour: RUT downside risk is lower than usual relative to SPX." : "Small-cap sectors lagging: RUT more exposed to further weakness than SPX.") : ""],
+  ];
+  $("sectRead").innerHTML = `<div class="readlist">${items.map(([k, t, a, b]) => `<div class="read rd-${k}"><b>${t}</b><span>${a}</span>${b ? `<span class="muted">${b}</span>` : ""}</div>`).join("")}</div>`;
+  if (ratio) lineChart($("offDef"), {label: "offense / defense ratio", h: 140, dates, series: [{name: "Offense ÷ defense", short: "", vals: ratio, color: riskOn ? "var(--up)" : "var(--warn)", width: 1.8, area: true},
+    {name: "20-day average", vals: rM, color: "var(--muted)", width: 1.1, dash: "4 3", label: false}], endLabels: true, fy: (v) => v.toFixed(0), ft: (v) => v.toFixed(1)});
+  else $("offDef").innerHTML = `<div class="state">Not enough sector data.</div>`;
+  const sorted = live.slice().sort((a, b) => b.rs - a.rs), mx = Math.max(...sorted.map((r) => Math.abs(r.rs)), 1);
+  $("rsBars").innerHTML = sorted.map((r) => { const w = 50 * Math.abs(r.rs) / mx, dR = ok(r.rsRank) && ok(r.rsThenRank) ? r.rsThenRank - r.rsRank : 0;
+    return `<div class="rsrow" title="${esc(r.name)}: ${sgn(r.rs)} pts vs SPY over 20 days · ${sgn(r.mom)} over 5 days"><span>${esc(r.sym.split(":")[1])}</span>
+      <span class="rstrack"><i style="${r.rs >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`};background:${r.rs >= 0 ? "var(--up)" : "var(--down)"}"></i><em></em></span>
+      <span class="mono small">${sgn(r.rs)} ${dR > 0 ? `<span class="pos">▲</span>` : dR < 0 ? `<span class="neg">▼</span>` : ""}</span></div>`; }).join("");
+}
+function heat(v, full) {
+  if (!ok(v)) return "";
+  const p = Math.min(Math.abs(v) / full, 1) * 42; return `background:color-mix(in srgb, var(${v >= 0 ? "--up" : "--down"}) ${p.toFixed(0)}%, transparent)`;
+}
+function renderSectorTable() {
+  const k = sectSort.k, dir = sectSort.dir;
+  const cmp = (a, b) => { const x = a[k], y = b[k]; if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    if (typeof x === "string") return dir < 0 ? x.localeCompare(y) : y.localeCompare(x); return dir < 0 ? y - x : x - y; };
+  const rows = [...sectRows].sort(cmp);
+  const cols = [["name", "Sector"], ["d1", "1D %", 1], ["d5", "5D %", 1], ["d20", "20D %", 1], ["rs", "RS 20D", 1], ["ab50", "Trend"], ["br", "br %", 1]];
+  let h = `<div class="tbl"><table><thead><tr>${cols.map(([key, label, num]) => `<th class="sort ${num ? "n" : ""}" tabindex="0" data-k="${key}" ${k === key ? `aria-sort="${dir < 0 ? "descending" : "ascending"}"` : ""}>${label}${k === key ? (dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>`;
+  rows.forEach((r) => {
+    if (r.na) { h += `<tr><td>${esc(r.name)}</td><td class="n muted" colspan="6">unavailable</td></tr>`; return; }
+    const dR = ok(r.rsRank) && ok(r.rsThenRank) ? r.rsThenRank - r.rsRank : null;
+    h += `<tr><td>${esc(r.name)} <span class="muted small">${esc(r.sym.split(":")[1])}</span></td>
+      <td class="heat" style="${heat(r.d1, 2)}">${sgn(r.d1, 2)}</td><td class="heat" style="${heat(r.d5, 4)}">${sgn(r.d5)}</td><td class="heat" style="${heat(r.d20, 8)}">${sgn(r.d20)}</td>
+      <td class="heat" style="${heat(r.rs, 6)}" title="Rank #${r.rsRank ?? "–"}${dR ? (dR > 0 ? `, up ${dR}` : `, down ${-dR}`) + " vs 5 sessions ago" : ""}">${sgn(r.rs)} ${dR > 0 ? `<span class="pos">▲</span>` : dR < 0 ? `<span class="neg">▼</span>` : ""}</td>
+      <td><span class="${r.ab20 ? "pos" : "neg"}">${r.ab20 ? "↑" : "↓"}20</span> <span class="${r.ab50 ? "pos" : "neg"}">${r.ab50 ? "↑" : "↓"}50</span></td>
+      <td class="n">${!ok(r.br) ? `<span class="muted">–</span>` : `<span class="minibar"><span style="width:${r.br}%"></span></span>${fmt(r.br, 0)} <span class="${cls(r.br - r.brThen)}">${r.br > r.brThen ? "▲" : r.br < r.brThen ? "▼" : "="}</span>${r.thin ? ` <span class="chip wrn" title="ETF above its 50DMA while fewer than half its stocks are">thin</span>` : ""}`}</td></tr>`;
+  });
+  $("sectTable").innerHTML = h + `</tbody></table></div><span class="small muted">Cell shading scales with the move. Click a column to sort.</span>`;
+  $("sectTable").querySelectorAll("th.sort").forEach((th) => {
+    const go = () => { const key = th.dataset.k; sectSort = {k: key, dir: sectSort.k === key ? -sectSort.dir : -1}; renderSectorTable(); };
+    th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+}
+
+/* ============================ Regime strip ========================= */
+// tested odds from the server (same numbers the Trade readiness bar uses)
+let ODDS = null;
+fetch("/api/readiness").then((r) => r.json()).then((R) => { if (!R.error) { ODDS = R; oddsLines(); renderRegime(); } }).catch((e) => console.warn("readiness odds:", e));
+function oddsLines() {
+  if (!ODDS || !$("warnOdds")) return;
+  const k = Math.min(5, S.warnTested ?? ODDS.warnings.total5), st = ODDS.warnings.all[String(k)];
+  $("warnOdds").textContent = st ? `${k} of the 5 tested: a 5% drop followed ${Math.round(st.dd5)}% of the time (normally ${Math.round(ODDS.base)}%) · size: see Trade readiness` : "";
+}
+function renderRegime() {
+  const br = S.s5fi, sct = S.sect || {};
+  let label = "Mixed", tone = "var(--faint)"; const why = [];
+  if (ok(sct.b20) && sct.b20 > 0 && ok(br) && br <= 40) { label = "Narrow: index up on few stocks"; tone = "var(--accent)"; }
+  else if (ok(br) && br >= 60 && ok(sct.offDef) && sct.offDef >= 0) { label = "Broad risk-on"; tone = "var(--up)"; }
+  else if (ok(sct.offDef) && sct.offDef <= -1) { label = "Defensive rotation"; tone = "var(--down)"; }
+  if (ok(br)) why.push(`S5FI ${fmt(br, 0)}%`); if (ok(sct.b20)) why.push(`SPY 20D ${sgn(sct.b20)}%`); if (ok(sct.offDef)) why.push(`offense − defense ${sgn(sct.offDef)}%`);
+  if (ODDS && ODDS.rotation && ODDS.rotation.stats) why.push(`${ODDS.rotation.state} rotation: a 5% drop followed ${Math.round(ODDS.rotation.stats.dd5)}% of the time (normally ${Math.round(ODDS.base)}%)`);
+  $("regime").textContent = label; $("regimeBox").style.borderLeftColor = tone; $("regimeWhy").textContent = why.join(" · ") || "waiting for breadth and sectors";
+}
+
+/* ============================ Cross-asset ========================== */
+async function loadCross() {
+  const syms = ["AMEX:HYG", "NASDAQ:TLT", "NASDAQ:WOOD", "AMEX:GLD", "AMEX:XLU", "AMEX:SPY", "AMEX:EEM", "AMEX:AGG", "NASDAQ:IEF"];
+  const got = {}; (await settle(syms.map((s) => bars(s, "1D", undefined, true)))).forEach((b, k) => { if (b) got[syms[k].split(":")[1]] = b; });
+  if (!Object.keys(got).length) throw (await firstErr([bars(syms[0])]));
+  const pairs = [["HYG", "TLT", "credit vs Treasuries"], ["WOOD", "GLD", "growth vs fear"], ["SPY", "XLU", "stocks vs utilities"], ["SPY", "TLT", "stocks vs bonds"], ["SPY", "GLD", "stocks vs gold"]];
+  const mom = (b) => { if (!b) return null; const c = b.c, i = c.length - 1; if (i < 252) return null; return 12 * (c[i] / c[i - 21] - 1) + 4 * (c[i] / c[i - 63] - 1) + 2 * (c[i] / c[i - 126] - 1) + (c[i] / c[i - 252] - 1); };
+  const mm = [["EEM", mom(got.EEM)], ["AGG", mom(got.AGG)], ["IEF", mom(got.IEF)]];
+  const e = mm[0][1], a = mm[1][1], f = mm[2][1];
+  const st = !ok(e) || !ok(a) ? null : e > 0 && a > 0 ? ["Full risk on", "pos"] : e > 0 || a > 0 ? ["50% risk on, 50% protection", "wrn"] : ["100% crash protection", "neg"];
+  const mx = Math.max(0.05, ...mm.map(([, v]) => Math.abs(v || 0)));
+  $("crossBody").innerHTML = `<div class="sub"><h3>Ratios · last 90 sessions with 20D SMA</h3><div class="rlist">${pairs.map(([x, y, desc], k) =>
+    `<div class="rrow"><div class="who"><span class="mono">${x}/${y}</span><span class="small muted">${desc}</span><span id="ratioSt${k}"></span></div><div class="chart" id="ratioC${k}"></div></div>`).join("")}</div>
+    ${legend([["Ratio", "var(--ink)"], ["20D SMA", "var(--accent)"]])}</div>
+    <div class="sub"><h3>Canary · 13612W momentum ${st ? `<span class="chip ${st[1]}" style="margin-left:6px">${st[0]}</span>` : ""}</h3>
+    <div class="blist">${mm.map(([nm, v]) => `<div class="brow" style="grid-template-columns:3em minmax(0,1fr) 4.5em" title="${nm} momentum ${fmt(v, 3)}"><span class="mono">${nm}</span><span class="btrack" style="background:transparent"><em style="left:50%;opacity:1;background:var(--line)"></em>${ok(v) ? `<span style="left:${v >= 0 ? 50 : 50 - Math.abs(v) / mx * 50}%;width:${Math.abs(v) / mx * 50}%;background:var(${v >= 0 ? "--up" : "--down"});border-radius:2px"></span>` : ""}</span><span class="mono small" style="text-align:right">${sgn(v, 3)}</span></div>`).join("")}</div>
+    <span class="small muted">${ok(f) ? `Protection sleeve: ${f > 0 ? "IEF (momentum positive)" : "cash (IEF momentum negative)"}` : "Canary needs a year of EEM, AGG and IEF bars."}</span></div>`;
+  pairs.forEach(([x, y], k) => {
+    const A = got[x], B = got[y]; if (!A || !B) { $("ratioC" + k).innerHTML = `<span class="small muted">unavailable</span>`; return; }
+    const r = A.d.map((d) => { const bv = at(B, B.c, d); return bv ? at(A, A.c, d) / bv : null; }), m = sma(r, 20);
+    const n = Math.min(90, r.length), dates = A.d.slice(-n), rv = r.slice(-n), mv = m.slice(-n), up = last(rv) > last(mv);
+    $("ratioSt" + k).innerHTML = `<span class="chip ${up ? "pos" : "neg"}">${up ? "above" : "below"}</span>`;
+    lineChart($("ratioC" + k), {label: `${x}/${y} ratio`, h: 78, dates, ticks: 2, series: [{name: `${x}/${y}`, vals: rv, color: "var(--ink)", width: 1.5}, {name: "20D SMA", vals: mv, color: "var(--accent)", width: 1.2}],
+      fy: (v) => v.toFixed(v < 10 ? 2 : 1), ft: (v) => v.toFixed(4)});
+  });
+}
+
+/* ============================ Calendar ============================= */
+let calEvents = null, calFilter = "both", calNote = "";
+try { const v = localStorage.getItem("md.calFilter"); if (["medium", "high", "both"].includes(v)) calFilter = v; } catch (e) {}
+function syncCalToggle() { document.querySelectorAll("#calToggle button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.f === calFilter))); }
+document.querySelectorAll("#calToggle button").forEach((b) => b.addEventListener("click", () => {
+  calFilter = b.dataset.f; try { localStorage.setItem("md.calFilter", calFilter); } catch (e) {}
+  syncCalToggle(); if (calEvents) renderCal();
+}));
+syncCalToggle();
+async function loadCalendar() {
+  if (DEMO) { $("calBody").innerHTML = `<div class="state">The calendar needs the TradingView connector.</div>`; return; }
+  const now = new Date(), to = new Date(now.getTime() + 7 * 864e5);
+  // fetch medium + high once; the toggle filters locally without another request
+  const {payload, storedAt} = await call(TV, "mcp-tv-get-economic-calendar", {countries: "US", min_importance: 0, date_from: now.toISOString().slice(0, 10), date_to: to.toISOString().slice(0, 10)}, 900000);
+  stamp(storedAt);
+  calEvents = ((payload && payload.result) || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  calNote = (payload && payload.note) || "";
+  renderCal();
+}
+function renderCal() {
+  const isHigh = (x) => x.importance >= 1;
+  const ev = calEvents.filter((x) => calFilter === "both" ? true : calFilter === "high" ? isHigh(x) : !isHigh(x));
+  const label = calFilter === "both" ? "medium or high importance" : calFilter + " importance";
+  if (!ev.length) { $("calBody").innerHTML = `<div class="state">No ${label} US events in the next 7 days.</div>`; return; }
+  const dayF = new Intl.DateTimeFormat(undefined, {weekday: "short", month: "short", day: "numeric"}), timeF = new Intl.DateTimeFormat(undefined, {hour: "numeric", minute: "2-digit"});
+  const byDay = new Map(); ev.forEach((x) => { const k = dayF.format(new Date(x.date)); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); });
+  $("calBody").innerHTML = `<div class="tbl"><table><thead><tr><th>Time</th><th>Event</th><th class="n">Forecast</th><th class="n">Previous</th><th class="n">Actual</th></tr></thead><tbody>${
+    [...byDay].map(([day, items]) => `<tr><td colspan="5" style="padding-top:10px"><h3>${esc(day)}</h3></td></tr>` + items.map((x) => `<tr><td class="mono small">${esc(timeF.format(new Date(x.date)))}</td><td>${isHigh(x) ? `<span class="chip acc">high</span>` : `<span class="chip muted">med</span>`} ${esc(x.title)}${x.period ? ` <span class="muted small">${esc(x.period)}</span>` : ""}</td><td class="n">${x.forecast ?? "–"}</td><td class="n">${x.previous ?? "–"}</td><td class="n">${x.actual ?? "–"}</td></tr>`).join("")).join("")
+  }</tbody></table></div><span class="small muted">${calNote ? esc(calNote) + " " : ""}${ev.length} ${label} events · times in your time zone.</span>`;
+}
+
+/* ============================ Account ============================== */
+function genericTable(rows, prefer) {
+  const keys = [...new Set(rows.flatMap((r) => Object.keys(r).filter((k) => r[k] == null || typeof r[k] !== "object")))];
+  const cols = [...prefer.filter((k) => keys.includes(k)), ...keys.filter((k) => !prefer.includes(k))].slice(0, 9);
+  return `<div class="tbl"><table><thead><tr>${cols.map((k) => `<th>${esc(k.replace(/_/g, " "))}</th>`).join("")}</tr></thead><tbody>${
+    rows.map((r) => `<tr>${cols.map((k) => { const v = r[k]; const n = typeof v === "number"; return `<td class="${n ? "n " + (/pnl|unreal|real/i.test(k) ? cls(v) : "") : ""}">${n ? money(v) : esc(v ?? "–")}</td>`; }).join("")}</tr>`).join("")
+  }</tbody></table></div>`;
+}
+async function loadAccount() {
+  const r = await fetch("/api/md/account"); if (!r.ok) throw {code: "server_unavailable", server: IB, message: `HTTP ${r.status}`};
+  const A = await r.json();
+  const accts = Object.keys(A.summary || {});
+  const btn = `<button type="button" class="ghost" id="acctRefresh">Refresh from TWS</button>`;
+  if (!accts.length) { $("acctBody").innerHTML = `<div class="state">No account data yet. ${btn} (TWS must be running; it also refreshes after the daily recording.)</div>`; bindAcct(); return; }
+  const out = [`<div class="row"><span class="small muted">From TWS ${A.ts ? new Date(A.ts).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"}) : ""} · every sub-account this TWS login manages</span>${btn}</div>`];
+  accts.sort().forEach((id) => {
+    const s = A.summary[id], cur = s.currency || "", lab = (A.labels && A.labels[id]) || id;
+    const used = ok(s.MaintMarginReq) && s.NetLiquidation > 0 ? s.MaintMarginReq / s.NetLiquidation * 100 : null;
+    const items = [["Net liquidation", s.NetLiquidation], ["Cash", s.TotalCashValue], ["Buying power", s.BuyingPower], ["Excess liquidity", s.ExcessLiquidity], ["Position value", s.GrossPositionValue]];
+    out.push(`<div class="sub"><h3>${esc(lab)} <span class="muted">${esc(id)} · ${A.positions && A.positions[id] ? A.positions[id] + " option positions" : "no option positions"}</span></h3>
+      <div class="kv">${items.map(([k, v]) => `<div><span class="lbl">${k}</span><b>${money(v)}</b></div>`).join("")}</div>
+      <div class="btrack" style="height:12px" title="Maintenance margin ${money(s.MaintMarginReq)} of ${money(s.NetLiquidation)} ${esc(cur)}"><span style="width:${Math.min(100, used || 0)}%;background:var(${used >= 75 ? "--down" : used >= 50 ? "--warn" : "--s1"})"></span><em style="left:50%;opacity:.4"></em><em style="left:75%;opacity:.4"></em></div>
+      <span class="small muted">Maintenance margin ${fmt(used, 1)}% of net liquidation · amounts in ${esc(cur)} · ticks at 50% and 75%</span></div>`);
+  });
+  const F = A.fills || [];
+  if (F.length) {
+    const g = new Map(); F.forEach((x) => { const k = x.account + "|" + x.order_id; if (!g.has(k)) g.set(k, []); g.get(k).push(x); });
+    const fills = [...g.values()].map((legs) => { const f = legs[0], amt = (l) => l.qty * l.price * (l.mult || 1);
+      return {time: f.time || "", acct: (A.labels && A.labels[f.account]) || f.account, sym: f.symbol, type: f.sec_type, legs: new Set(legs.map((l) => l.local)).size,
+        contracts: legs.reduce((s2, l) => s2 + l.qty, 0), net: legs.reduce((s2, l) => s2 + (l.side === "SLD" ? amt(l) : -amt(l)), 0), comm: legs.reduce((s2, l) => s2 + (l.commission || 0), 0), cur: "", rp: 0}; })
+      .sort((a, b) => a.time.localeCompare(b.time));
+    const df = new Intl.DateTimeFormat(undefined, {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+    out.push(`<div class="sub"><h3>Fills TWS returned · net premium per order</h3><div class="chart" id="fillChart"></div>${legend([["Credit received", "var(--up)", 1], ["Debit paid", "var(--down)", 1]])}</div>`);
+    out.push(`<div class="tbl"><table><thead><tr><th>Time</th><th>Account</th><th>Symbol</th><th>Type</th><th class="n">Legs</th><th class="n">Contracts</th><th class="n">Net premium</th><th class="n">Commission</th></tr></thead><tbody>${
+      fills.slice().reverse().map((r) => `<tr><td class="mono small">${esc(r.time ? df.format(new Date(r.time)) : "–")}</td><td>${esc(r.acct)}</td><td>${esc(r.sym)}</td><td>${esc(r.type)}</td><td class="n">${r.legs}</td><td class="n">${r.contracts}</td><td class="n ${cls(r.net)}">${money(r.net)}</td><td class="n">${money(r.comm)}</td></tr>`).join("")
+    }</tbody></table></div><span class="small muted">TWS returns the current trading day's fills (more if TWS keeps a longer trade log). Net premium = sells minus buys, multiplier included, before commission.</span>`);
+    $("acctBody").innerHTML = out.join(""); drawFills(fills);
+  } else { out.push(`<div class="state">No fills returned by TWS for today.</div>`); $("acctBody").innerHTML = out.join(""); }
+  bindAcct();
+}
+function bindAcct() {
+  const b = $("acctRefresh"); if (!b) return;
+  b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Refreshing…";
+    await fetch("/api/risk/refresh", {method: "POST"});
+    for (let i = 0; i < 90; i++) { await sleep(2000); const st = await (await fetch("/api/risk/status")).json(); if (!st.running) break; }
+    runSection(SEC.acct);
+  });
+}
+function drawFills(F) {
+  const el = $("fillChart");
+  mount(el, (W) => {
+    const H = 170, mL = 52, mR = 10, mT = 10, mB = 22, pw = W - mL - mR, ph = H - mT - mB;
+    const mx = Math.max(...F.map((f) => Math.abs(f.net)), 1), ticks = niceTicks(-mx, mx, 4), lo = Math.min(-mx, ticks[0]), hi = Math.max(mx, last(ticks));
+    const Y = (v) => mT + ph - (v - lo) * ph / (hi - lo), slotW = pw / F.length, bw = Math.max(3, Math.min(28, slotW - 2));
+    const X = (i) => mL + (i + 0.5) * slotW;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Net premium per order">`;
+    ticks.forEach((v) => { s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k" : v}</text>`; });
+    F.forEach((f, i) => { const y0 = Y(0), y1 = Y(f.net), top = Math.min(y0, y1), hgt = Math.max(1, Math.abs(y1 - y0));
+      s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="2" fill="var(${f.net >= 0 ? "--up" : "--down"})"/>`;
+      s += `<rect class="hb" data-i="${i}" x="${(X(i) - slotW / 2).toFixed(1)}" y="${mT}" width="${slotW.toFixed(1)}" height="${ph}" fill="transparent"/>`; });
+    [0, F.length - 1].forEach((i, k) => { if (F[i] && F[i].time && (k === 0 || F.length > 1)) s += `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="${k ? "end" : "start"}">${shortDate(F[i].time.slice(0, 10))}</text>`; });
+    el.innerHTML = s + "</svg>";
+    el.querySelectorAll(".hb").forEach((rc) => { const f = F[+rc.dataset.i];
+      const h = (ev) => showTip(`<div>${esc(f.time ? new Date(f.time).toLocaleString() : "")}</div><div>${esc(f.sym)} ${esc(f.type)} · ${f.legs} legs · ${f.contracts} contracts</div><div>Net premium <b>${money(f.net, f.cur)}</b></div>`, ev.clientX, ev.clientY);
+      rc.addEventListener("pointermove", h); rc.addEventListener("pointerdown", h); rc.addEventListener("pointerleave", hideTip); });
+  });
+}
+
+/* ============================ Watchlist ============================ */
+const DEFAULT_WATCH = ["AMEX:SPY", "NASDAQ:QQQ", "AMEX:IWM", "AMEX:XLK"];
+let watch = DEFAULT_WATCH.slice(), watchIsExample = true;
+try { const sv = JSON.parse(localStorage.getItem("md.watch") || "null"); if (Array.isArray(sv)) { watch = sv; watchIsExample = false; } } catch (e) {}
+const saveWatch = () => { watchIsExample = false; try { localStorage.setItem("md.watch", JSON.stringify(watch)); } catch (e) {} };
+
+function stfs(w, d) {
+  const cw = w.c, f = ema(cw, 8), m = ema(cw, 21), s = ema(cw, 34), h = hma(cw, 15);
+  const kind = []; let lastLS = null, lastSS = null, prevL = false, prevS = false;
+  for (let i = 0; i < cw.length; i++) {
+    if (f[i] == null || m[i] == null || s[i] == null || h[i] == null || i === 0 || h[i - 1] == null) { kind.push(0); prevL = prevS = false; continue; }
+    const up = h[i] > h[i - 1], dn = h[i] < h[i - 1];
+    const lc = f[i] > s[i] && cw[i] > m[i] && up, sc = f[i] < s[i] && cw[i] < m[i] && dn;
+    const lr = f[i] < s[i] && cw[i] > m[i] && up, sr = f[i] > s[i] && cw[i] < m[i] && dn;
+    if (lr && !prevL) lastLS = i; if (sr && !prevS) lastSS = i; prevL = lr; prevS = sr;
+    kind.push(lc ? 1 : sc ? -1 : lr && lastLS != null && i - lastLS < 3 ? 2 : sr && lastSS != null && i - lastSS < 3 ? -2 : 0);
+  }
+  const shortMonth = (t) => [4, 5, 9, 10].includes(new Date(t * 1000).getUTCMonth() + 1);
+  const c = d.c, eF = ema(c, 8), eS = ema(c, 34), eM = ema(c, 21), hu = hma(c, 15), atr = rma(tr(d), 14);
+  let armed = null, armedBar = null, armedKind = 0, out = {k: 0}, wi = 0;
+  for (let i = 2; i < c.length; i++) {
+    while (wi + 1 < w.t.length && w.t[wi + 1] <= d.t[i]) wi++;
+    const k = wi >= 1 && w.t[wi] <= d.t[i] ? kind[wi - 1] : 0, dir = k > 0 ? 1 : k < 0 ? -1 : 0, type = Math.abs(k);
+    const weeklyOK = k !== 0 && (dir !== -1 || shortMonth(d.t[i]));
+    if (hu[i] == null || hu[i - 1] == null || hu[i - 2] == null || eM[i] == null || eS[i] == null) continue;
+    const hUp = hu[i] > hu[i - 1], hDn = hu[i] < hu[i - 1];
+    const longOK = c[i] > eM[i] && hUp && (type === 2 || eF[i] > eS[i]), shortOK = c[i] < eM[i] && hDn && (type === 2 || eF[i] < eS[i]);
+    const dailyOK = weeklyOK && (dir === 1 ? longOK : shortOK);
+    if (armed != null && (!dailyOK || k !== armedKind || i - armedBar > 5)) { armed = null; armedBar = null; armedKind = 0; }
+    const fresh = dir === 1 ? hUp && hu[i - 1] <= hu[i - 2] : hDn && hu[i - 1] >= hu[i - 2];
+    if (dailyOK && fresh) { armed = dir === 1 ? d.h[i] + 0.01 : d.l[i] - 0.01; armedBar = i; armedKind = k; }
+    const active = dailyOK && k === armedKind && armed != null, breaking = active && i > armedBar && (dir === 1 ? c[i] >= armed : c[i] <= armed);
+    const dist = active && atr[i] > 0 ? dir * (armed - c[i]) / atr[i] : null;
+    out = {k, weeklyOK, active, breaking, trigger: active ? armed : null, dist, near: active && !breaking && dist >= 0 && dist <= 0.5};
+    if (breaking) { armed = null; armedBar = null; armedKind = 0; }
+  }
+  return {...out, weekKindLatest: last(kind), eM, hu};
+}
+async function evalSymbol(sym, spy) {
+  const [d, w] = await Promise.all([bars(sym, "1D", 320), bars(sym, "1W", 160)]);
+  const st = stfs(w, d), c = d.c, i = c.length - 1;
+  const m = sma(c, 20), sd = stdev(c, 20), r = rsi(c, 14)[i];
+  const bb = ok(m[i]) && ok(r) ? (c[i] < m[i] - 2 * sd[i] && r < 30 ? "put" : c[i] > m[i] + 2 * sd[i] && r > 70 ? "call" : null) : null;
+  const sp0 = at(spy, spy.c, d.d[i]), sp20 = d.d[i - 20] ? at(spy, spy.c, d.d[i - 20]) : null;
+  const rs = sp0 && sp20 && c[i - 20] ? ((c[i] / c[i - 20]) - (sp0 / sp20)) * 100 : null;
+  return {sym, bars: d, st, bb, rsiV: r, rs, bbU: m.map((x, k) => ok(x) ? x + 2 * sd[k] : null), bbL: m.map((x, k) => ok(x) ? x - 2 * sd[k] : null)};
+}
+const KIND = {1: ["Long continuation", "pos"], "-1": ["Short continuation", "neg"], 2: ["Long early reversal", "pos"], "-2": ["Short early reversal", "neg"], 0: ["No weekly setup", "muted"]};
+function renderTags() {
+  $("watchTags").innerHTML = (watchIsExample ? `<span class="small muted">Example list, edit freely:</span>` : "") +
+    watch.map((s, i) => `<span class="tag">${esc(s)}<button type="button" data-i="${i}" aria-label="Remove ${esc(s)}">×</button></span>`).join("");
+  $("watchTags").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { watch.splice(+b.dataset.i, 1); saveWatch(); renderTags(); runSection(SEC.watch); }));
+}
+async function loadWatch() {
+  if (!watch.length) { $("watchBody").innerHTML = `<div class="state">Add a symbol above to see its STFS state, BB + RSI flag and RS vs SPY.</div>`; return; }
+  const spy = await bars("AMEX:SPY");
+  const res = await Promise.allSettled(watch.map((s) => evalSymbol(s, spy)));
+  $("watchBody").innerHTML = `<div class="cards">${res.map((r, k) => {
+    if (r.status !== "fulfilled") return `<div class="card"><div class="hd"><span class="sym">${esc(watch[k])}</span></div><span class="neg small">${esc((r.reason && r.reason.message) || "unavailable")}. Check the EXCHANGE:TICKER spelling.</span></div>`;
+    const x = r.value, s = x.st, wk = KIND[s.weekKindLatest ?? 0], c = x.bars.c, i = c.length - 1;
+    const status = !s.k ? ["No eligible weekly setup", "muted"] : !s.weeklyOK ? ["Short-month filter: blocked", "muted"] : s.breaking ? ["Entry: at or past trigger", "acc"] : s.near ? ["Near trigger", "acc"] : s.active ? ["Armed, waiting for trigger", "pos"] : ["Weekly OK, wait for HMA turn", "muted"];
+    return `<div class="card"><div class="hd"><span class="sym">${esc(x.sym)}</span><span class="mono">${fmt(c[i])} <span class="small ${cls(ret(c, i, 1))}">${sgn(ret(c, i, 1), 2)}%</span></span></div>
+      <div class="row"><span class="chip ${wk[1]}">${wk[0]}</span>${x.bb === "put" ? `<span class="chip pos">BB+RSI put spread</span>` : x.bb === "call" ? `<span class="chip neg">BB+RSI call spread</span>` : ""}</div>
+      <div class="chart" id="wc${k}"></div>
+      <div class="small"><span class="${status[1]}">${status[0]}</span>${ok(s.trigger) ? ` · trigger <b class="mono">${fmt(s.trigger)}</b> · ${fmt(s.dist)} ATR away` : ""}</div>
+      <div class="small muted">RSI ${fmt(x.rsiV, 1)} · RS 20D vs SPY <span class="${cls(x.rs)}">${sgn(x.rs)} pp</span></div></div>`;
+  }).join("")}</div>${legend([["Close", "var(--ink)"], ["21 EMA", "var(--accent)"], ["HMA 15 rising", "var(--up)"], ["HMA 15 falling", "var(--warn)"], ["Bollinger 20, 2", "color-mix(in srgb, var(--s1) 25%, var(--panel))", 1]])}`;
+  res.forEach((r, k) => {
+    if (r.status !== "fulfilled") return;
+    const x = r.value, n = Math.min(60, x.bars.c.length), dates = x.bars.d.slice(-n);
+    const hu = x.st.hu.slice(-n), huUp = hu.map((v, i) => i > 0 && ok(v) && ok(hu[i - 1]) && v > hu[i - 1] ? v : null), huDn = hu.map((v, i) => i > 0 && ok(v) && ok(hu[i - 1]) && v <= hu[i - 1] ? v : null);
+    for (let i = 1; i < n; i++) { if (huUp[i] != null && huUp[i - 1] == null) huUp[i - 1] = hu[i - 1]; if (huDn[i] != null && huDn[i - 1] == null) huDn[i - 1] = hu[i - 1]; }
+    lineChart($("wc" + k), {label: x.sym + " daily", h: 120, dates, ticks: 3, band: {lo: x.bbL.slice(-n), hi: x.bbU.slice(-n)},
+      series: [{name: "Close", vals: x.bars.c.slice(-n), color: "var(--ink)", width: 1.5}, {name: "21 EMA", vals: x.st.eM.slice(-n), color: "var(--accent)", width: 1.2},
+               {name: "HMA rising", vals: huUp, color: "var(--up)", width: 2, tip: false}, {name: "HMA falling", vals: huDn, color: "var(--warn)", width: 2, tip: false}],
+      refs: ok(x.st.trigger) ? [{y: x.st.trigger, label: "trig", color: "var(--accent)"}] : [], fy: (v) => v.toFixed(v < 20 ? 2 : 0), ft: (v) => v.toFixed(2)});
+  });
+}
+$("watchForm").addEventListener("submit", (e) => {
+  e.preventDefault(); const inp = $("watchInput"), v = inp.value.trim().toUpperCase(); if (!v) return;
+  if (!v.includes(":")) { inp.setCustomValidity("Use EXCHANGE:TICKER, e.g. NASDAQ:AAPL"); inp.reportValidity(); return; }
+  inp.setCustomValidity("");
+  if (!watch.includes(v)) { if (watchIsExample) watch = []; watch.push(v); saveWatch(); }
+  inp.value = ""; renderTags(); runSection(SEC.watch);
+});
+$("watchInput").addEventListener("input", () => $("watchInput").setCustomValidity(""));
+
+/* ============================ Orchestration ======================== */
+const SEC = {
+  warn: {id: "warnBody", panel: "pWarn", fn: loadWarnings, what: "market warnings", srv: TV},
+  breadth: {id: "breadthBody", panel: "pBreadth", fn: loadBreadth, what: "breadth", srv: TV},
+  vol: {id: "volBody", panel: "pVol", fn: loadVol, what: "volatility", srv: TV},
+  sect: {id: "sectBody", panel: "pSect", fn: loadSectors, what: "sectors", srv: TV},
+  acct: {id: "acctBody", panel: "pAcct", fn: loadAccount, what: "account", srv: IB},
+  cal: {id: "calBody", panel: "pCal", fn: loadCalendar, what: "calendar", srv: TV},
+  cross: {id: "crossBody", panel: "pCross", fn: loadCross, what: "cross-asset", srv: TV},
+  watch: {id: "watchBody", panel: "pWatch", fn: loadWatch, what: "watchlist", srv: TV}};
+async function runSection(sec) {
+  const panel = $(sec.panel); panel.classList.add("stale");
+  try { await sec.fn(); return true; }
+  catch (e) {
+    const err = e && e.code ? e : {code: "other", server: sec.srv, message: (e && e.message) || String(e)};
+    $(sec.id).innerHTML = errorHtml(err, sec.what).replace(/<\/div>$/, ` <button type="button" class="ghost" data-retry="1">Retry</button></div>`);
+    const b = $(sec.id).querySelector("[data-retry]"); if (b) b.addEventListener("click", () => runSection(sec));
+    return false;
+  } finally { panel.classList.remove("stale"); }
+}
+let busy = false;
+async function refreshAll(fresh) {
+  if (busy) return; busy = true; $("refresh").disabled = true; forceFresh = !!fresh; memo = new Map(); oldestStamp = null;
+  $("updated").textContent = "Updating…";
+  const order = [SEC.warn, SEC.breadth, SEC.vol, SEC.acct, SEC.sect, SEC.cal, SEC.cross, SEC.watch];
+  window.loadVixCond && window.loadVixCond($("vcBody"), true);
+  const results = await Promise.all(order.map(runSection));
+  renderRegime();
+  const failed = results.filter((x) => !x).length;
+  const t = oldestStamp ? new Date(oldestStamp) : new Date();
+  $("updated").textContent = `${DEMO ? "Demo" : "Fetched"} ${t.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}${S.spy && S.spy.d ? ` · prices to the ${shortDate(last(S.spy.d))} close` : ""}${failed ? ` · ${failed} section${failed > 1 ? "s" : ""} need a retry` : ""}`;
+  forceFresh = false; busy = false; $("refresh").disabled = false;
+  scheduleNext();
+}
+$("refresh").addEventListener("click", () => refreshAll(true));
+
+/* auto-refresh: chosen interval, paused while the tab is hidden, countdown in the header */
+let autoMin = 10, nextAt = null, live = false;
+try { const v = +localStorage.getItem("md.autoMin"); if ([0, 5, 10, 15, 30].includes(v) && localStorage.getItem("md.autoMin") !== null) autoMin = v; } catch (e) {}
+$("autoSel").value = String(autoMin);
+function scheduleNext() { nextAt = live && autoMin > 0 ? Date.now() + autoMin * 60000 : null; tick(); }
+function tick() {
+  if (!nextAt) { $("nextIn").textContent = ""; return; }
+  const ms = Math.max(0, nextAt - Date.now()), m = Math.floor(ms / 60000), sec = Math.floor(ms / 1000) % 60;
+  $("nextIn").textContent = document.hidden ? "paused" : `next in ${m}:${String(sec).padStart(2, "0")}`;
+  if (ms === 0 && !document.hidden && !busy) refreshAll(false);
+}
+setInterval(tick, 1000);
+document.addEventListener("visibilitychange", tick);
+$("autoSel").addEventListener("change", () => { autoMin = +$("autoSel").value; try { localStorage.setItem("md.autoMin", String(autoMin)); } catch (e) {} scheduleNext(); });
+renderTags();
+
+(async () => {
+  mcp = true;  // local data layer: no connectors needed
+  live = true;
+  await refreshAll(false);
+})();
+})();
+</script>

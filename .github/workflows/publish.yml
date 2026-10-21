@@ -1,0 +1,52 @@
+name: Publish cloud copy
+
+# Market-data-only copy of the desk on GitHub Pages. No TWS, no account data.
+# If the data fails validation the job fails and the previous site stays up.
+on:
+  schedule:
+    - cron: "*/30 13-21 * * 1-5"   # every 30 min across US market hours (UTC)
+    - cron: "40 22 * * *"           # once after the close, and at weekends
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: cloud/requirements.txt
+      - run: pip install -r cloud/requirements.txt
+      - name: Restore cached market data
+        uses: actions/cache@v4
+        with:
+          path: cloud/data
+          key: desk-data-${{ github.run_id }}
+          restore-keys: desk-data-
+      - name: Build and validate
+        run: python cloud/build.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

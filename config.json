@@ -1,0 +1,49 @@
+{
+  "port": 8810,
+  "tws": {
+    "host": "127.0.0.1",
+    "port": 7496,
+    "client_id": 41
+  },
+  "symbols": {
+    "SPX": {
+      "exchange": "CBOE",
+      "trading_class": "SPXW",
+      "step": 5
+    },
+    "RUT": {
+      "exchange": "RUSSELL",
+      "trading_class": "RUTW",
+      "step": 5
+    }
+  },
+  "record": {
+    "time_et": "15:40",
+    "all_expiries_to_dte": 21,
+    "fridays_to_dte": 75,
+    "monthlies_to_dte": 200
+  },
+  "trade_files": {
+    "one_glob": [
+      "~/Documents/*-ONESummaryReport.csv",
+      "~/Downloads/*-ONESummaryReport.csv"
+    ],
+    "optionstrat_glob": [
+      "~/Downloads/all-expired-by-symbol-*.xlsx"
+    ],
+    "one_start": "2026-06-01"
+  },
+  "risk": {
+    "client_id": 42,
+    "account_map": {},
+    "account_labels": {},
+    "cash_flows": [],
+    "_cash_flows_example": {
+      "date": "2026-01-14",
+      "account": "U1234567",
+      "amount": 10000,
+      "note": "deposits positive, withdrawals negative; US session date"
+    },
+    "_note": "Put your account_map (ONE account group -> IBKR account), account_labels and cash_flows in config.local.json (not uploaded)."
+  }
+}

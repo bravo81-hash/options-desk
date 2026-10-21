@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market &amp; Options Desk</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="compact.css">
+<link rel="stylesheet" href="vixcond.css">
+<script>try { const t = localStorage.getItem("od.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Market &amp; Options Desk</h1>
+      <div class="muted small">Market regime, breadth, sectors, accounts, SPX / RUT vol, calendars, skew and risk · TWS read-only · no orders</div>
+    </div>
+    <div id="freshBar" class="freshbar" title="date of each data source vs the latest US close"></div>
+    <button type="button" class="ghost themeBtn" id="themeBtn" title="Theme: follow Windows, light, or dark">Auto</button>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="market" aria-selected="true">Market</button>
+      <button role="tab" data-tab="pick">Today's pick</button>
+      <button role="tab" data-tab="today">Term structure</button>
+      <button role="tab" data-tab="cal">Calendar scanner</button>
+      <button role="tab" data-tab="skew">Skew &amp; IV</button>
+      <button role="tab" data-tab="risk">Risk grid</button>
+      <button role="tab" data-tab="em">Expected moves</button>
+      <button role="tab" data-tab="season">Seasonality</button>
+      <button role="tab" data-tab="a14">A14 scanner</button>
+      <button role="tab" data-tab="pnl">P&amp;L &amp; Recon</button>
+      <button role="tab" data-tab="evidence">Evidence</button>
+      <button role="tab" data-tab="rec">Recorder</button>
+      <button role="tab" data-tab="guide">Guide</button>
+    </nav>
+  </header>
+  <div class="readybar" id="readyBar"><span class="lbl">Trade readiness</span><span class="small muted">working it out…</span></div>
+  <section class="panel modalp" id="rdPanel" hidden><header><h2>Trade readiness</h2><button type="button" class="ghost mclose">Close</button></header><div id="rdBody"></div></section>
+
+  <!-- MARKET (former Market Desk) -->
+  <section class="tab" id="tab-market">
+    <iframe id="mdFrame" src="/market" title="Market" style="width:100%;border:0;display:block;min-height:300px" scrolling="no"></iframe>
+  </section>
+
+  <!-- TERM STRUCTURE -->
+  <section class="tab" id="tab-today" hidden>
+    <div class="strip" id="todayStrip"></div>
+    <div class="grid" data-subs id="tab-today-grid">
+      <section class="panel c6" data-sub="Now"><header><h2>SPX term structure</h2><span class="small muted">CBOE fixed-maturity vol indices</span></header><div class="chart" id="termCurve"></div><div id="termLegend"></div></section>
+      <section class="panel c6" data-sub="Now"><header><h2>VIX / VIX3M</h2><span class="small muted">2 years · dashed lines at 0.83 and 1.00</span></header><div class="chart" id="ratioChart"></div><p class="note" id="ratioNote"></p></section>
+      <section class="panel c12" data-sub="Gates"><header><h2>Strategy gates</h2><span class="small muted">rule checks folded in from your Calendar-Scanner · information only</span></header><div class="cards" id="gates"></div></section>
+      <section class="panel c12" data-sub="History"><header><h2>Front vs 30-day vs 3-month vol</h2><span class="small muted">VIX9D, VIX, VIX3M · 2 years</span></header><div class="chart" id="vixHist"></div><div id="vixLegend"></div></section>
+    </div>
+  </section>
+
+  <!-- CALENDAR -->
+  <section class="tab" id="tab-cal" hidden>
+    <div class="panel">
+      <form class="row" id="calForm">
+        <label class="lbl" for="calSym">Underlying</label>
+        <select id="calSym"><option>SPX</option><option>RUT</option></select>
+        <label class="lbl" for="calRank">Rank by</label>
+        <select id="calRank">
+          <option value="contango">Contango (back − front IV)</option>
+          <option value="z">Contango z-score (maturity-matched)</option>
+          <option value="fwd_premium">Forward premium (fwd vol − front IV)</option>
+          <option value="fwd_vs_rv">Forward vol − realized 20d</option>
+        </select>
+        <label class="lbl" for="fmin">Front DTE</label><input id="fmin" type="number" value="3" min="1" max="120"> – <input id="fmax" type="number" value="45" min="1" max="200">
+        <label class="lbl" for="gmin">Gap</label><input id="gmin" type="number" value="5" min="1" max="120"> – <input id="gmax" type="number" value="60" min="1" max="200">
+        <button type="submit">Scan</button>
+        <span class="small muted" id="calMeta"></span>
+      </form>
+    </div>
+    <div class="grid" data-subs id="tab-cal-grid">
+      <section class="panel c5" data-sub="Scanner"><header><h2>Pair heatmap</h2><span class="small muted" id="heatNote">rows = front expiry, columns = back expiry · click a cell</span></header><div class="chart" id="heat"></div><div id="heatLegend"></div></section>
+      <section class="panel c7 scrollp" data-sub="Scanner"><header><h2>Top pairs</h2><span class="small muted">click a column to sort · click a row for history</span></header><div id="pairTable"></div>
+        <p class="note">Contango = back ATM IV − front ATM IV. Forward vol = the vol implied between the two expiries, √((σ²ᵦTᵦ − σ²ꜰTꜰ)/(Tᵦ − Tꜰ)); forward premium = forward vol − front IV. Z-score compares today's contango for the same front/back maturities with the last year: from CBOE's VIX9D…VIX1Y curve for SPX now, and from your own recorded surface once 20 sessions exist (RUT needs recorded history). Debit = ATM put calendar from the snapshot's mids.</p></section>
+      <section class="panel modalp" id="pairPanel" hidden><header><h2>Selected pair</h2><button type="button" class="ghost mclose">Close</button></header><div id="pairBox"></div></section>
+      <section class="panel c12" data-sub="Gates"><header><h2>Strategy gates</h2></header><div class="cards" id="calGates"></div></section>
+    </div>
+  </section>
+
+  <!-- SKEW -->
+  <section class="tab" id="tab-skew" hidden>
+    <div class="panel"><form class="row" id="skewForm">
+      <label class="lbl" for="skSym">Underlying</label><select id="skSym"><option>SPX</option><option>RUT</option></select>
+      <label class="lbl" for="skTen">Maturity</label><select id="skTen"><option value="14">14 days</option><option value="30" selected>30 days</option><option value="45">45 days</option><option value="60">60 days</option></select>
+      <button type="submit">Show</button><span class="small muted" id="skMeta"></span></form></div>
+    <div class="grid" data-subs id="tab-skew-grid">
+      <section class="panel c12" data-sub="Metrics"><header><h2>Recorded surface metrics</h2><span class="small muted">from your daily snapshots · z-scores start after 20 sessions</span></header><div class="kv" id="skCur"></div></section>
+      <section class="panel c12" data-sub="Metrics"><header><h2>Long-history proxies</h2><span class="small muted">available today: IBKR IV30 (5 years) and CBOE indices</span></header><div class="kv" id="skProxy"></div></section>
+      <section class="panel c6" data-sub="Charts"><header><h2>Vol by expiry today</h2><span class="small muted">ATM, 25Δ / 10Δ put, 25Δ call</span></header><div class="chart" id="skTerm"></div><div id="skTermLegend"></div></section>
+      <section class="panel c6" data-sub="Charts"><header><h2>History</h2><select id="skHistSel" aria-label="History series"></select></header><div class="chart" id="skHist"></div></section>
+    </div>
+  </section>
+
+  <!-- RISK GRID -->
+  <section class="tab" id="tab-risk" hidden>
+    <div class="panel">
+      <form class="row" id="riskForm" onsubmit="return false">
+        <label class="lbl" for="rkAcct">Account</label><select id="rkAcct"><option value="">All</option></select>
+        <label class="lbl" for="rkDays">Date</label><input id="rkDays" type="range" min="0" max="60" value="7" step="1"><span class="mono small" id="rkDaysTxt"></span>
+        <label class="lbl" for="rkVol">IV shift</label><input id="rkVol" type="range" min="-10" max="10" value="0" step="1"><span class="mono small" id="rkVolTxt"></span>
+        <label class="lbl" for="rkRange">Range ±</label><select id="rkRange"><option value="4">4%</option><option value="6">6%</option><option value="8" selected>8%</option><option value="12">12%</option><option value="20">20%</option></select>
+        <label class="lbl" for="rkBeta">RUT beta</label><input id="rkBeta" type="number" value="1.2" min="0" max="3" step="0.1">
+        <button id="rkRefresh" type="button">Refresh marks from TWS</button>
+        <span class="small muted" id="rkMeta"></span>
+      </form>
+    </div>
+    <div id="rkStale"></div>
+    <div class="strip" id="rkStrip"></div>
+    <div class="grid" data-subs id="tab-risk-grid">
+      <section class="panel c12" data-sub="Open trades"><header><h2>Open trades</h2><span class="small muted">returns as % of ONE margin · today's return = change since the prior close (last session when the market is shut) · click a row for its risk graph</span></header><div id="rkTable"></div></section>
+      <section class="panel c12" data-sub="Capital use"><header><h2>Capital use</h2><span class="small muted">margin and days tied up by DTE at entry · return per day held, against your closed A14s</span></header><div id="rkCapital"></div></section>
+      <section class="panel c12" data-sub="Book graph"><header><h2>Whole book vs market move</h2><span class="small muted" id="rkBookNote">SPX moves x%, RUT moves beta × x%, stocks move x%</span></header><div class="chart" id="rkBook"></div><div id="rkBookLegend"></div></section>
+      <div class="c12" data-sub="Trade cards" id="rkGroups"></div>
+      <section class="panel modalp" id="rkDetailPanel" hidden><header><h2 id="rkDetailTitle">Trade</h2><button type="button" class="ghost" id="rkClose">Close</button></header><div class="chart" id="rkDetailChart"></div><div id="rkDetailLegend"></div><div id="rkDetailLegs"></div></section>
+    </div>
+
+    <p class="note">Positions and trade grouping from your newest ONE Summary Report; marks and implied vols from TWS (read-only). P&amp;L now = ONE's realised P&amp;L and commissions + open legs at TWS mid. Curves reprice each open leg with Black-Scholes at its own IV (sticky strike), no rates or dividends; the solid line is today, dashed is the chosen date, the thin line is the trade's first expiry. Margin is ONE's figure.</p>
+  </section>
+
+  <!-- P&L AND RECONCILIATION (folded in from TWS Matcher) -->
+  <!-- TODAY'S PICK -->
+  <section class="tab" id="tab-pick" hidden>
+    <div class="panel"><form class="row" id="pkForm">
+      <label class="lbl" for="pkExit">Exit after</label><input id="pkExit" type="number" value="14" min="2" max="60"> days
+      <label class="lbl" for="pkVol">Odds from</label><select id="pkVol"><option value="rv20">realised 20d</option><option value="iv">implied (ATM)</option></select>
+      <button type="submit">Update</button><button type="button" class="ghost" id="pkFetch">Fetch chain from TWS</button>
+      <span class="small muted" id="pkMeta"></span></form></div>
+    <section class="panel"><header><h2>VIX conditions</h2><span class="small muted">what VIX, SPX, RUT and credit are doing now, what followed historically, and the size that implies</span></header><div id="vcBody"></div></section>
+    <div id="pkBody"></div>
+  </section>
+
+  <!-- EXPECTED MOVES -->
+  <section class="tab" id="tab-em" hidden>
+    <div class="panel"><div class="row"><button type="button" id="emRefresh">Refresh from TWS</button><span class="small muted" id="emMeta"></span>
+      <span class="small muted">Every underlying you hold (open ONE trades + stock positions). 1σ = spot × ATM IV × √(days/365); your strikes are shown in σ from spot.</span></div></div>
+    <div class="grid" id="emBody" data-subs></div>
+  </section>
+
+  <!-- SEASONALITY -->
+  <section class="tab" id="tab-season" hidden>
+    <div class="panel"><form class="row" id="seForm">
+      <label class="lbl" for="seSym">Index</label><select id="seSym"><option value="SPX">S&amp;P 500</option><option value="NDX">Nasdaq-100</option><option value="RUT">Russell 2000</option><option value="DJI">Dow Jones</option><option value="VIX">VIX (points)</option></select>
+      <label class="lbl" for="seYears">Years</label><select id="seYears"><option value="10">last 10</option><option value="20" selected>last 20</option><option value="30">last 30</option><option value="50">last 50</option><option value="0">all</option></select>
+      <label class="lbl" for="seCycle">Which years</label><select id="seCycle"><option value="all">every year</option><option value="same">same presidential-cycle year as now</option></select>
+      <span class="small muted" id="seMeta"></span></form></div>
+    <div class="strip" id="seStrip"></div>
+    <div class="grid" data-subs id="tab-season-grid">
+      <section class="panel c8" data-sub="Path &amp; ahead"><header><h2>Seasonal path vs this year</h2><span class="small muted">% from the prior year's close, by trading day · hover for the date</span></header><div class="chart" id="sePath"></div><div id="sePathLegend"></div></section>
+      <section class="panel c4" data-sub="Path &amp; ahead"><header><h2>From today's date</h2><span class="small muted" id="seFwdNote"></span></header><div id="seFwd"></div></section>
+      <section class="panel c5" data-sub="Months"><header><h2>Average month</h2><span class="small muted">mean return · % of years up · realised vol · VIX change</span></header><div id="seMonths"></div></section>
+      <section class="panel c7" data-sub="Months"><header><h2>Every year, every month</h2><span class="small muted">monthly return % · this year on top</span></header><div class="tbl" id="seTable"></div></section>
+      <section class="panel c6" data-sub="Days &amp; cycle"><header><h2>Turn of the month</h2><span class="small muted">average daily return on the last 5 and first 5 trading days</span></header><div id="seTom"></div></section>
+      <section class="panel c6" data-sub="Days &amp; cycle"><header><h2>Weekday · presidential cycle</h2></header><div id="seWd"></div><div id="seCyc" style="margin-top:8px"></div></section>
+    </div>
+  </section>
+
+  <!-- A14 SCANNER -->
+  <section class="tab" id="tab-a14" hidden>
+    <div class="panel">
+      <form class="row" id="a14Form">
+        <label class="lbl" for="a14Sym">Underlying</label><select id="a14Sym"><option value="SPX,RUT">SPX + RUT</option><option>SPX</option><option>RUT</option></select>
+        <label class="lbl" for="a14Dmin">DTE</label><input id="a14Dmin" type="number" value="10" min="1" max="200"> – <input id="a14Dmax" type="number" value="100" min="1" max="200">
+        <label class="lbl" for="a14Exit" title="days until you plan to close or roll">Exit after</label><input id="a14Exit" type="number" value="14" min="1" max="120"> days
+        <label class="lbl" for="a14Vol" title="volatility for the odds at the exit date">Odds from</label><select id="a14Vol"><option value="rv20">realised 20d</option><option value="iv">implied (ATM)</option><option value="custom">custom %</option></select><input id="a14VolC" type="number" value="15" min="3" max="80" hidden>
+        <label class="lbl" for="a14Cr" title="minimum net credit per lot in points; -1 allows up to a 1-point debit">Min credit</label><input id="a14Cr" type="number" value="-1" step="0.5">
+        <label class="lbl" for="a14UpLo" title="where the upper long sits, % from spot">Upper long</label><input id="a14UpLo" type="number" value="-1.5" step="0.5"> to <input id="a14UpHi" type="number" value="1" step="0.5"> %
+        <label class="lbl" for="a14Sort">Rank by</label><select id="a14Sort"></select>
+        <label class="small"><input type="checkbox" id="a14Usual"> your usual shapes only</label>
+        <button type="submit">Scan</button><button type="button" id="a14Fetch">Fetch chain from TWS</button>
+      </form>
+      <div class="small muted" id="a14Meta" style="margin-top:6px"></div>
+      <div id="a14Trend" style="margin-top:10px"></div>
+    </div>
+    <div class="grid" data-subs id="tab-a14-grid">
+      <section class="panel c4" data-sub="Scanner"><header><h2>Where the edge is</h2><span class="small muted" id="a14HeatNote"></span></header><div class="chart" id="a14Heat"></div></section>
+      <section class="panel c8 scrollp" data-sub="Scanner"><header><h2>Top setups</h2><span class="small muted">put BWB, 1 lot = +1 upper / −2 short / +1 lower · $ per lot · click a column to rank, a row for its risk graph</span></header><div id="a14Table"></div>
+        <p class="note">Priced from a live TWS chain (frozen closing quotes outside market hours): own IV from mids off the put-call-parity forward, one smile per expiry, every leg priced from it. The exit scenario holds each strike's IV (sticky strike) and lets time pass; the odds use a lognormal with the chosen volatility, which understates crash risk, so check the −1σ column and the risk graph too. "Your usual" = upper long within ±1% of spot and short 0.5–3.5% below, like your A14 entries in ONE. Risk = the loss below the lower wing (or the debit, if larger).</p></section>
+      <section class="panel modalp" id="a14DetailPanel" hidden><header><h2>Selected setup</h2><button type="button" class="ghost mclose">Close</button></header><div id="a14Detail"></div></section>
+      <section class="panel c12" data-sub="Your history"><header><h2>Your A14 history</h2><span class="small muted">entries from the ONE Summary Report</span></header><div id="a14Hist"><div class="state">Loading…</div></div></section>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-pnl" hidden>
+    <div class="panel"><div class="row">
+      <span class="small muted" id="plMeta"></span>
+      <button type="button" id="plRefresh">Refresh from TWS</button>
+      <label class="lbl" for="plUnit">Show</label><select id="plUnit"><option value="usd">$</option><option value="pct">% of NAV</option></select>
+    </div></div>
+    <div class="strip" id="plStrip"></div>
+    <div class="grid" data-subs id="tab-pnl-grid">
+      <section class="panel c12" data-sub="Weekly"><header><h2>Weekly P&amp;L by account · change in NAV from TWS</h2><span class="small muted">Change in each account's net liquidation value, Monday–Friday (US dates) · % of NAV at the start of the week · hover a cell for its days and IBKR's own daily figure</span></header><div id="plWeekly"></div></section>
+      <section class="panel c6" data-sub="Weekly"><header><h2>Monthly</h2><span class="small muted">same daily P&amp;L, by calendar month</span></header><div id="plMonthly"></div></section>
+      <section class="panel c6" data-sub="Weekly"><header><h2>NAV</h2><span class="small muted">net liquidation per account (base currency)</span></header><div class="chart" id="plNav"></div><div id="plNavLegend"></div></section>
+      <section class="panel c12" data-sub="Today"><header><h2>Today by ticker</h2><span class="small muted">In account currency (AUD) · marked to market: each contract's value now minus its value at the last close, plus cash from today's fills · <span id="plTickerNote"></span></span></header><div class="tcards" id="plTicker"></div></section>
+      <section class="panel c12" data-sub="Reconciliation"><header><h2>Reconciliation · ONE vs IBKR</h2><span class="small muted" id="rcMeta"></span></header><div id="rcBody"></div></section>
+      <section class="panel c12" data-sub="Fills &amp; ONE import"><header><h2>Fills · last 7 days</h2><span class="small muted">every IBKR execution this app has seen, kept even after TWS forgets them · matched to your open ONE trades</span></header>
+        <div class="row" id="oneImport"></div><div id="rcFills"></div></section>
+    </div>
+    <p class="note">History: 27 Aug – 9 Oct from TWS Matcher's captures, then recorded by this app every session (final capture 16:15 ET; overnight refreshes settle that session's NAV). A session neither app captured shows in the weekly notes; its P&amp;L lands in the next captured day. US market holidays are not counted.</p>
+  </section>
+
+  <!-- EVIDENCE -->
+  <section class="tab" id="tab-evidence" hidden>
+    <div class="grid" data-subs id="tab-evidence-grid">
+      <section class="panel c12" data-sub="Summary"><header><h2>Your calendar-family trades vs conditions at entry</h2><span class="small muted" id="evMeta"></span></header>
+        <div class="kv" id="evStrat"></div><p class="note" id="evNote"></p></section>
+      <section class="panel c7" data-sub="Summary"><header><h2>Entry condition vs P&amp;L</h2><select id="evFeat" aria-label="Condition"></select></header><div class="chart" id="evScatter"></div>
+        <div class="legend"><span><i class="box" style="background:var(--up)"></i>winner</span><span><i class="box" style="background:var(--down)"></i>loser</span><span class="muted">dot size = |P&amp;L|</span></div></section>
+      <section class="panel c5" data-sub="Summary"><header><h2>Which condition separated losers?</h2></header><div id="evFeatTable"></div></section>
+      <section class="panel c12" data-sub="Trades"><header><h2>Trades</h2><span class="small muted">losers first</span></header><div id="evTrades"></div></section>
+    </div>
+  </section>
+
+  <!-- RECORDER -->
+  <section class="tab" id="tab-rec" hidden>
+    <div class="grid">
+      <section class="panel c6"><header><h2>Recorder</h2></header>
+        <div class="kv" id="recKv"></div>
+        <div class="row"><button id="btnRecord" type="button">Record now</button><button id="btnHist" type="button" class="ghost">Refresh CBOE history</button><button id="btnTws" type="button" class="ghost">Test TWS connection</button><span class="small" id="recMsg"></span></div>
+        <p class="note">Records SPX and RUT once per US session at the scheduled time while this app and TWS are running. Connects with a separate client ID, read-only. A recording takes about 2 minutes.</p></section>
+      <section class="panel c6"><header><h2>Data held</h2></header><div id="recInv"></div></section>
+      <section class="panel c12"><header><h2>Log</h2></header><pre class="log" id="recLog"></pre></section>
+    </div>
+  </section>
+  <!-- GUIDE -->
+  <section class="tab guide" id="tab-guide" hidden>
+    <div class="panel">
+      <h2>How to use the desk</h2>
+      <p class="small muted">A step-by-step cheat sheet. The desk only reads from TWS: it never places, changes or cancels orders.</p>
+      <nav class="gtoc">
+        <a href="#g-start">Getting started</a><a href="#g-daily">Daily routine</a><a href="#g-market">Market</a><a href="#g-vol">Term structure, Calendar scanner, Skew</a>
+        <a href="#g-risk">Risk grid</a><a href="#g-em">Expected moves</a><a href="#g-a14">A14 scanner</a><a href="#g-pnl">P&amp;L &amp; Recon</a>
+        <a href="#g-evid">Evidence &amp; Recorder</a><a href="#g-gloss">Glossary</a><a href="#g-trouble">If something looks wrong</a>
+      </nav>
+    </div>
+
+    <div class="grid" data-subs id="tab-guide-grid">
+      <section class="panel c6" id="g-start" data-sub="Start here"><header><h2>1 · Getting started</h2></header>
+        <ol>
+          <li><b>It starts on its own.</b> The app runs in the background from login. Opening TradingView or TWS opens this page (TWS: after about 90 seconds while it logs in).</li>
+          <li><b>Address:</b> <span class="mono">http://127.0.0.1:8810</span> — bookmark it. Only one copy ever runs; starting it again just opens the page.</li>
+          <li><b>TWS must be running</b> for live data: positions, marks, NAV, option chains, the VIX family. Without it the desk shows the last saved data and falls back to free sources.</li>
+          <li><b>ONE:</b> export the Summary Report each day (Documents). The desk always reads the newest file; trade names and grouping come from it.</li>
+          <li><b>Theme:</b> the button at the top cycles Auto / Light / Dark.</li>
+          <li><b>Sub-tabs:</b> long tabs are split into sub-tabs (the small buttons under the controls) so each view fits on one screen; the desk remembers the last one you used.</li>
+          <li><b>Red "ONE export is …h old" banner</b> on Risk grid / Reconciliation: export a fresh ONE Summary Report — differences may just be trades not yet in ONE.</li>
+        </ol>
+      </section>
+
+      <section class="panel c6" id="g-daily" data-sub="Start here"><header><h2>2 · Daily routine (10 minutes)</h2></header>
+        <ol>
+          <li><b>Trade readiness bar</b> (top of every tab) — the one size call for new premium selling, with a size per structure (A14 SPX/RUT, calendars SPX/RUT). Press <i>Why</i> for what set it. Check the data strip beside the title: anything red is older than the last close.</li>
+          <li><b>Market</b> — the warnings, regime and VIX panels now show their tested odds; they are inputs to the readiness bar, not separate verdicts.</li>
+          <li><b>Risk grid</b> — press <i>Refresh marks from TWS</i>. Check P&amp;L now, Delta per 1% and Worst in range. Sort Open trades by <i>Days to expiry</i> to see what needs managing.</li>
+          <li><b>P&amp;L &amp; Recon</b> — both accounts should say <i>Quantities match</i>. If not, fix ONE before trusting the risk grid.</li>
+          <li><b>Expected moves</b> — see where your short strikes sit in σ from spot (below −1σ needs attention sooner).</li>
+          <li><b>Opening something new?</b> Start at <b>Today's pick</b>: it says whether a put calendar or an A14 BWB, on SPX or RUT, has the better edge today and which of your rules pass. Then use the Calendar or A14 scanner for alternatives.</li>
+          <li><b>After the US close</b> the desk records automatically: surface at 15:40 ET, then expected moves and the A14 chain, final NAV at 16:15 ET. Nothing to press.</li>
+        </ol>
+      </section>
+
+      <section class="panel c6" id="g-ready" data-sub="Start here"><header><h2>Trade readiness — the size call</h2></header>
+        <ol>
+          <li>One question, one answer: how big should new premium-selling trades be today? Full, three-quarter, half, quarter, or stand aside.</li>
+          <li>Every input speaks the same language: <b>how often SPX fell 5% or more within the next 21 sessions</b> after days like today (normally about 17%). Inputs: the VIX level, the active VIX conditions, the five Market warnings with history since 2010, and sector rotation (offense vs defense).</li>
+          <li>The verdict uses the <b>highest</b> of those odds (they overlap, so adding them would double count): under 17% full, 17–23% three-quarter, 23–30% half, 30%+ or a sit-out condition (HYG −1.5% day, VIX 40+) stand aside.</li>
+          <li>Each structure can then step down for your own rules: A14 when the index is below its 20-day average or RUT premium is thin; calendars at VIX/VIX3M ≤ 0.834 (your June losses) or ≥ 1, or into CPI / FOMC / payrolls / PCE / GDP.</li>
+          <li><b>One VIX/VIX3M scale everywhere</b>: ≤ 0.834 steep contango (calm; calendars avoid), 0.834–0.90 normal, 0.90–1.00 flat (stress building; A14 caution), ≥ 1 backwardation. <b>Two trends everywhere</b>: short-term = vs the 20-day average, long-term = vs the 200-day.</li>
+          <li>It reflects history, not a forecast: rougher odds have also come with higher average returns (selling after drops), so treat it as position sizing, not direction.</li>
+        </ol>
+      </section>
+      <section class="panel c6" id="g-pick" data-sub="Start here"><header><h2>Today's pick</h2></header>
+        <ol>
+          <li><b>VIX conditions</b> (top): the VIX inputs on their own (their chance of a 5% drop; the size call is the readiness bar), the live readings (VIX, VIX/VIX3M, VIX − realised, VVIX, VIX9D/VIX, RVX − VIX, SPX vs its 200-day, HYG), and each active condition with what followed it historically (next 21 days, chance of a 5% drop vs normal). Sit-out conditions: HYG −1.5% day, VIX 40+. Cautions: backwardation, negative premium, SPX below 200-day, VIX jumping into highs, VVIX high with calm VIX, complacent sell-offs, VIX9D above VIX, thin RUT premium. Opportunities: backwardation just ended, rich premium, rich RUT premium, HV7, VIX up 5 days running. Open "All conditions" for the full history table. A compact version sits on the Market tab's Overview.</li>
+          <li>It compares four choices: <b>put calendar</b> (time spread) or <b>A14 put BWB</b> (single expiry), on <b>SPX</b> or <b>RUT</b>.</li>
+          <li>Each gets the best setup from the same TWS chain, held for your <i>Exit after</i> days (a calendar at most to the day before its front expiry), with the same odds.</li>
+          <li><b>Edge / day</b> = expected P&amp;L at exit as % of risk, per day held — so structures held for different times compare fairly.</li>
+          <li>Your own rules are checked: calendars need VIX/VIX3M above 0.834 and the TimeEdge / Triple / TimeZone gates; A14 wants the index above its 20-day average. ✓ / ✕ shows each.</li>
+          <li>The <b>pick</b> = the best edge among setups passing all your rules. If none pass, it says so — size down or wait.</li>
+          <li>Press <i>Fetch chain from TWS</i> for live prices; it refreshes on its own after the close. Open <i>Next best</i> for alternatives.</li>
+        </ol>
+      </section>
+      <section class="panel c6" id="g-market" data-sub="Tabs"><header><h2>3 · Market tab</h2></header>
+        <ol>
+          <li><b>Regime / Market warnings</b> — same rules as your Market Warnings v2 Pine script. Count of 6; 3 or more is a warning cluster.</li>
+          <li><b>Breadth</b> — % of S&amp;P 500 and Nasdaq-100 stocks above their 20/50/200-day averages. Below 20 = washed out, above 80 = stretched. "Narrow" = index up on few stocks.</li>
+          <li><b>Volatility</b> — VIX with bands, the term structure (9D→1Y), implied vs realised (option sellers are paid when implied is above realised), and VIX/VIX3M for the year. The blue line at 0.834 marks where your June calendar losses were entered.</li>
+          <li><b>Sectors</b> — three plain-English reads: risk appetite (offense vs defense sectors — falling often comes before volatility picks up), how broad leadership is, and whether RUT-heavy sectors are beating SPY (helps choose SPX vs RUT). The chart tracks offense ÷ defense; bars rank each sector against SPY.</li>
+          <li><b>Calendar</b> — US economic events; toggle Medium / High / Both.</li>
+          <li><b>Accounts</b> — balances and today's fills for every sub-account.</li>
+          <li>Auto-refresh is set at the top (default every 10 minutes); <i>Refresh</i> forces it.</li>
+        </ol>
+      </section>
+
+      <section class="panel c6" id="g-vol" data-sub="Tabs"><header><h2>4 · Term structure, Calendar scanner, Skew &amp; IV</h2></header>
+        <ol>
+          <li><b>Term structure</b> — today's SPX vol curve and the TimeEdge / Triple Calendar / TimeZone entry rules with ✓/✕ for each check.</li>
+          <li><b>Calendar scanner</b> — pick SPX or RUT and how to rank (contango, contango z-score, forward premium, forward vol − realised). Press <i>Scan</i>.</li>
+          <li>Read the <b>heatmap</b>: rows = front expiry, columns = back expiry, green = better. Click a cell to see that pair's history. In the Top pairs table, hover the # badge for why a pair ranks there.</li>
+          <li>Rule of thumb from your own Evidence: avoid calendar entries with VIX/VIX3M at or below 0.834.</li>
+          <li><b>Skew &amp; IV</b> — ATM IV, put skew and their z-scores. |z| ≥ 2 = unusual. z-scores fill in as daily recordings accumulate (20 sessions).</li>
+        </ol>
+      </section>
+
+      <section class="panel c6" id="g-risk" data-sub="Tabs"><header><h2>5 · Risk grid</h2></header>
+        <ol>
+          <li>Press <b>Refresh marks from TWS</b> (takes under a minute). The time of the marks shows next to the button.</li>
+          <li>Pick an <b>Account</b> or leave All. Move the <b>Date</b> slider to see the P&amp;L curve on a future date; <b>IV shift</b> to stress volatility; <b>Range</b> for how far the market moves; <b>RUT beta</b> for how much more RUT moves than SPX.</li>
+          <li>The <b>strip</b> on top: P&amp;L now, Delta per 1% move, Theta per day, Vega, and the worst outcome in the range on the chosen date.</li>
+          <li><b>Open trades</b> table — click a header to sort, a row for its large risk graph and legs. "% / day" = total return on margin ÷ days in trade.</li>
+          <li><b>Capital use</b> — margin and days tied up by DTE at entry, against what your closed A14s earned per day. The list below shows trades with the most margin for the least return per day.</li>
+          <li><b>Whole book</b> chart — every trade added together against a % market move.</li>
+        </ol>
+        <p class="note">P&amp;L now = ONE's realised P&amp;L + open legs at TWS mid. Margin and % use ONE's margin figure.</p>
+      </section>
+
+      <section class="panel c6" id="g-season" data-sub="Tabs"><header><h2>Seasonality</h2></header>
+        <ol>
+          <li>Pick the <b>index</b> (S&amp;P 500, Nasdaq-100, Russell 2000, Dow), how many <b>years</b>, and whether to use every year or only years in the same presidential-cycle position as now.</li>
+          <li><b>Path &amp; ahead</b>: the average and median path of the year vs this year so far; the table shows what happened over the next 5–63 trading days from today's date in past years — mean, how often up, the 10th-percentile and worst outcome, and realised vol in that window (highlighted when above the yearly norm).</li>
+          <li>Use it for timing and sizing: a weak or high-vol seasonal window is a reason to size down short-put risk or pick shorter expiries; compare its realised vol with today's implied vol on Expected moves.</li>
+          <li><b>Months</b>: average return, % of years up, realised vol and VIX change by month, plus every year's monthly returns. <b>Days &amp; cycle</b>: turn-of-month, weekday and presidential-cycle stats.</li>
+        </ol>
+      </section>
+      <section class="panel c6" id="g-em" data-sub="Tabs"><header><h2>6 · Expected moves</h2></header>
+        <ol>
+          <li>Press <b>Refresh from TWS</b> (about a minute) — or use the automatic after-close refresh.</li>
+          <li>Each underlying you hold gets a card: the <b>cone</b> chart (±1σ dark band, ±2σ light band) with your strikes as dots (red = short, green = long).</li>
+          <li>The table lists each expiry: ATM IV, straddle price, the <b>1σ move</b> and the 1σ / 2σ price ranges. <span class="chip">held</span> marks expiries you are in.</li>
+          <li><b>Your strikes (σ from spot)</b>: e.g. <span class="mono">−16 7625P −0.9σ</span> = you are short 16 of the 7625 put, 0.9 standard deviations below spot for that expiry.</li>
+          <li>How to use it: about 68% of outcomes fall inside ±1σ by expiry. A short strike inside −0.5σ is close to the action; outside −1.5σ is far. The 1-day move at the top is the typical daily swing.</li>
+        </ol>
+      </section>
+
+      <section class="panel c12" id="g-a14" data-sub="A14 scanner"><header><h2>7 · A14 scanner (put BWBs on SPX and RUT)</h2></header>
+        <div class="two">
+          <ol>
+            <li><b>Fresh chain:</b> press <i>Fetch chain from TWS</i> (about a minute; it also runs automatically after the close). Outside market hours it uses Friday's / yesterday's closing quotes.</li>
+            <li><b>Check the trend panel first.</b> Your A14s entered when the index was above its 20-day average made about twice as much (11.3% vs 5.9%). Below it: wait for an up day or keep the short close to spot.</li>
+            <li><b>Set the filters:</b> Underlying, DTE window, <i>Exit after</i> (days you expect to hold), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
+            <li><b>Read the heatmap</b> ("Where the edge is"): rows = expiries, columns = short strike % below spot, greener = better expected return. Click a cell to filter the table to it.</li>
+            <li><b>Pick from the table.</b> Rank by E/risk (default), <i>E/risk per day</i> (capital use — compares short and long expiries fairly), θ/risk, P(profit) or profit/risk. Tick <i>your usual shapes only</i> to match how you normally build them. <b>Hover the # badge</b> for why a setup ranks there: what it is ranked on, its strengths (For) and what to check (Watch).</li>
+            <li><b>Click a row</b> for its risk graph: today, after your exit days, and at expiry, with the ±1σ zone shaded. Check the <b>−1σ at exit</b> loss before placing it.</li>
+            <li>Build it in ONE / TWS yourself — the desk never sends orders.</li>
+          </ol>
+          <div>
+            <h3>Reading a row</h3>
+            <ul class="gl">
+              <li><b>Strikes</b> 2820 / 2790 / 2740 = +1 upper put, −2 short puts, +1 lower put (per lot).</li>
+              <li><b>Wings</b> 30/50 = upper wing 30 points, lower wing 50 points.</li>
+              <li><b>Credit</b> + = you receive money (no loss if the market rallies); − = debit.</li>
+              <li><b>Risk</b> = the loss if the market finishes below the lower wing.</li>
+              <li><b>E/risk</b> = expected P&amp;L at your exit date as % of risk. <b>P(profit)</b> = chance of being in profit then.</li>
+              <li><b>Profit zone at exit</b> = the spot range (from today) where you are in profit on your exit date.</li>
+              <li><b>Short σ</b> = how far below spot the short strike is, in standard deviations to expiry.</li>
+              <li><span class="chip">your usual</span> = like your past A14 entries. <span class="chip pos">trend ↑</span> / <span class="chip wrn">below 20d</span> = the underlying's trend now.</li>
+            </ul>
+            <p class="note">The odds assume normal-shaped moves, which understate crash risk. Treat the ranking as a shortlist, not a signal. "Your A14 history" at the bottom shows how your own past entries did by DTE.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel c6" id="g-pnl" data-sub="Tabs"><header><h2>8 · P&amp;L &amp; Recon</h2></header>
+        <ol>
+          <li><b>Top strip</b> — change in NAV per account since the last close (IBKR's own day figure shown underneath for reference only).</li>
+          <li><b>Weekly P&amp;L grid</b> — change in account value each week; switch $ / %. Hover a cell for its days. "4/5 days captured" = a day was missed and folded into the next one.</li>
+          <li>Deposits or withdrawals? Add them to <span class="mono">config.json → risk → cash_flows</span>, otherwise they count as P&amp;L.</li>
+          <li><b>Today by ticker</b> — each position's value now vs the last close, plus today's fills.</li>
+          <li><b>Reconciliation</b> — must say <i>Quantities match</i>. A quantity difference means ONE and IBKR disagree on what you hold: the row says what to do. <i>Cost-basis differences</i> (collapsed) are normal and need nothing.</li>
+          <li><b>ONE import file</b> — pick the date and press the account's CSV button, then import it in ONE (the link-to-positions step is still manual).</li>
+          <li><b>Fills</b> — every fill the desk has seen, matched to your ONE trades.</li>
+        </ol>
+      </section>
+
+      <section class="panel c6" id="g-evid" data-sub="Tabs"><header><h2>9 · Evidence and Recorder</h2></header>
+        <ol>
+          <li><b>Evidence</b> — every closed calendar-family trade against the market conditions on its entry day. Use it to test a rule before trusting it.</li>
+          <li><b>Recorder</b> — records the SPX/RUT option surface every weekday at 15:40 ET (needs the app and TWS running). <i>Record now</i> does it by hand; <i>Test TWS connection</i> checks the link; the log shows what happened.</li>
+          <li><b>Data held</b> lists how much history exists. Your own surface history grows by one day each session.</li>
+        </ol>
+      </section>
+
+      <section class="panel c6" id="g-gloss" data-sub="Glossary &amp; help"><header><h2>Glossary</h2></header>
+        <ul class="gl">
+          <li><b>DTE</b> — days to expiry. <b>DIT</b> — days in trade.</li>
+          <li><b>σ (sigma)</b> — one standard deviation of the expected move; spot × IV × √(days/365).</li>
+          <li><b>IV / RV</b> — implied volatility (priced by options) / realised volatility (what the index actually did, 20 days).</li>
+          <li><b>VIX/VIX3M</b> — 30-day vs 3-month vol. Below 1 = contango (normal); at or above 1 = backwardation (stress).</li>
+          <li><b>Contango</b> (calendars) — back-month IV minus front-month IV. <b>Forward vol</b> — the vol implied between two expiries.</li>
+          <li><b>BWB</b> — broken-wing butterfly: lower wing wider than the upper. <b>A14</b> — your put-BWB strategy on SPX/RUT.</li>
+          <li><b>Delta per 1%</b> — $ change for a 1% market move. <b>Theta</b> — $ per day from time decay. <b>Vega</b> — $ per 1 vol point.</li>
+          <li><b>NAV</b> — net liquidation value of the account (AUD, the base currency).</li>
+          <li><b>z-score</b> — how unusual today is vs recent history; beyond ±2 is rare.</li>
+          <li><b>Frozen quotes</b> — closing prices TWS returns when the market is shut.</li>
+        </ul>
+      </section>
+
+      <section class="panel c12" id="g-trouble" data-sub="Glossary &amp; help"><header><h2>If something looks wrong</h2></header>
+        <div class="tbl"><table><thead><tr><th>What you see</th><th>What to do</th></tr></thead><tbody>
+          <tr><td>The page didn't open with TradingView / TWS</td><td>Open <span class="mono">http://127.0.0.1:8810</span> yourself. If it doesn't load, run <span class="mono">Start Options Desk.cmd</span> in the options-desk folder.</td></tr>
+          <tr><td>"No marks" / "TWS not reachable"</td><td>Start TWS and log in, wait 90 seconds, then press Refresh. Check TWS → API settings allow connections on port 7496.</td></tr>
+          <tr><td>Risk grid trades out of date</td><td>Export a fresh ONE Summary Report to Documents, then reload the page.</td></tr>
+          <tr><td>Recon shows quantity differences</td><td>Usually a fill not yet entered in ONE, or an expired/assigned leg. Use the ONE import CSV or fix the trade in ONE.</td></tr>
+          <tr><td>A week's P&amp;L looks too big</td><td>Check for a deposit — add it under <span class="mono">risk.cash_flows</span> in config.json.</td></tr>
+          <tr><td>A14 scanner / Expected moves look stale</td><td>Press Fetch chain / Refresh from TWS. The time of the data is shown next to the buttons.</td></tr>
+          <tr><td>Market charts show "no data"</td><td>Press Refresh on the Market tab. Breadth builds in the background after start-up (a few minutes).</td></tr>
+          <tr><td>Anything else</td><td>Recorder tab → Log, or <span class="mono">options-desk\data\desk.log</span>.</td></tr>
+        </tbody></table></div>
+      </section>
+    </div>
+  </section>
+
+</div>
+<div id="tip" hidden></div>
+<script src="subtabs.js"></script>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+<script src="risk.js"></script>
+<script src="pnl.js"></script>
+<script src="plan.js"></script>
+<script src="vixcond.js"></script>
+<script src="readiness.js"></script>
+<script src="pick.js"></script>
+<script src="season.js"></script>
+</body>
+</html>

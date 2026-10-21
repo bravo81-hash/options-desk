@@ -1,0 +1,13 @@
+/* VIX conditions panel */
+.vchead{display:grid;grid-template-columns:minmax(0,15em) minmax(0,1fr);gap:12px;align-items:center}
+.vchead>div:first-child{display:flex;flex-direction:column;gap:2px}
+.vcsize{font-family:var(--f-display);font-weight:600;font-size:22px;line-height:1.1}
+.vcrs{display:flex;flex-wrap:wrap;gap:5px}
+.vcr{display:inline-flex;flex-direction:column;padding:3px 8px;border:1px solid var(--line);border-radius:4px;background:var(--soft);min-width:5.6em}
+.vcr span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.vcr b{font-family:var(--f-mono);font-size:13px}
+.vcr.w{border-color:var(--warn)} .vcr.w b{color:var(--warn)}
+.vclist{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:6px;margin-top:8px}
+.vcc{border-left:3px solid var(--line);background:var(--soft);border-radius:3px;padding:6px 9px;display:flex;flex-direction:column;gap:2px;font-size:12.5px}
+.vck{font-family:var(--f-display);font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:11px;color:var(--muted)}
+@media (max-width:900px){.vchead{grid-template-columns:minmax(0,1fr)}}

@@ -1,0 +1,6 @@
+data/
+__pycache__/
+*.pyc
+config.local.json
+cloud/data/
+site/
