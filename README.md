@@ -7,6 +7,15 @@ cancels orders (the TWS connection uses `readonly=True` and only market-data cal
 Start Options Desk.cmd      ->  http://127.0.0.1:8810
 ```
 
+## Cloud copy (any browser)
+
+https://bravo81-hash.github.io/options-desk/ — market data only, no TWS, no account data. A GitHub Actions
+job (`.github/workflows/publish.yml`) runs `cloud/build.py` every 30 minutes in US market hours and once a day
+otherwise: it downloads yfinance / CBOE / Forex Factory data, validates it (no cross-symbol rows, no gaps
+beyond two sessions, VIX and breadth in range) and publishes static JSON plus the pages. If validation fails
+the job fails and the previous site stays up. TWS-only tabs say so. Personal settings live in
+`config.local.json`, which is never committed.
+
 ## Trade readiness
 
 One size call for new premium selling, on every tab, from tested inputs only (VIX level and conditions since
