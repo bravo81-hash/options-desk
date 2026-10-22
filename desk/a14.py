@@ -405,5 +405,20 @@ def stats():
     out_b = {b: {"n": len(v), "ret": sum(r for r, _ in v) / len(v), "dit": sum(d for _, d in v) / len(v),
                  "per_day": sum(r / d for r, d in v) / len(v)} for b, v in by_b.items()}
     out_t = {k: {"n": len(v), "ret": sum(v) / len(v) if v else None} for k, v in by_t.items()}
-    return {"by_dte": out_b, "by_trend": out_t, "n": len(rows),
+    return {"by_dte": out_b, "by_trend": out_t, "n": len(rows), "speed": speed(rows, out_b),
             "now": {s: trend(s) for s in GRID}}
+
+
+def speed(rows, by_b):
+    """Capital pace (return on margin per day held). Target = what your closed 22-45 DTE A14s earned per day
+    (config "speed_target" overrides); slow = under half of it. Plus your A14 pace by entry month."""
+    cfg = load_config().get("speed_target")
+    b = by_b.get("22–45")
+    target = float(cfg) if cfg else (b["per_day"] if b and b["n"] >= 5 else 0.4)
+    months = {}
+    for t in rows:
+        m = months.setdefault(t["entry"][:7], [])
+        m.append((t["ret"] / max(t.get("dit") or 1, 1), t.get("dit") or 0, t.get("dte") or 0))
+    by_m = [{"month": k, "n": len(v), "per_day": sum(x[0] for x in v) / len(v), "dit": sum(x[1] for x in v) / len(v),
+             "dte": sum(x[2] for x in v) / len(v)} for k, v in sorted(months.items())]
+    return {"target": target, "slow": target / 2, "source": "config" if cfg else "your closed 22–45 DTE A14s", "by_month": by_m}

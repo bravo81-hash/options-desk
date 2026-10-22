@@ -20,6 +20,7 @@ function overview(T) {
     tile("Win rate", T.length ? Math.round(100 * W.length / T.length) + "%" : "–", "share of closed trades in profit") +
     tile("Total P&L", money(tot), `average ${money(avg(T, (t) => t.pnl))} per trade`, cls(tot)) +
     tile("Average return", pctS(avg(T, (t) => t.ret)), `of margin · ${(avg(T, (t) => t.dit) || 0).toFixed(0)} days held on average`, cls(avg(T, (t) => t.ret))) +
+    tile("Capital pace", ok(avg(T, paceT)) ? fmt(avg(T, paceT), 2) + "% / day" : "–", `average return per day held · target ${fmt((J.speed || {}).target, 2)}%`, !J.speed ? "" : avg(T, paceT) >= J.speed.target ? "pos" : avg(T, paceT) < J.speed.slow ? "neg" : "wrn") +
     tile("Best", best ? money(best.pnl) : "–", best ? `#${best.trade_id} ${esc(best.ticker)} ${day(best.exit_us)}` : "", "pos") +
     tile("Worst", worst ? money(worst.pnl) : "–", worst ? `#${worst.trade_id} ${esc(worst.ticker)} ${day(worst.exit_us)}` : "", "neg");
   // cumulative P&L by close date, plus each trade as a bar
@@ -48,6 +49,22 @@ function overview(T) {
   $("jnMonths").innerHTML = `<div class="tbl"><table><thead><tr><th>Month closed</th>${strats.map((s) => `<th class="n">${esc(s)}</th>`).join("")}<th class="n">All</th></tr></thead><tbody>${
     months.slice().reverse().map((m) => { const tot = strats.reduce((a, s) => a + cell(m, s), 0); return `<tr><td>${new Date(m + "-15").toLocaleDateString([], {month: "short", year: "numeric"})}</td>${strats.map((s) => { const v = cell(m, s);
       return `<td class="n" style="${v ? `background:color-mix(in srgb, var(${v > 0 ? "--up" : "--down"}) ${Math.round(12 + 45 * Math.abs(v) / hm)}%, transparent)` : ""}">${v ? money(v) : ""}</td>`; }).join("")}<td class="n"><b class="${cls(tot)}">${money(tot)}</b></td></tr>`; }).join("")}</tbody></table></div>`;
+}
+
+/* ---------- capital pace: return per day held, by close month ---------- */
+const paceT = (t) => ok(t.ret) && t.dit ? t.ret / Math.max(t.dit, 1) : null;
+function paceView(T) {
+  const sp = J.speed || {target: 0.4, slow: 0.2};
+  const grp = (t) => t.strategy === "A14" ? "A14" : "Everything else";
+  const months = [...new Set(T.map((t) => (t.exit_us || "").slice(0, 7)).filter(Boolean))].sort();
+  const stat = (tt) => tt.length ? {n: tt.length, pace: tt.reduce((a, t) => a + (paceT(t) || 0), 0) / tt.length, dit: tt.reduce((a, t) => a + (t.dit || 0), 0) / tt.length,
+    dte: tt.reduce((a, t) => a + (t.dte || 0), 0) / tt.length, slow: tt.filter((t) => ok(paceT(t)) && paceT(t) < sp.slow).length} : null;
+  const mx = Math.max(sp.target * 2, ...months.flatMap((m) => ["A14", "Everything else"].map((g) => { const s = stat(T.filter((t) => grp(t) === g && (t.exit_us || "").startsWith(m))); return s ? Math.abs(s.pace) : 0; })));
+  const bar = (v) => { const w = Math.min(Math.abs(v) / mx, 1) * 50; return `<span class="rstrack" style="width:160px;display:inline-block;vertical-align:middle"><i style="${v >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`};background:${v >= sp.target ? "var(--up)" : v < sp.slow ? "var(--down)" : "var(--warn)"}"></i><em style="left:${50 + Math.min(sp.target / mx, 1) * 50}%;border-color:var(--ink)"></em></span>`; };
+  const cellOf = (s) => s ? `<td>${bar(s.pace)} <b class="${s.pace >= sp.target ? "pos" : s.pace < sp.slow ? "neg" : "wrn"}">${fmt(s.pace, 2)}%</b></td><td class="n">${Math.round(s.dte)}</td><td class="n">${Math.round(s.dit)}</td><td class="n">${s.n}${s.slow ? ` <span class="small muted">(${s.slow} slow)</span>` : ""}</td>` : `<td></td><td></td><td></td><td></td>`;
+  $("jnPace").innerHTML = `<div class="tbl"><table><thead><tr><th>Month closed</th><th>A14 · % / day</th><th class="n">entry DTE</th><th class="n">days held</th><th class="n">trades</th><th>Everything else · % / day</th><th class="n">entry DTE</th><th class="n">days held</th><th class="n">trades</th></tr></thead><tbody>${
+    months.slice().reverse().map((m) => `<tr><td>${new Date(m + "-15").toLocaleDateString([], {month: "short", year: "numeric"})}</td>${cellOf(stat(T.filter((t) => grp(t) === "A14" && (t.exit_us || "").startsWith(m))))}${cellOf(stat(T.filter((t) => grp(t) !== "A14" && (t.exit_us || "").startsWith(m))))}</tr>`).join("")}</tbody></table></div>
+    <p class="note">% / day = the trade's return on margin ÷ days held, averaged over the trades closed that month. Green = at or above your ${fmt(sp.target, 2)}%/day target (${esc(sp.source || "")}), red = under half of it (slow), black tick = target. Trades still open are not here: the Risk grid's <i>Capital use</i> sub-tab shows their pace from today.</p>`;
 }
 
 /* ---------- trades: list on the left, one trade in full on the right ---------- */
@@ -104,7 +121,7 @@ function detail(key) {
     : `<b>${pctS(c.maxdn)} / ${pctS(c.maxup)}</b><span class="small muted">worst / best ${esc(t.ticker)} move · marked P&amp;L recorded from mid-Oct 2026</span>`;
   $("jnDetailBody").innerHTML = `<div class="kv mini">
       <div><span class="lbl">Result</span><b class="${cls(t.pnl)}" style="font-size:20px">${money(t.pnl)}</b><span class="small muted">${pctS(t.ret)} of ${money(t.margin)} margin · comms ${money(t.comms)}</span></div>
-      <div><span class="lbl">Days in trade</span><b>${t.dit ?? "–"}</b><span class="small muted">${day(t.entry_us)} → ${day(t.exit_us)} · ${t.dte ?? "–"} DTE at entry</span></div>
+      <div><span class="lbl">Days in trade</span><b>${t.dit ?? "–"}</b><span class="small muted">${day(t.entry_us)} → ${day(t.exit_us)} · ${t.dte ?? "–"} DTE at entry · pace <b class="${!J.speed || !ok(paceT(t)) ? "" : paceT(t) >= J.speed.target ? "pos" : paceT(t) < J.speed.slow ? "neg" : "wrn"}">${ok(paceT(t)) ? fmt(paceT(t), 2) + "%/day" : "–"}</b></span></div>
       <div><span class="lbl">Expiry</span><b>${esc(t.expiry)}</b><span class="small muted">${esc(t.ticker)}</span></div>
       <div><span class="lbl">P&amp;L fluctuation</span>${swing}</div>
       <div><span class="lbl">Entry conditions</span><b>VIX ${ok(c.vix) ? c.vix.toFixed(1) : "–"}</b><span class="small muted">VIX/VIX3M ${ok(c.ivts) ? c.ivts.toFixed(3) : "–"} (${esc(B.label)})${ok(c.vs_sma20) ? ` · ${esc(t.ticker)} ${pctS(c.vs_sma20)} vs 20-day avg` : ""}</span></div>
@@ -146,7 +163,7 @@ async function load() {
     const opts = (k) => [...new Set(J.trades.map((t) => t[k]))].sort();
     const sel = (id, k, label) => { $(id).innerHTML = `<option value="">${label}</option>` + opts(k).map((v) => `<option>${esc(v)}</option>`).join(""); };
     sel("jnStrategy", "strategy", "all strategies"); sel("jnTicker", "ticker", "all tickers"); sel("jnGroup", "group", "all accounts");
-    overview(J.trades); list();
+    overview(J.trades); paceView(J.trades); list();
   } catch (e) { $("jnList").innerHTML = `<div class="state err">${esc(e.message || e)}</div>`; }
 }
 [["jnStrategy", "strategy"], ["jnTicker", "ticker"], ["jnGroup", "group"], ["jnResult", "result"]].forEach(([id, k]) => $(id).addEventListener("change", () => { F[k] = $(id).value; list(); }));

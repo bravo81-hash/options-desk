@@ -89,7 +89,7 @@ $("emRefresh").addEventListener("click", async () => {
 });
 
 /* ================================================================ A14 scanner */
-let A = null, HIST = null, ST = null, sortKey = "exp_risk", pick = null, cellFilter = null;
+let A = null, HIST = null, ST = null, sortKey = "exp_day", pick = null, cellFilter = null;
 const trendOf = (sym) => ST && ST.now && ST.now[sym];
 const upTrend = (tr) => tr && tr.vs_sma20 > 0;
 function trendBanner() {
@@ -102,9 +102,11 @@ function trendBanner() {
       <span class="small">${up ? `like your better entries: A14s entered above it averaged <b>${fmt(a.ret, 1)}%</b> (${a.n})` : `your A14s entered below it averaged <b>${fmt(b.ret, 1)}%</b> (${b.n}) vs ${fmt(a.ret, 1)}% above it: consider waiting for an up day, or keep the short close to spot`}</span></div>`; };
   const bd = ST.by_dte || {};
   const dteCard = `<div><span class="lbl">Your closed A14s · return per day held</span><span class="small">${["≤21", "22–45", "46–70", "71+"].filter((k) => bd[k]).map((k) => `${k} DTE <b>${fmt(bd[k].per_day, 2)}%</b>/day (${fmt(bd[k].ret, 1)}% over ${Math.round(bd[k].dit)}d, n ${bd[k].n})`).join("<br>")}</span></div>`;
-  $("a14Trend").innerHTML = `<div class="kv">${card("SPX")}${card("RUT")}${dteCard}</div>`;
+  const sp = ST.speed, bm = (sp && sp.by_month) || [];
+  const paceCard = sp ? `<div><span class="lbl">Your A14 pace by entry month · target ${fmt(sp.target, 2)}%/day</span><span class="small">${bm.map((m) => `${new Date(m.month + "-15").toLocaleDateString([], {month: "short"})} <b class="${m.per_day >= sp.target ? "pos" : m.per_day < sp.slow ? "neg" : ""}">${fmt(m.per_day, 2)}%</b>/day · entry ${Math.round(m.dte)} DTE · held ${Math.round(m.dit)}d (n ${m.n})`).join("<br>")}</span></div>` : "";
+  $("a14Trend").innerHTML = `<div class="kv">${card("SPX")}${card("RUT")}${dteCard}${paceCard}</div>`;
 }
-const SORTS = {exp_risk: "E[P&L] at exit / risk", exp_day: "E/risk per day held (capital use)", stress_risk: "Stress loss / risk (smallest first)", theta_risk: "Theta / risk", pop_h: "P(profit) at exit", ror: "Max profit / risk"};
+const SORTS = {exp_day: "E/risk per day held (capital use)", exp_risk: "E[P&L] at exit / risk", stress_risk: "Stress loss / risk (smallest first)", theta_risk: "Theta / risk", pop_h: "P(profit) at exit", ror: "Max profit / risk"};
 function params() {
   const q = new URLSearchParams({sym: $("a14Sym").value, dte_min: $("a14Dmin").value, dte_max: $("a14Dmax").value, exit: $("a14Exit").value,
     vol: $("a14Vol").value, min_credit: $("a14Cr").value, up_lo: $("a14UpLo").value, up_hi: $("a14UpHi").value});
@@ -142,8 +144,11 @@ const WHY = {
   pop_h: (c) => `<b>${Math.round(100 * c.pop_h)}%</b> chance of being in profit on your exit date`,
   ror: (c) => `max profit is <b>${fmt(c.ror, 2)}x</b> the risk if the index pins the short strike at expiry`,
 };
+const pace = (v) => { const sp = ST && ST.speed; if (!sp || !ok(v)) return null; return v >= sp.target ? "fast" : v < sp.slow ? "slow" : "ok"; };
 function rankWhy(c, rank, total) {
-  const pros = [], cons = [], tr = trendOf(c.sym);
+  const pros = [], cons = [], tr = trendOf(c.sym), sp = ST && ST.speed, pc = pace(c.exp_day);
+  if (pc === "fast") pros.push(`fast capital: ${fmt(c.exp_day, 2)}%/day expected, at or above your ${fmt(sp.target, 2)}%/day target`);
+  if (pc === "slow") cons.push(`slow capital: ${fmt(c.exp_day, 2)}%/day expected, under half your ${fmt(sp.target, 2)}%/day target; margin tied up ${c.h} days`);
   if (c.credit >= 0) pros.push(`credit ${sgn(c.credit, 2)}: nothing lost if the market rallies`); else cons.push(`debit ${fmt(-c.credit, 2)}: a rally loses that`);
   if (c.pop_h >= 0.75) pros.push(`high odds: ${Math.round(100 * c.pop_h)}% P(profit) at exit`); else if (c.pop_h < 0.5) cons.push(`below-even odds: ${Math.round(100 * c.pop_h)}% P(profit) at exit`);
   if (c.theta > 0) pros.push(`earns ${money(c.theta)} a day from time decay`); else cons.push(`negative theta today (${money(c.theta)}/day): needs the market to come to it`);
@@ -170,7 +175,7 @@ function table() {
     <th class="n">Max profit</th><th class="n">Risk</th>${th("ror", "Profit/risk")}<th class="n">θ/day</th><th class="n">Δ</th><th class="n">Vega</th>
     ${th("theta_risk", "θ/risk", "theta per day as % of risk")}${th("exp_risk", "E/risk", "expected P&L at the exit date as % of risk")}${th("exp_day", "E/risk per day", "expected return at the exit date, as % of risk, divided by the days held (your typical hold for that entry DTE): compares short and long expiries on capital use")}${th("stress_risk", "Stress", "P&L by the exit date if the index falls 5% and every strike's IV rises 5 points, $ per lot")}${th("pop_h", "P(profit)", "probability of a profit at the exit date")}<th class="n" title="spot range (from today) where the position is in profit at the exit date">Profit zone at exit</th><th class="n" title="short strike distance in implied standard deviations to expiry">Short σ</th></tr></thead><tbody>${
     list.map((c, i) => `<tr data-i="${i}" class="${pick && pick.sym === c.sym && pick.expiry === c.expiry && pick.upper === c.upper && pick.short === c.short && pick.lower === c.lower ? "sel" : ""}" style="cursor:pointer">
-      <td class="n"><span class="rank" data-i="${i}">${i + 1}</span></td><td>${c.sym} ${xd(c.expiry)} <span class="muted">${c.dte}d ${esc(c.cls || "")}</span>${c.usual ? ` <span class="chip">your usual</span>` : ""}${trendOf(c.sym) ? ` <span class="chip ${upTrend(trendOf(c.sym)) ? "pos" : "wrn"}" title="${c.sym} ${pctS(trendOf(c.sym).vs_sma20, 1)} vs its 20-day average">${upTrend(trendOf(c.sym)) ? "trend ↑" : "below 20d"}</span>` : ""}</td>
+      <td class="n"><span class="rank" data-i="${i}">${i + 1}</span></td><td>${c.sym} ${xd(c.expiry)} <span class="muted">${c.dte}d ${esc(c.cls || "")}</span>${c.usual ? ` <span class="chip">your usual</span>` : ""}${pace(c.exp_day) === "fast" ? ` <span class="chip pos" title="expected ${fmt(c.exp_day, 2)}%/day ≥ your ${fmt(ST.speed.target, 2)}%/day target">fast</span>` : pace(c.exp_day) === "slow" ? ` <span class="chip neg" title="expected ${fmt(c.exp_day, 2)}%/day, under half your target">slow</span>` : ""}${trendOf(c.sym) ? ` <span class="chip ${upTrend(trendOf(c.sym)) ? "pos" : "wrn"}" title="${c.sym} ${pctS(trendOf(c.sym).vs_sma20, 1)} vs its 20-day average">${upTrend(trendOf(c.sym)) ? "trend ↑" : "below 20d"}</span>` : ""}</td>
       <td class="mono">${big(c.upper)} / ${big(c.short)} / ${big(c.lower)} <span class="muted small">${pctS(c.upper_pct)} / ${pctS(c.short_pct)}</span></td>
       <td class="n mono">${c.U}/${c.L}</td><td class="n mono ${cls(c.credit)}">${sgn(c.credit, 2)}</td><td class="n">${money(c.max_profit)}</td><td class="n">${money(c.risk)}</td><td class="n">${fmt(c.ror, 2)}</td>
       <td class="n ${cls(c.theta)}">${money(c.theta)}</td><td class="n">${fmt(c.delta, 1)}</td><td class="n">${fmt(c.vega, 0)}</td>
@@ -228,6 +233,7 @@ $("a14Fetch").addEventListener("click", async () => {
   $("a14Fetch").disabled = false;
 });
 $("a14Sort").innerHTML = Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+$("a14Sort").value = sortKey;
 
 window.loadEm = loadEm;
 window.loadA14 = scan;

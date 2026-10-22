@@ -224,7 +224,12 @@ _READY = {"t": None, "v": None, "lock": threading.Lock()}
 
 @app.get("/api/journal")
 def api_journal():
-    return ok(journal.closed())
+    out = journal.closed()
+    try:
+        out["speed"] = a14.stats()["speed"]
+    except Exception:
+        out["speed"] = None
+    return ok(out)
 
 
 @app.post("/api/journal/note")

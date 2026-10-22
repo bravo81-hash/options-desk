@@ -111,7 +111,7 @@ const mktOpen = () => { const p = new Intl.DateTimeFormat("en-US", {timeZone: "A
   const g = (t) => (p.find((x) => x.type === t) || {}).value, h = +g("hour"), m = +g("minute"), wd = g("weekday");
   return !["Sat", "Sun"].includes(wd) && (h * 60 + m) >= 570 && (h * 60 + m) < 960; };
 function tradesTable(T) {
-  const cols = [["name", "Trade"], ["acct", "Account"], ["pnlNow", "Total return", 1], ["totalPct", "Total %", 1], ["perDay", "% / day", 1], ["dollarDay", "$ / day", 1], ["dayChg", "Today's return", 1], ["dayPct", "Today %", 1],
+  const cols = [["name", "Trade"], ["acct", "Account"], ["pnlNow", "Total return", 1], ["totalPct", "Total %", 1], ["perDay", "% / day", 1], ["paceNow", "Pace now", 1], ["dollarDay", "$ / day", 1], ["dayChg", "Today's return", 1], ["dayPct", "Today %", 1],
     ["openedMs", "Opened", 1], ["ditNow", "Days in trade", 1], ["firstExp", "Days to expiry", 1], ["margin", "Margin", 1]];
   T.forEach((t) => { t.acct = label(t); });
   const s = tSort, rows = [...T].sort((a, b) => { const x = a[s.k], y = b[s.k]; if (!ok(x) && typeof x !== "string") return 1; if (!ok(y) && typeof y !== "string") return -1;
@@ -120,40 +120,69 @@ function tradesTable(T) {
   return `<div class="tbl"><table><thead><tr>${cols.map(([k, l, n]) => `<th class="sort ${n ? "n" : ""}" tabindex="0" data-k="${k}" ${s.k === k ? `aria-sort="${s.dir < 0 ? "descending" : "ascending"}"` : ""}>${l}${s.k === k ? (s.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>${
     rows.map((t) => `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td>${esc(t.name)}</td><td>${esc(t.acct)}</td>
       <td class="n ${cls(t.pnlNow)}">${money(t.pnlNow)}</td><td class="n ${cls(t.totalPct)}">${pctS(t.totalPct)}</td>
-      <td class="n ${cls(t.perDay)}" title="total return ÷ ${Math.max(t.ditNow || 0, 1)} days in trade">${ok(t.perDay) ? fmt(t.perDay, 2) + "%" : "–"}</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td>
+      <td class="n ${cls(t.perDay)}" title="total return ÷ ${Math.max(t.ditNow || 0, 1)} days in trade">${ok(t.perDay) ? fmt(t.perDay, 2) + "%" : "–"}</td><td class="n" title="theta/day at today's IVs ÷ margin: what it earns from here">${ok(t.paceNow) ? fmt(t.paceNow, 2) + "% " + speedChip(t) : "–"}</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td>
       <td class="n ${cls(t.dayChg)}">${money(t.dayChg)}</td><td class="n ${cls(t.dayPct)}">${pctS(t.dayPct)}</td>
       <td class="n">${dshort(t.openedMs)}</td><td class="n">${t.ditNow ?? "–"}</td><td class="n" title="${esc(dexp(t.firstExp) + (t.lastExp > t.firstExp + DAY ? " / " + dexp(t.lastExp) : ""))}">${dteTxt(t)}</td><td class="n">${money(t.margin)}</td></tr>`).join("")}
     <tr><td><b>Total</b></td><td></td><td class="n ${cls(tot("pnlNow"))}"><b>${money(tot("pnlNow"))}</b></td><td class="n">${mg ? pctS(100 * tot("pnlNow") / mg) : "–"}</td>
-      <td class="n" title="book: total $ per day ÷ total margin">${mg ? fmt(100 * tot("dollarDay") / mg, 2) + "%" : "–"}</td><td class="n"><b>${money(tot("dollarDay"))}</b></td>
+      <td class="n" title="book: total $ per day ÷ total margin">${mg ? fmt(100 * tot("dollarDay") / mg, 2) + "%" : "–"}</td><td class="n" title="book: theta/day ÷ margin">${mg ? fmt(T.reduce((a, t) => a + (ok(t.paceNow) ? t.paceNow * (t.margin || 0) : 0), 0) / mg, 2) + "%" : "–"}</td><td class="n"><b>${money(tot("dollarDay"))}</b></td>
       <td class="n ${cls(tot("dayChg"))}"><b>${money(tot("dayChg"))}</b></td><td class="n">${mg ? pctS(100 * tot("dayChg") / mg) : "–"}</td><td></td><td></td><td></td><td class="n">${money(mg)}</td></tr></tbody></table></div>`;
 }
 function label(t) { return R.labels[t.ib_account] || t.group; }
 
 /* ---------- capital use: margin and days tied up, by DTE at entry ---------- */
 const BUCKETS = [[0, 21, "≤21"], [22, 45, "22–45"], [46, 70, "46–70"], [71, 9999, "71+"]];
+const bucketOf = (d) => ok(d) ? (BUCKETS.find(([lo, hi]) => d >= lo && d <= hi) || [])[2] : null;
+const SPEED = () => (STATS && STATS.speed) || {target: 0.4, slow: 0.2, source: "default"};
+// pace now = what the trade earns from here: theta $/day at today's IVs ÷ margin; usual hold = your closed A14s with that entry DTE
+function paceOf(t) {
+  t.paceNow = t.margin ? 100 * greeks(t).theta / t.margin : null;
+  const b = STATS && STATS.by_dte && STATS.by_dte[bucketOf(t.entryDte)];
+  t.usualHold = b ? b.dit : null;
+  t.overstay = ok(t.usualHold) && ok(t.ditNow) && t.ditNow > 1.25 * t.usualHold;
+  const sp = SPEED();
+  // slow from here (theta) or slow so far (3+ weeks in, realised return per day under half the target: theta has not been turning into P&L)
+  t.slowHere = ok(t.paceNow) && t.paceNow < sp.slow;
+  t.slowSoFar = ok(t.perDay) && (t.ditNow || 0) >= 21 && t.perDay < sp.slow;
+  t.speed = !ok(t.paceNow) ? null : t.slowHere || t.slowSoFar ? "slow" : t.paceNow >= sp.target && !(ok(t.perDay) && (t.ditNow || 0) >= 21 && t.perDay < sp.target) ? "fast" : "ok";
+  const best = Math.max(t.paceNow ?? -1e9, (t.ditNow || 0) >= 21 ? t.perDay ?? -1e9 : -1e9);
+  t.gapDay = t.margin && ok(t.paceNow) ? t.margin * Math.max(sp.target - best, 0) / 100 : null;
+}
+const speedChip = (t) => t.speed === "fast" ? `<span class="chip pos">fast</span>` : t.speed === "slow" ? `<span class="chip neg" title="${t.slowHere ? "theta from here is under half your target" : "3+ weeks in and the realised return per day is under half your target"}">slow${t.slowHere ? "" : " so far"}</span>` : "";
 function capitalView(T) {
-  const mgAll = T.reduce((a, t) => a + (t.margin || 0), 0) || 1, bench = (STATS && STATS.by_dte) || {};
+  const mgAll = T.reduce((a, t) => a + (t.margin || 0), 0) || 1, bench = (STATS && STATS.by_dte) || {}, sp = SPEED();
+  const thetaAll = T.reduce((a, t) => a + (ok(t.paceNow) ? t.paceNow * (t.margin || 0) / 100 : 0), 0);
+  const bookPace = 100 * thetaAll / mgAll;
+  const slowT = T.filter((t) => t.speed === "slow"), slowMg = slowT.reduce((a, t) => a + (t.margin || 0), 0);
+  const gap = T.reduce((a, t) => a + Math.max(t.gapDay || 0, 0), 0);
+  const tile = (l, b, sub, k = "") => `<div><span class="lbl">${l}</span><b class="${k}">${b}</b><span class="small muted">${sub}</span></div>`;
+  const head = `<div class="kv mini" style="margin-bottom:10px">${tile("Book pace now", fmt(bookPace, 2) + "% / day", `theta ${money(thetaAll)}/day on ${money(mgAll)} margin`, bookPace >= sp.target ? "pos" : bookPace < sp.slow ? "neg" : "wrn")}
+    ${tile("Your pace target", fmt(sp.target, 2) + "% / day", esc(sp.source) + ` · slow = under ${fmt(sp.slow, 2)}%`)}
+    ${tile("Margin in slow trades", money(slowMg), `${Math.round(100 * slowMg / mgAll)}% of margin · ${slowT.length} trades`, slowMg / mgAll > 0.5 ? "neg" : "")}
+    ${tile("Gap to target", money(gap) + " / day", "what the slower trades' margin would add per day at your target pace", gap > 0 ? "wrn" : "pos")}</div>`;
   const rows = BUCKETS.map(([lo, hi, lab]) => {
     const tt = T.filter((t) => ok(t.entryDte) && t.entryDte >= lo && t.entryDte <= hi);
     if (!tt.length) return "";
     const mg = tt.reduce((a, t) => a + (t.margin || 0), 0), pnl = tt.reduce((a, t) => a + (t.pnlNow || 0), 0);
     const dd = tt.reduce((a, t) => a + (t.dollarDay || 0), 0), days = tt.reduce((a, t) => a + Math.max(t.ditNow || 0, 1), 0) / tt.length;
-    const pd = mg ? 100 * dd / mg : null, b = bench[lab];
+    const th = tt.reduce((a, t) => a + (ok(t.paceNow) ? t.paceNow * (t.margin || 0) / 100 : 0), 0);
+    const pd = mg ? 100 * dd / mg : null, pn = mg ? 100 * th / mg : null, b = bench[lab];
     return `<tr><td>${lab} DTE</td><td class="n">${tt.length}</td><td class="n">${money(mg)}</td>
       <td><span class="minibar" style="width:120px"><span style="width:${(100 * mg / mgAll).toFixed(0)}%"></span></span><span class="small muted">${Math.round(100 * mg / mgAll)}%</span></td>
       <td class="n ${cls(pnl)}">${money(pnl)}</td><td class="n">${mg ? pctS(100 * pnl / mg) : "–"}</td><td class="n">${Math.round(days)}</td>
-      <td class="n ${cls(pd)}"><b>${ok(pd) ? fmt(pd, 2) + "%" : "–"}</b></td><td class="n">${money(dd)}</td>
+      <td class="n ${cls(pd)}"><b>${ok(pd) ? fmt(pd, 2) + "%" : "–"}</b></td><td class="n ${pn >= sp.target ? "pos" : pn < sp.slow ? "neg" : ""}">${ok(pn) ? fmt(pn, 2) + "%" : "–"}</td>
       <td class="n muted">${b ? `${fmt(b.per_day, 2)}% <span class="small">(n ${b.n}, ${Math.round(b.dit)}d)</span>` : "–"}</td></tr>`;
   }).join("");
-  // trades earning less per day than your slowest finished A14 bucket, biggest margin first
-  const floor = Math.min(...Object.values(bench).map((b) => b.per_day), 0.25);
-  const slow = T.filter((t) => ok(t.perDay) && t.margin && t.perDay < floor).sort((a, b) => b.margin - a.margin).slice(0, 8);
-  return `<div class="tbl"><table><thead><tr><th>Entry DTE</th><th class="n">Trades</th><th class="n">Margin</th><th>Share of margin</th><th class="n">P&amp;L now</th><th class="n">Return</th><th class="n">Avg days held</th>
-    <th class="n" title="all trades in the bucket: $ per day held ÷ margin">Return / day</th><th class="n">$ / day</th><th class="n" title="your closed A14 trades in ONE with the same entry DTE">Closed A14s / day</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <h3 style="margin:14px 0 6px">Most margin for the least return per day <span class="small muted">(below ${fmt(floor, 2)}% a day, largest margin first)</span></h3>
-    <div class="tbl"><table><thead><tr><th>Trade</th><th class="n">Entry DTE</th><th class="n">Margin</th><th class="n">Days held</th><th class="n">Total</th><th class="n">% / day</th><th class="n">$ / day</th></tr></thead><tbody>${
-    slow.map((t) => `<tr class="click" data-id="${esc(t.id)}"><td>${esc(t.name)}</td><td class="n">${t.entryDte ?? "–"}</td><td class="n">${money(t.margin)}</td><td class="n">${t.ditNow ?? "–"}</td><td class="n ${cls(t.totalPct)}">${pctS(t.totalPct)}</td><td class="n ${cls(t.perDay)}">${fmt(t.perDay, 2)}%</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td></tr>`).join("")}</tbody></table></div>
-    <p class="note">Return per day = total return on ONE margin ÷ days in trade. Open trades are mid-way, so their per-day figure can still rise (theta accelerates near expiry) or fall; the closed-A14 column is what your finished trades with the same entry DTE earned per day held. Data, not a recommendation: longer-dated trades also carry less gamma risk.</p>`;
+  // slow trades: earning under half the target from here, largest gap to target first
+  const slow = T.filter((t) => t.speed === "slow" && t.margin).sort((a, b) => (b.gapDay || 0) - (a.gapDay || 0)).slice(0, 10);
+  return head + `<div class="tbl"><table><thead><tr><th>Entry DTE</th><th class="n">Trades</th><th class="n">Margin</th><th>Share of margin</th><th class="n">P&amp;L now</th><th class="n">Return</th><th class="n">Avg days held</th>
+    <th class="n" title="so far: $ per day held ÷ margin">Return / day so far</th><th class="n" title="from here: theta $/day at today's IVs ÷ margin">Pace now</th><th class="n" title="your closed A14 trades in ONE with the same entry DTE">Closed A14s / day</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <h3 style="margin:14px 0 6px">Slow capital: under ${fmt(sp.slow, 2)}% a day from here, or so far after 3+ weeks <span class="small muted">(largest gap to your ${fmt(sp.target, 2)}%/day target first)</span></h3>
+    ${slow.length ? `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">Entry DTE</th><th class="n">Margin</th><th class="n">Days held</th><th class="n">Total</th><th class="n">% / day so far</th><th class="n">Pace now</th><th class="n">Theta / day</th><th class="n" title="margin × target − theta">Gap to target / day</th><th class="n">Days to expiry</th></tr></thead><tbody>${
+    slow.map((t) => `<tr class="click" data-id="${esc(t.id)}"><td>${esc(t.name)}${t.overstay ? ` <span class="chip wrn" title="held ${t.ditNow}d vs ${Math.round(t.usualHold)}d for your closed A14s with this entry DTE">past usual hold</span>` : ""}</td><td class="n">${t.entryDte ?? "–"}</td><td class="n">${money(t.margin)}</td>
+      <td class="n">${t.ditNow ?? "–"}${ok(t.usualHold) ? ` <span class="small muted">/ ${Math.round(t.usualHold)}</span>` : ""}</td><td class="n ${cls(t.totalPct)}">${pctS(t.totalPct)}</td><td class="n ${t.slowSoFar ? "neg" : cls(t.perDay)}">${fmt(t.perDay, 2)}%</td>
+      <td class="n ${t.slowHere ? "neg" : ""}">${fmt(t.paceNow, 2)}%</td><td class="n">${money(t.paceNow * t.margin / 100)}</td><td class="n wrn">${money(t.gapDay)}</td><td class="n">${dteTxt(t)}</td></tr>`).join("")}</tbody></table></div>`
+    : `<div class="state">No open trade is earning under ${fmt(sp.slow, 2)}% a day from here.</div>`}
+    <p class="note">Pace now = theta per day at today's IVs ÷ ONE margin: what the trade earns from here if nothing moves. % / day so far = realised and open P&amp;L ÷ margin ÷ days held; a trade 3+ weeks in with that under half the target is flagged <i>slow so far</i> even if theta looks fine, because moves and adjustments have been eating the decay. Gap to target uses the better of the two paces. It changes with the market (theta grows near expiry; adjustments reset it). A slow trade is a question, not an instruction: would that margin earn more in a fresh 14–45 DTE A14 (check the A14 scanner's <i>fast</i> rows and the readiness bar for size)? Longer-dated trades also carry less gamma risk. "Past usual hold" = held 25% longer than your closed A14s with the same entry DTE.</p>`;
 }
 
 function render() {
@@ -162,7 +191,7 @@ function render() {
   $("rkDaysTxt").textContent = c.days === 0 ? "today" : `+${c.days}d (${new Date(now() + c.days * DAY).toLocaleDateString([], {month: "short", day: "numeric"})})`;
   $("rkVolTxt").textContent = `${c.dv >= 0 ? "+" : ""}${Math.round(c.dv * 100)} pts`;
   const T = R.trades.filter((t) => !c.acct || label(t) === c.acct);
-  T.forEach((t) => { t.beta = t.underlying === "RUT" ? c.beta : 1; });
+  T.forEach((t) => { t.beta = t.underlying === "RUT" ? c.beta : 1; paceOf(t); });
   const N = 81, xsPct = Array.from({length: N}, (_, i) => -c.range + 2 * c.range * i / (N - 1));
   // book
   const accts = [...new Set(T.map(label))];
@@ -193,7 +222,7 @@ function render() {
     tile("Worst in range", money(total("dated")[worstIdx]), `at ${fxp(xsPct[worstIdx], true)} on the chosen date · margin ${money(T.reduce((s, t) => s + (t.margin || 0), 0))}`, "neg");
   $("rkTable").innerHTML = tradesTable(T);
   $("rkCapital").innerHTML = capitalView(T);
-  $("rkTable").querySelectorAll("th.sort").forEach((th) => { const go = () => { tSort = {k: th.dataset.k, dir: tSort.k === th.dataset.k ? -tSort.dir : (["pnlNow", "dayChg", "totalPct", "dayPct", "margin", "ditNow", "perDay", "dollarDay"].includes(th.dataset.k) ? -1 : 1)}; render(); };
+  $("rkTable").querySelectorAll("th.sort").forEach((th) => { const go = () => { tSort = {k: th.dataset.k, dir: tSort.k === th.dataset.k ? -tSort.dir : (["pnlNow", "dayChg", "totalPct", "dayPct", "margin", "ditNow", "perDay", "paceNow", "dollarDay"].includes(th.dataset.k) ? -1 : 1)}; render(); };
     th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
   document.querySelectorAll("#rkTable tr.click, #rkCapital tr.click").forEach((tr) => { const go = () => openDetail(tr.dataset.id); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); });
   // groups

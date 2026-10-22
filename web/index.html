@@ -223,6 +223,7 @@
       <section class="panel c5" data-sub="Overview"><header><h2>Days held vs return</h2><span class="small muted">colour = strategy · size = margin · hover for the note</span></header><div class="chart" id="jnScatter"></div></section>
       <section class="panel c5" data-sub="Overview"><header><h2>By strategy</h2><span class="small muted">total P&amp;L · trades · win rate · average return</span></header><div id="jnStrat"></div></section>
       <section class="panel c7" data-sub="Overview"><header><h2>By month and strategy</h2></header><div id="jnMonths"></div></section>
+      <section class="panel c12" data-sub="Overview"><header><h2>Capital pace by month closed</h2><span class="small muted">return on margin per day held · entry DTE · days held · against your pace target</span></header><div id="jnPace"></div></section>
 
     </div>
   </section>
@@ -336,7 +337,7 @@
           <li>Pick an <b>Account</b> or leave All. Move the <b>Date</b> slider to see the P&amp;L curve on a future date; <b>IV shift</b> to stress volatility; <b>Range</b> for how far the market moves; <b>RUT beta</b> for how much more RUT moves than SPX.</li>
           <li>The <b>strip</b> on top: P&amp;L now, Delta per 1% move, Theta per day, Vega, and the worst outcome in the range on the chosen date.</li>
           <li><b>Open trades</b> table — click a header to sort, a row for its large risk graph and legs. "% / day" = total return on margin ÷ days in trade.</li>
-          <li><b>Capital use</b> — margin and days tied up by DTE at entry, against what your closed A14s earned per day. The list below shows trades with the most margin for the least return per day.</li>
+          <li><b>Capital use</b> — your pace target (what your closed 22–45 DTE A14s earned per day, about 0.41%) against the book: <i>pace now</i> (theta per day ÷ margin, what each trade earns from here) and <i>% / day so far</i>. Trades under half the target from here, or so far after 3+ weeks, are listed as <b>slow</b> with the margin they tie up and the daily gap to target; <i>past usual hold</i> marks trades held 25% longer than your closed A14s with the same entry DTE. The trade table has a <i>Pace now</i> column with fast / slow tags. The Journal's Overview shows the same pace by month closed.</li>
           <li><b>Whole book</b> chart — every trade added together against a % market move.</li>
         </ol>
         <p class="note">P&amp;L now = ONE's realised P&amp;L + open legs at TWS mid. Margin and % use ONE's margin figure.</p>
@@ -367,7 +368,7 @@
             <li><b>Check the trend panel first.</b> Your A14s entered when the index was above its 20-day average made about twice as much (11.3% vs 5.9%). Below it: wait for an up day or keep the short close to spot.</li>
             <li><b>Set the filters:</b> Underlying, DTE window (default 14–45, where your A14s earned the most per day held), <i>Exit after</i> (leave blank to use your typical hold for each entry DTE, from your closed A14s), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
             <li><b>Read the heatmap</b> ("Where the edge is"): rows = expiries, columns = short strike % below spot, greener = better expected return. Click a cell to filter the table to it.</li>
-            <li><b>Pick from the table.</b> Rank by E/risk (default), <i>E/risk per day</i> (capital use — divides by your real holding period, so it compares short and long expiries fairly), <i>Stress loss</i> (smallest loss in a −5%, IV +5 sell-off first), θ/risk, P(profit) or profit/risk. Tick <i>your usual shapes only</i> to match how you normally build them. <b>Hover the # badge</b> for why a setup ranks there: what it is ranked on, its strengths (For) and what to check (Watch).</li>
+            <li><b>Pick from the table.</b> Rank by <i>E/risk per day</i> (default; rows tagged <b>fast</b> meet your pace target, <b>slow</b> earn under half of it), E/risk (capital use — divides by your real holding period, so it compares short and long expiries fairly), <i>Stress loss</i> (smallest loss in a −5%, IV +5 sell-off first), θ/risk, P(profit) or profit/risk. Tick <i>your usual shapes only</i> to match how you normally build them. <b>Hover the # badge</b> for why a setup ranks there: what it is ranked on, its strengths (For) and what to check (Watch).</li>
             <li><b>Click a row</b> for its risk graph: today, after your exit days, and at expiry, with the ±1σ zone shaded. Check the <b>−1σ at exit</b> and <b>Stress at exit</b> losses before placing it (red dashed line = the exit curve with IV 5 points higher). A setup marked <i>fragile</i> loses more than half its risk in the stress.</li>
             <li>Build it in ONE / TWS yourself — the desk never sends orders.</li>
           </ol>
