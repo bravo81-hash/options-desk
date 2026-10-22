@@ -211,16 +211,18 @@
       <select id="jnStrategy"></select><select id="jnTicker"></select><select id="jnGroup"></select>
       <select id="jnResult"><option value="">wins and losses</option><option value="win">wins</option><option value="loss">losses</option></select>
       <input type="text" id="jnSearch" placeholder="search name, note or trade id" style="max-width:260px">
-      <span class="small muted" id="jnCount"></span><span class="small muted" id="jnMeta"></span>
+      <span class="small muted" id="jnMeta"></span>
     </div></div>
     <div class="strip" id="jnStrip"></div>
     <div class="grid" data-subs id="tab-journal-grid">
-      <section class="panel c12" data-sub="Trades"><header><h2>Closed trades</h2><span class="small muted">line = the index through the trade · dashed = your strikes · orange ticks = adjustments · bar = worst / best marked P&amp;L (when recorded) · click a card for detail, the note to edit it</span></header><div class="jcards" id="jnCards"></div></section>
+      <section class="panel c4" data-sub="Trades"><header><h2>Closed trades</h2><span class="row" style="gap:6px"><select id="jnSort" aria-label="Sort"><option value="date">newest first</option><option value="pnl">biggest win first</option><option value="worst">biggest loss first</option><option value="ret">best return first</option></select><span class="small muted" id="jnCount"></span></span></header>
+        <div class="jlist" id="jnList"></div><span class="small muted">click a folder to fold it · ↑ ↓ to move through trades</span></section>
+      <section class="panel c8" data-sub="Trades"><header><h2 id="jnDetailTitle">Select a trade</h2></header><div id="jnDetailBody"></div></section>
       <section class="panel c7" data-sub="Overview"><header><h2>Cumulative P&amp;L of closed trades</h2><span class="small muted">by close date (US)</span></header><div class="chart" id="jnCum"></div></section>
       <section class="panel c5" data-sub="Overview"><header><h2>Days held vs return</h2><span class="small muted">colour = strategy · size = margin · hover for the note</span></header><div class="chart" id="jnScatter"></div></section>
       <section class="panel c5" data-sub="Overview"><header><h2>By strategy</h2><span class="small muted">total P&amp;L · trades · win rate · average return</span></header><div id="jnStrat"></div></section>
       <section class="panel c7" data-sub="Overview"><header><h2>By month and strategy</h2></header><div id="jnMonths"></div></section>
-      <section class="panel modalp" id="jnDetail" hidden><header><h2 id="jnDetailTitle">Trade</h2><button type="button" class="ghost mclose">Close</button></header><div id="jnDetailBody"></div></section>
+
     </div>
   </section>
 
@@ -400,8 +402,8 @@
       <section class="panel c6" id="g-journal" data-sub="Tabs"><header><h2>Trade journal</h2></header>
         <ol>
           <li>Built from your newest ONE Summary Report (the one you export for matching) — every closed trade, no extra work.</li>
-          <li><b>Trades</b>: one card per trade — trade ID, strategy, ticker, P&amp;L and %, the index's path through the trade with your strikes dashed and adjustment days in orange, days in trade, expiry, entry → exit, adjustments, margin, and a <b>learning note</b>.</li>
-          <li>The note is suggested from the data (speed, adjustments, drawdown survived, entry conditions). Click it to write your own; clear it and press Enter to go back to the suggestion.</li>
+          <li><b>Trades</b>: the list on the left is grouped into folders by strategy (click a folder to fold it; sort by date, win, loss or return; ↑ ↓ to move). Pick a trade and the right side shows it in full: result, days in trade, expiry, P&amp;L fluctuation, entry conditions, adjustments, a large chart of the index through the trade (solid = entry strikes, dotted = strikes added later, orange = adjustment days), the marked P&amp;L path when recorded, and the legs.</li>
+          <li>The note is suggested from the data (speed, adjustments, drawdown survived, entry conditions). Edit it in the box and press Save note; Use the suggestion puts the generated note back.</li>
           <li>P&amp;L fluctuation: the price swing for every trade; trades open from mid-October 2026 also get the true worst/best marked P&amp;L (the desk records each open trade at every session close).</li>
           <li>Filter by strategy, ticker, account or result, or search names and notes. Click a card for the full detail: entry conditions, price path chart, marked P&amp;L path, and every leg.</li>
           <li><b>Overview</b>: cumulative P&amp;L, days held vs return, totals by strategy, and P&amp;L by month and strategy.</li>

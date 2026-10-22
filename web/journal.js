@@ -10,31 +10,6 @@ const PAL = {"A14": "var(--s1)", "TimeEdge": "var(--s2)", "TimeZone": "var(--s3)
 const col = (s) => PAL[s] || "var(--faint)";
 let J = null, F = {strategy: "", ticker: "", group: "", result: "", q: ""};
 
-/* ---------- small SVG helpers ---------- */
-function spark(t, W = 230, H = 54) {
-  const P = t.path || [];
-  if (P.length < 2) return `<div class="small muted" style="height:${H}px;display:flex;align-items:center">no price path (${esc(t.ticker)} not an index)</div>`;
-  const vals = P.map((p) => p.v), ks = (t.strikes || []).filter((k) => k > Math.min(...vals) * 0.85 && k < Math.max(...vals) * 1.15);
-  const lo = Math.min(...vals, ...ks), hi = Math.max(...vals, ...ks), X = (i) => 2 + i * (W - 4) / (P.length - 1), Y = (v) => H - 3 - (v - lo) * (H - 6) / ((hi - lo) || 1);
-  const adj = new Set(t.adj_dates || []);
-  let s = `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:${H}px">`;
-  ks.forEach((k) => { s += `<line x1="0" x2="${W}" y1="${Y(k).toFixed(1)}" y2="${Y(k).toFixed(1)}" stroke="var(--warn)" stroke-width=".7" stroke-dasharray="3 3" opacity=".7"/>`; });
-  P.forEach((p, i) => { if (adj.has(p.d)) s += `<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width=".8" opacity=".6"/>`; });
-  s += `<polyline points="${P.map((p, i) => `${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ")}" fill="none" stroke="${(t.pnl || 0) >= 0 ? "var(--up)" : "var(--down)"}" stroke-width="1.6"/>`;
-  return s + `</svg>`;
-}
-function swingBar(t) {
-  const S = t.swing || {};
-  if (ok(S.mae) && ok(S.mfe)) {
-    const mx = Math.max(Math.abs(S.mae), Math.abs(S.mfe), Math.abs(t.pnl || 0), 1), w = (v) => 50 * Math.abs(v) / mx;
-    return `<div class="swing" title="marked P&L at session closes: worst ${money(S.mae)}, best ${money(S.mfe)}, final ${money(t.pnl)} (${S.marked_days} closes recorded)">
-      <span class="rstrack"><i style="left:${50 - w(S.mae)}%;width:${w(S.mae)}%;background:var(--down);opacity:.55"></i><i style="left:50%;width:${w(S.mfe)}%;background:var(--up);opacity:.55"></i><em></em>
-      <b style="left:${50 + (t.pnl >= 0 ? 1 : -1) * w(t.pnl)}%"></b></span><span class="small muted">worst ${money(S.mae)} · best ${money(S.mfe)}</span></div>`;
-  }
-  const c = t.ctx || {};
-  return `<div class="small muted" title="the desk records each open trade's marked P&L from mid-October; this trade closed before that">price swing: ${pctS(c.maxdn)} worst · ${pctS(c.maxup)} best</div>`;
-}
-
 /* ---------- overview ---------- */
 function overview(T) {
   const W = T.filter((t) => (t.pnl || 0) > 0), tot = T.reduce((a, t) => a + (t.pnl || 0), 0);
@@ -75,87 +50,107 @@ function overview(T) {
       return `<td class="n" style="${v ? `background:color-mix(in srgb, var(${v > 0 ? "--up" : "--down"}) ${Math.round(12 + 45 * Math.abs(v) / hm)}%, transparent)` : ""}">${v ? money(v) : ""}</td>`; }).join("")}<td class="n"><b class="${cls(tot)}">${money(tot)}</b></td></tr>`; }).join("")}</tbody></table></div>`;
 }
 
-/* ---------- trade cards ---------- */
+/* ---------- trades: list on the left, one trade in full on the right ---------- */
+let SEL = null, SORT = "date";
+const OPEN_KEY = "od.jn.open";
+let openF = (() => { try { return JSON.parse(localStorage.getItem(OPEN_KEY) || "null") || {}; } catch (e) { return {}; } })();
 function filtered() {
   return J.trades.filter((t) => (!F.strategy || t.strategy === F.strategy) && (!F.ticker || t.ticker === F.ticker) && (!F.group || t.group === F.group)
     && (!F.result || (F.result === "win" ? t.pnl > 0 : t.pnl <= 0)) && (!F.q || (t.name + " " + t.note + " " + t.trade_id).toLowerCase().includes(F.q.toLowerCase())));
 }
-function cards() {
+const sorter = {date: (a, b) => (b.close || "").localeCompare(a.close || ""), pnl: (a, b) => (b.pnl || 0) - (a.pnl || 0), ret: (a, b) => (b.ret || 0) - (a.ret || 0), worst: (a, b) => (a.pnl || 0) - (b.pnl || 0)};
+function list() {
   const T = filtered();
-  $("jnCount").textContent = `${T.length} of ${J.trades.length} closed trades`;
-  $("jnCards").innerHTML = T.map((t) => `<div class="jcard ${t.pnl > 0 ? "w" : "l"}" data-key="${esc(t.key)}">
-    <div class="row" style="justify-content:space-between;gap:6px"><span><b class="mono">#${esc(t.trade_id)}</b> <span class="chip" style="color:${col(t.strategy)}">${esc(t.strategy)}</span> <b>${esc(t.ticker)}</b></span>
-      <span class="big ${cls(t.pnl)}" style="font-size:17px">${money(t.pnl)} <span class="small">${pctS(t.ret)}</span></span></div>
-    <div class="small muted" title="${esc(t.name)}">${esc(t.name)}</div>
-    ${spark(t)}
-    ${swingBar(t)}
-    <div class="jmeta small"><span>${t.dit ?? "–"}d in trade</span><span>exp ${esc(t.expiry)}</span><span>${day(t.entry_us)} → ${day(t.exit_us)}</span><span>${t.adjustments} adj.</span><span>margin ${money(t.margin)}</span></div>
-    <div class="jnote" title="click to edit your learning note">${t.note_edited ? "✎ " : "💡 "}${esc(t.note)}</div>
-  </div>`).join("") || `<div class="state">No closed trades match.</div>`;
-  $("jnCards").querySelectorAll(".jcard").forEach((c) => {
-    c.addEventListener("click", (e) => { if (e.target.closest(".jnote")) return; detail(c.dataset.key); });
-    c.querySelector(".jnote").addEventListener("click", () => editNote(c.dataset.key, c.querySelector(".jnote")));
-  });
+  $("jnCount").textContent = `${T.length} of ${J.trades.length}`;
+  const g = {};
+  T.forEach((t) => { (g[t.strategy] = g[t.strategy] || []).push(t); });
+  const folders = Object.entries(g).sort((a, b) => b[1].length - a[1].length);
+  const mx = Math.max(...T.map((t) => Math.abs(t.ret || 0)), 1);
+  $("jnList").innerHTML = folders.map(([s, rows]) => {
+    const tot = rows.reduce((a, t) => a + (t.pnl || 0), 0), win = rows.filter((t) => t.pnl > 0).length, open = openF[s] !== false;
+    rows.sort(sorter[SORT]);
+    return `<div class="jfold"><button type="button" class="jfh" data-s="${esc(s)}"><span>${open ? "▾" : "▸"} <i class="dot" style="background:${col(s)}"></i><b>${esc(s)}</b> <span class="muted">${rows.length}</span></span>
+      <span class="mono small ${cls(tot)}">${money(tot)} <span class="muted">· win ${Math.round(100 * win / rows.length)}%</span></span></button>
+      ${open ? rows.map((t) => `<div class="jrow ${SEL === t.key ? "sel" : ""}" data-key="${esc(t.key)}" tabindex="0">
+        <span class="mono">#${esc(t.trade_id)}</span><span><b>${esc(t.ticker)}</b> <span class="small muted">${esc(t.name.replace(/\s*-\s*\d+\s*LOTS?/i, ""))}</span></span>
+        <span class="jbar"><i style="width:${(50 * Math.min(Math.abs(t.ret || 0), mx) / mx).toFixed(0)}%;${(t.ret || 0) >= 0 ? "left:50%" : "right:50%"};background:${(t.pnl || 0) >= 0 ? "var(--up)" : "var(--down)"}"></i></span>
+        <span class="mono small ${cls(t.pnl)}" style="text-align:right">${money(t.pnl)}</span>
+        <span class="small muted" style="text-align:right">${day(t.exit_us)}</span></div>`).join("") : ""}</div>`;
+  }).join("") || `<div class="state">No closed trades match.</div>`;
+  $("jnList").querySelectorAll(".jfh").forEach((b) => b.addEventListener("click", () => {
+    openF[b.dataset.s] = openF[b.dataset.s] === false; try { localStorage.setItem(OPEN_KEY, JSON.stringify(openF)); } catch (e) {} list(); }));
+  $("jnList").querySelectorAll(".jrow").forEach((r) => r.addEventListener("click", () => select(r.dataset.key)));
+  if (!SEL || !T.some((t) => t.key === SEL)) { const first = $("jnList").querySelector(".jrow"); if (first) select(first.dataset.key, true); else $("jnDetailBody").innerHTML = ""; }
 }
-function editNote(key, el) {
-  const t = J.trades.find((x) => x.key === key);
-  el.innerHTML = `<input type="text" value="${esc(t.note)}" style="width:100%" maxlength="300"><div class="small muted">Enter to save · empty + Enter restores the suggestion · Esc to cancel</div>`;
-  const inp = el.querySelector("input"); inp.focus(); inp.select();
-  inp.addEventListener("keydown", async (e) => {
-    if (e.key === "Escape") { cards(); return; }
-    if (e.key !== "Enter") return;
-    const note = inp.value.trim();
-    await fetch("/api/journal/note", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key, note})});
-    t.note = note || t.note_auto; t.note_edited = !!note; cards();
-  });
+function visibleKeys() { return [...$("jnList").querySelectorAll(".jrow")].map((r) => r.dataset.key); }
+function select(key, quiet) {
+  SEL = key;
+  $("jnList").querySelectorAll(".jrow").forEach((r) => r.classList.toggle("sel", r.dataset.key === key));
+  const row = $("jnList").querySelector(`.jrow[data-key="${CSS.escape(key)}"]`); if (row && !quiet) row.scrollIntoView({block: "nearest"});
+  detail(key);
 }
+document.addEventListener("keydown", (e) => {
+  if ($("tab-journal").hidden || !SEL || ["INPUT", "TEXTAREA", "SELECT"].includes((document.activeElement || {}).tagName)) return;
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const ks = visibleKeys(), i = ks.indexOf(SEL), j = e.key === "ArrowDown" ? i + 1 : i - 1;
+  if (j >= 0 && j < ks.length) { e.preventDefault(); select(ks[j]); }
+});
 
-/* ---------- detail pop-up ---------- */
 function detail(key) {
   const t = J.trades.find((x) => x.key === key); if (!t) return;
-  $("jnDetail").hidden = false;
-  const c = t.ctx || {}, B = ivtsBand(c.ivts);
-  $("jnDetailTitle").textContent = `#${t.trade_id} · ${t.name}`;
+  const c = t.ctx || {}, B = ivtsBand(c.ivts), S = t.swing || {};
+  $("jnDetailTitle").innerHTML = `<span class="mono">#${esc(t.trade_id)}</span> · ${esc(t.name)} <span class="chip" style="color:${col(t.strategy)};margin-left:6px">${esc(t.strategy)}</span> <span class="small muted">${esc(t.group)}</span>`;
+  const swing = ok(S.mae) ? `<b>${money(S.mae)} / ${money(S.mfe)}</b><span class="small muted">worst / best marked P&amp;L · ${S.marked_days} closes recorded</span>`
+    : `<b>${pctS(c.maxdn)} / ${pctS(c.maxup)}</b><span class="small muted">worst / best ${esc(t.ticker)} move · marked P&amp;L recorded from mid-Oct 2026</span>`;
   $("jnDetailBody").innerHTML = `<div class="kv mini">
-      <div><span class="lbl">Result</span><b class="${cls(t.pnl)}">${money(t.pnl)}</b><span class="small muted">${pctS(t.ret)} of ${money(t.margin)} margin · comms ${money(t.comms)}</span></div>
-      <div><span class="lbl">Held</span><b>${t.dit ?? "–"} days</b><span class="small muted">${day(t.entry_us)} → ${day(t.exit_us)} · ${t.dte ?? "–"} DTE at entry · exp ${esc(t.expiry)}</span></div>
-      <div><span class="lbl">Entry conditions</span><b>VIX ${ok(c.vix) ? c.vix.toFixed(1) : "–"}</b><span class="small muted">VIX/VIX3M ${ok(c.ivts) ? c.ivts.toFixed(3) : "–"} (${esc(B.label)}) · ${ok(c.vs_sma20) ? `${t.ticker} ${pctS(c.vs_sma20)} vs 20-day avg` : ""}</span></div>
-      <div><span class="lbl">${esc(t.ticker)} during the trade</span><b class="${cls(c.move)}">${pctS(c.move)}</b><span class="small muted">worst ${pctS(c.maxdn)} · best ${pctS(c.maxup)}</span></div>
+      <div><span class="lbl">Result</span><b class="${cls(t.pnl)}" style="font-size:20px">${money(t.pnl)}</b><span class="small muted">${pctS(t.ret)} of ${money(t.margin)} margin · comms ${money(t.comms)}</span></div>
+      <div><span class="lbl">Days in trade</span><b>${t.dit ?? "–"}</b><span class="small muted">${day(t.entry_us)} → ${day(t.exit_us)} · ${t.dte ?? "–"} DTE at entry</span></div>
+      <div><span class="lbl">Expiry</span><b>${esc(t.expiry)}</b><span class="small muted">${esc(t.ticker)}</span></div>
+      <div><span class="lbl">P&amp;L fluctuation</span>${swing}</div>
+      <div><span class="lbl">Entry conditions</span><b>VIX ${ok(c.vix) ? c.vix.toFixed(1) : "–"}</b><span class="small muted">VIX/VIX3M ${ok(c.ivts) ? c.ivts.toFixed(3) : "–"} (${esc(B.label)})${ok(c.vs_sma20) ? ` · ${esc(t.ticker)} ${pctS(c.vs_sma20)} vs 20-day avg` : ""}</span></div>
       <div><span class="lbl">Adjustments</span><b>${t.adjustments}</b><span class="small muted">${t.legs_n} leg rows in ONE</span></div>
     </div>
-    <div class="jnote" style="margin:8px 0">💡 ${esc(t.note)}</div>
-    <h3>${esc(t.ticker)} price through the trade · dashed = your strikes · orange = adjustment days</h3><div class="chart" id="jnPath"></div>
-    ${t.marked_path && t.marked_path.length > 1 ? `<h3 style="margin-top:8px">Marked P&amp;L at each session close (recorded by the desk)</h3><div class="chart" id="jnMarked"></div>` : `<p class="note">Marked P&amp;L path: the desk records each open trade's P&amp;L at every session close from mid-October 2026; this trade has ${t.swing.marked_days || 0} recorded closes.</p>`}
-    <h3 style="margin-top:8px">Legs (from ONE)</h3>
-    <div class="tbl"><table><thead><tr><th>Opened</th><th>Side</th><th class="n">Qty</th><th>Contract</th><th class="n">Open</th><th>Closed</th><th class="n">Close</th><th class="n">P&amp;L</th></tr></thead><tbody>${
+    <div class="jnedit"><span class="lbl">Learning note</span><textarea id="jnNote" rows="2" maxlength="300">${esc(t.note)}</textarea>
+      <div class="row"><button type="button" id="jnSave">Save note</button><button type="button" class="ghost" id="jnAuto">Use the suggestion</button><span class="small muted" id="jnNoteMsg">${t.note_edited ? "your note" : "suggested from the data"}</span></div></div>
+    <h3>${esc(t.ticker)} through the trade · solid = entry strikes · dotted = strikes added by adjustments · orange = adjustment days</h3><div class="chart" id="jnPath"></div>
+    ${t.marked_path && t.marked_path.length > 1 ? `<h3 style="margin-top:8px">Marked P&amp;L at each session close</h3><div class="chart" id="jnMarked"></div>` : ""}
+    <details style="margin-top:6px"><summary class="small">Legs (${t.legs.length})</summary><div class="tbl"><table><thead><tr><th>Opened</th><th>Side</th><th class="n">Qty</th><th>Contract</th><th class="n">Open</th><th>Closed</th><th class="n">Close</th><th class="n">Leg P&amp;L</th></tr></thead><tbody>${
       t.legs.map((l) => `<tr><td class="small">${day(l.open)}</td><td>${esc(l.side)}</td><td class="n">${l.qty}</td><td class="mono small">${esc(l.symbol)}</td><td class="n">${ok(l.open_px) ? l.open_px.toFixed(2) : "–"}</td><td class="small">${day(l.close)}</td><td class="n">${ok(l.close_px) ? l.close_px.toFixed(2) : "–"}</td><td class="n ${cls(l.pnl)}">${money(l.pnl)}</td></tr>`).join("")}</tbody></table></div>
-    <p class="note">Leg P&amp;L is realised cash when each leg closed: adjustments often close a losing leg while its offsetting legs stay open, so the running cash total is not the trade's P&amp;L at that moment.</p>`;
+      <p class="note">Leg P&amp;L is cash realised when each leg closed; adjustments often close a losing leg while its offsetting legs stay open, so a running total of it is not the trade's P&amp;L at that moment.</p></details>`;
+  const save = async (note) => {
+    await fetch("/api/journal/note", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: t.key, note})});
+    t.note = note || t.note_auto; t.note_edited = !!note; $("jnNote").value = t.note; $("jnNoteMsg").textContent = note ? "saved" : "suggestion restored";
+  };
+  $("jnSave").addEventListener("click", () => save($("jnNote").value.trim()));
+  $("jnAuto").addEventListener("click", () => save(""));
   if (t.path && t.path.length > 1) {
-    const ks = (t.strikes || []).filter((k) => { const v = t.path.map((p) => p.v); return k > Math.min(...v) * 0.88 && k < Math.max(...v) * 1.12; });
-    lineChart($("jnPath"), {label: "underlying path", h: 220, series: [{name: t.ticker, short: t.ticker, data: t.path, color: "var(--ink)", width: 1.8}],
-      refs: ks.map((k) => ({y: k, color: "var(--warn)", label: String(k)})), fy: (v) => v.toFixed(0), ft: (v) => v.toFixed(2)});
-    // adjustment markers
-    requestAnimationFrame(() => { const svg = $("jnPath").querySelector("svg"); if (!svg) return; const dates = t.path.map((p) => p.d), n = dates.length, W = svg.viewBox.baseVal.width, mL = 44, mR = 70, pw = W - mL - mR;
+    const v = t.path.map((p) => p.v), lo = Math.min(...v) * 0.9, hi = Math.max(...v) * 1.1, entry = new Set(t.entry_strikes || []);
+    const refs = (t.strikes || []).filter((k) => k > lo && k < hi).map((k) => entry.has(k) ? {y: k, color: "var(--warn)", label: String(k)} : {y: k, color: "color-mix(in srgb, var(--warn) 35%, transparent)"});
+    lineChart($("jnPath"), {label: "underlying path", h: 300, series: [{name: t.ticker, short: t.ticker, data: t.path, color: "var(--ink)", width: 2}],
+      refs, fy: (x) => x.toFixed(0), ft: (x) => x.toFixed(2)});
+    requestAnimationFrame(() => { const svg = $("jnPath").querySelector("svg"); if (!svg) return;
+      const dates = t.path.map((p) => p.d), n = dates.length, W = svg.viewBox.baseVal.width, H = svg.viewBox.baseVal.height, mL = 44, mR = 70, pw = W - mL - mR;
       (t.adj_dates || []).forEach((d) => { const i = dates.indexOf(d); if (i < 0) return; const x = mL + i * pw / Math.max(n - 1, 1);
-        svg.insertAdjacentHTML("beforeend", `<line x1="${x}" x2="${x}" y1="8" y2="${svg.viewBox.baseVal.height - 22}" stroke="var(--accent)" stroke-width="1" opacity=".55"/>`); }); });
+        svg.insertAdjacentHTML("beforeend", `<line x1="${x}" x2="${x}" y1="8" y2="${H - 22}" stroke="var(--accent)" stroke-width="1.2" opacity=".6"><title>adjusted ${d}</title></line>`); }); });
   } else $("jnPath").innerHTML = `<div class="state">No daily price history for ${esc(t.ticker)} in the desk (index trades only).</div>`;
-  if (t.marked_path && t.marked_path.length > 1) lineChart($("jnMarked"), {label: "marked P&L", h: 160, series: [{name: "Marked P&L", short: "", data: t.marked_path, color: "var(--s1)", width: 1.8}], refs: [{y: 0}], fy: (v) => (v / 1000).toFixed(1) + "k", ft: (v) => money(v)});
+  if (t.marked_path && t.marked_path.length > 1) lineChart($("jnMarked"), {label: "marked P&L", h: 170, series: [{name: "Marked P&L", short: "", data: t.marked_path, color: "var(--s1)", width: 1.8}], refs: [{y: 0}], fy: (x) => (x / 1000).toFixed(1) + "k", ft: (x) => money(x)});
 }
 
 /* ---------- load ---------- */
 async function load() {
-  $("jnCards").innerHTML = `<div class="state">Reading the ONE report…</div>`;
+  $("jnList").innerHTML = `<div class="state">Reading the ONE report…</div>`;
   try {
     J = await api("/api/journal");
-    if (!J.trades || !J.trades.length) { $("jnCards").innerHTML = `<div class="state">No closed trades found. Export a ONE Summary Report to Documents.</div>`; return; }
+    if (!J.trades || !J.trades.length) { $("jnList").innerHTML = `<div class="state">No closed trades found. Export a ONE Summary Report to Documents.</div>`; return; }
     $("jnMeta").textContent = `from ${String(J.file || "").split(/[\\/]/).pop()}`;
     const opts = (k) => [...new Set(J.trades.map((t) => t[k]))].sort();
     const sel = (id, k, label) => { $(id).innerHTML = `<option value="">${label}</option>` + opts(k).map((v) => `<option>${esc(v)}</option>`).join(""); };
     sel("jnStrategy", "strategy", "all strategies"); sel("jnTicker", "ticker", "all tickers"); sel("jnGroup", "group", "all accounts");
-    overview(J.trades); cards();
-  } catch (e) { $("jnCards").innerHTML = `<div class="state err">${esc(e.message || e)}</div>`; }
+    overview(J.trades); list();
+  } catch (e) { $("jnList").innerHTML = `<div class="state err">${esc(e.message || e)}</div>`; }
 }
-[["jnStrategy", "strategy"], ["jnTicker", "ticker"], ["jnGroup", "group"], ["jnResult", "result"]].forEach(([id, k]) => $(id).addEventListener("change", () => { F[k] = $(id).value; cards(); }));
-$("jnSearch").addEventListener("input", () => { F.q = $("jnSearch").value; cards(); });
+[["jnStrategy", "strategy"], ["jnTicker", "ticker"], ["jnGroup", "group"], ["jnResult", "result"]].forEach(([id, k]) => $(id).addEventListener("change", () => { F[k] = $(id).value; list(); }));
+$("jnSearch").addEventListener("input", () => { F.q = $("jnSearch").value; list(); });
+$("jnSort").addEventListener("change", () => { SORT = $("jnSort").value; list(); });
 window.loadJournal = load;
 })();

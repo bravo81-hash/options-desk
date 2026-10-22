@@ -93,3 +93,12 @@ ul.checks{margin:0;padding-left:0;list-style:none;font-size:12px;display:flex;fl
 .swing{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
 .swing .rstrack b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+/* journal list + detail */
+.jlist{max-height:calc(100vh - 300px);overflow:auto;display:flex;flex-direction:column;gap:2px;padding-right:3px}
+.jfh{display:flex;justify-content:space-between;align-items:center;width:100%;background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 8px;text-transform:none;letter-spacing:0;font-family:var(--f-body);font-weight:400;font-size:12.5px}
+.jrow{display:grid;grid-template-columns:3.4em minmax(0,1fr) 3.4em 5.2em 4.6em;gap:6px;align-items:center;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:12.5px;border-left:2px solid transparent}
+.jrow:hover{background:var(--soft)} .jrow.sel{background:color-mix(in srgb,var(--accent) 16%,transparent);border-left-color:var(--accent)}
+.jrow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jbar{position:relative;height:6px;background:var(--soft);border-radius:2px} .jbar i{position:absolute;top:0;bottom:0;border-radius:2px}
+.jnedit{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.jnedit textarea{font:inherit;font-size:13px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;resize:vertical}

@@ -185,6 +185,8 @@ def closed():
                     "adjustments": adj, "adj_dates": adj_dates, "legs_n": len(t["legs"]), "swing": swing, "realised_path": rp, "marked_path": mp,
                     "ctx": {k: v for k, v in ctx.items() if k != "path"}, "path": ctx.get("path"),
                     "strikes": sorted({lg["strike"] for lg in t["legs"] if lg["strike"]}),
+                    "entry_strikes": sorted({lg["strike"] for lg in t["legs"] if lg["strike"] and lg["open"] and t["open"]
+                                             and (lg["open"] - t["open"]).total_seconds() <= 600}),
                     "legs": [{**lg, "open": lg["open"].isoformat() if lg["open"] else None, "close": lg["close"].isoformat() if lg["close"] else None}
                              for lg in t["legs"]],
                     "note": notes.get(t["key"]) or auto, "note_auto": auto, "note_edited": t["key"] in notes})
