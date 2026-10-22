@@ -220,6 +220,11 @@ def refresh_marks():
         db.set_meta("risk_marks", json.dumps(blob))
         status["last"] = blob["ts"]
         _log(f"marked {len(marks)} contracts, {len(missing)} missing, {len(positions)} IBKR option positions")
+        try:
+            from . import journal
+            journal.snapshot_open()  # each open trade's marked P&L for the journal's P&L path
+        except Exception as e:
+            _log(f"journal snapshot failed: {e}")
         return {"ok": True, "marked": len(marks), "missing": missing}
     except Exception as e:
         _log(f"refresh failed: {e}")

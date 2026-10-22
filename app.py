@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, pick, readiness, season, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
+from desk import ROOT, a14, accounts, journal, pick, readiness, season, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -213,6 +213,17 @@ def api_a14_curve():
 
 
 _READY = {"t": None, "v": None, "lock": threading.Lock()}
+
+
+@app.get("/api/journal")
+def api_journal():
+    return ok(journal.closed())
+
+
+@app.post("/api/journal/note")
+def api_journal_note():
+    b = request.get_json(force=True) or {}
+    return ok(journal.save_note(b.get("key", ""), b.get("note", "")))
 
 
 @app.get("/api/readiness")

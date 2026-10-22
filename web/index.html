@@ -30,6 +30,7 @@
       <button role="tab" data-tab="season">Seasonality</button>
       <button role="tab" data-tab="a14">A14 scanner</button>
       <button role="tab" data-tab="pnl">P&amp;L &amp; Recon</button>
+      <button role="tab" data-tab="journal">Journal</button>
       <button role="tab" data-tab="evidence">Evidence</button>
       <button role="tab" data-tab="rec">Recorder</button>
       <button role="tab" data-tab="guide">Guide</button>
@@ -202,6 +203,25 @@
         <div class="row" id="oneImport"></div><div id="rcFills"></div></section>
     </div>
     <p class="note">History: 27 Aug – 9 Oct from TWS Matcher's captures, then recorded by this app every session (final capture 16:15 ET; overnight refreshes settle that session's NAV). A session neither app captured shows in the weekly notes; its P&amp;L lands in the next captured day. US market holidays are not counted.</p>
+  </section>
+
+  <!-- JOURNAL -->
+  <section class="tab" id="tab-journal" hidden>
+    <div class="panel"><div class="row">
+      <select id="jnStrategy"></select><select id="jnTicker"></select><select id="jnGroup"></select>
+      <select id="jnResult"><option value="">wins and losses</option><option value="win">wins</option><option value="loss">losses</option></select>
+      <input type="text" id="jnSearch" placeholder="search name, note or trade id" style="max-width:260px">
+      <span class="small muted" id="jnCount"></span><span class="small muted" id="jnMeta"></span>
+    </div></div>
+    <div class="strip" id="jnStrip"></div>
+    <div class="grid" data-subs id="tab-journal-grid">
+      <section class="panel c12" data-sub="Trades"><header><h2>Closed trades</h2><span class="small muted">line = the index through the trade · dashed = your strikes · orange ticks = adjustments · bar = worst / best marked P&amp;L (when recorded) · click a card for detail, the note to edit it</span></header><div class="jcards" id="jnCards"></div></section>
+      <section class="panel c7" data-sub="Overview"><header><h2>Cumulative P&amp;L of closed trades</h2><span class="small muted">by close date (US)</span></header><div class="chart" id="jnCum"></div></section>
+      <section class="panel c5" data-sub="Overview"><header><h2>Days held vs return</h2><span class="small muted">colour = strategy · size = margin · hover for the note</span></header><div class="chart" id="jnScatter"></div></section>
+      <section class="panel c5" data-sub="Overview"><header><h2>By strategy</h2><span class="small muted">total P&amp;L · trades · win rate · average return</span></header><div id="jnStrat"></div></section>
+      <section class="panel c7" data-sub="Overview"><header><h2>By month and strategy</h2></header><div id="jnMonths"></div></section>
+      <section class="panel modalp" id="jnDetail" hidden><header><h2 id="jnDetailTitle">Trade</h2><button type="button" class="ghost mclose">Close</button></header><div id="jnDetailBody"></div></section>
+    </div>
   </section>
 
   <!-- EVIDENCE -->
@@ -377,6 +397,16 @@
         </ol>
       </section>
 
+      <section class="panel c6" id="g-journal" data-sub="Tabs"><header><h2>Trade journal</h2></header>
+        <ol>
+          <li>Built from your newest ONE Summary Report (the one you export for matching) — every closed trade, no extra work.</li>
+          <li><b>Trades</b>: one card per trade — trade ID, strategy, ticker, P&amp;L and %, the index's path through the trade with your strikes dashed and adjustment days in orange, days in trade, expiry, entry → exit, adjustments, margin, and a <b>learning note</b>.</li>
+          <li>The note is suggested from the data (speed, adjustments, drawdown survived, entry conditions). Click it to write your own; clear it and press Enter to go back to the suggestion.</li>
+          <li>P&amp;L fluctuation: the price swing for every trade; trades open from mid-October 2026 also get the true worst/best marked P&amp;L (the desk records each open trade at every session close).</li>
+          <li>Filter by strategy, ticker, account or result, or search names and notes. Click a card for the full detail: entry conditions, price path chart, marked P&amp;L path, and every leg.</li>
+          <li><b>Overview</b>: cumulative P&amp;L, days held vs return, totals by strategy, and P&amp;L by month and strategy.</li>
+        </ol>
+      </section>
       <section class="panel c6" id="g-evid" data-sub="Tabs"><header><h2>9 · Evidence and Recorder</h2></header>
         <ol>
           <li><b>Evidence</b> — every closed calendar-family trade against the market conditions on its entry day. Use it to test a rule before trusting it.</li>
@@ -427,5 +457,6 @@
 <script src="readiness.js"></script>
 <script src="pick.js"></script>
 <script src="season.js"></script>
+<script src="journal.js"></script>
 </body>
 </html>

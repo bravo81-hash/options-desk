@@ -44,7 +44,7 @@ window.DESK_CLOUD = true;
 
   // ---- page adjustments
   const LAPTOP_TABS = {cal: "Calendar scanner", skew: "Skew & IV", risk: "Risk grid", em: "Expected moves", a14: "A14 scanner",
-                       pnl: "P&L & Recon", evidence: "Evidence", rec: "Recorder"};
+                       pnl: "P&L & Recon", journal: "Trade journal", evidence: "Evidence", rec: "Recorder"};
   const notice = (what) => `<div class="panel"><div class="state"><b>${what}</b> is only on the laptop desk: it needs TWS (live option chains, positions, marks) or your private trade data, neither of which is in this cloud copy.</div></div>`;
   document.addEventListener("DOMContentLoaded", async () => {
     const isDesk = !!document.getElementById("readyBar");
@@ -57,7 +57,7 @@ window.DESK_CLOUD = true;
       bar.innerHTML = `<b>Cloud copy</b> · market data only, rebuilt every 30 minutes in US market hours and daily otherwise · last built ${built || "–"}. TWS features, trades and P&amp;L are on the laptop desk.`;
       const rb = document.getElementById("readyBar");
       rb.parentNode.insertBefore(bar, rb);
-      ["loadCal", "loadSkew", "loadEvidence", "loadRec", "loadRisk", "loadPnl", "loadEm", "loadA14"].forEach((f) => { window[f] = () => {}; });
+      ["loadCal", "loadSkew", "loadEvidence", "loadRec", "loadRisk", "loadPnl", "loadEm", "loadA14", "loadJournal"].forEach((f) => { window[f] = () => {}; });
       Object.entries(LAPTOP_TABS).forEach(([id, name]) => {
         const sec = document.getElementById("tab-" + id); if (sec) sec.innerHTML = notice(name);
         const b = document.querySelector(`.tabs button[data-tab="${id}"]`); if (b) { b.style.opacity = ".45"; b.title = "laptop desk only"; }

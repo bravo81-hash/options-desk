@@ -83,3 +83,13 @@ ul.checks{margin:0;padding-left:0;list-style:none;font-size:12px;display:flex;fl
 .rdsize{font-family:var(--f-display);font-weight:600;font-size:17px}
 .rdwhy{flex:1 1 280px;min-width:0}
 .rdchip{font-size:11.5px;padding:1px 7px;border:1px solid var(--line);border-radius:3px;background:var(--soft)}
+/* trade journal */
+.jcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;max-height:calc(100vh - 290px);overflow:auto;padding-right:4px}
+.jcard{border:1px solid var(--line);border-left:3px solid var(--line);border-radius:6px;padding:7px 9px;display:flex;flex-direction:column;gap:4px;background:var(--panel);cursor:pointer;min-width:0}
+.jcard.w{border-left-color:var(--up)} .jcard.l{border-left-color:var(--down)}
+.jcard:hover{border-color:var(--accent)}
+.jmeta{display:flex;flex-wrap:wrap;gap:3px 10px;color:var(--muted)}
+.jnote{font-size:12px;background:var(--soft);border-radius:3px;padding:4px 7px;cursor:text}
+.swing{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.swing .rstrack b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
