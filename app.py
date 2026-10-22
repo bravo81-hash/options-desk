@@ -62,6 +62,12 @@ def api_calendar():
                                       int(a.get("gmin", 5)), int(a.get("gmax", 60))))
 
 
+@app.get("/api/pair/curve")
+def api_pair_curve():
+    a = request.args
+    return ok(analytics.calendar_curve(a.get("symbol", "SPX"), a["front"], a["back"], _f(a.get("strike"))))
+
+
 @app.get("/api/pair")
 def api_pair():
     a = request.args
@@ -190,8 +196,9 @@ def api_a14_scan():
     a = request.args
     syms = tuple(s for s in a.get("sym", "SPX,RUT").split(",") if s in a14.GRID)
     vol = a.get("vol", "rv20")
-    res = a14.scan(symbols=syms, dte_min=_f(a.get("dte_min"), 10), dte_max=_f(a.get("dte_max"), 100),
-                   exit_days=int(_f(a.get("exit"), 14)), vol_basis=vol, vol_custom=_f(a.get("vol_custom")),
+    ex = _f(a.get("exit"))
+    res = a14.scan(symbols=syms, dte_min=_f(a.get("dte_min"), 14), dte_max=_f(a.get("dte_max"), 45),
+                   exit_days=int(ex) if ex else None, vol_basis=vol, vol_custom=_f(a.get("vol_custom")),
                    min_credit=_f(a.get("min_credit")), up_lo=_f(a.get("up_lo"), -1.5), up_hi=_f(a.get("up_hi"), 1.0))
     return ok({**res, "running": a14.status["running"], "log": a14.status["log"]})
 
@@ -209,7 +216,7 @@ def api_a14_status():
 @app.get("/api/a14/curve")
 def api_a14_curve():
     a = request.args
-    return ok(a14.curve(a["sym"], a["expiry"], float(a["u"]), float(a["s"]), float(a["l"]), int(_f(a.get("exit"), 14))))
+    return ok(a14.curve(a["sym"], a["expiry"], float(a["u"]), float(a["s"]), float(a["l"]), int(_f(a.get("exit"))) if _f(a.get("exit")) else None))
 
 
 _READY = {"t": None, "v": None, "lock": threading.Lock()}

@@ -165,8 +165,8 @@
     <div class="panel">
       <form class="row" id="a14Form">
         <label class="lbl" for="a14Sym">Underlying</label><select id="a14Sym"><option value="SPX,RUT">SPX + RUT</option><option>SPX</option><option>RUT</option></select>
-        <label class="lbl" for="a14Dmin">DTE</label><input id="a14Dmin" type="number" value="10" min="1" max="200"> – <input id="a14Dmax" type="number" value="100" min="1" max="200">
-        <label class="lbl" for="a14Exit" title="days until you plan to close or roll">Exit after</label><input id="a14Exit" type="number" value="14" min="1" max="120"> days
+        <label class="lbl" for="a14Dmin">DTE</label><input id="a14Dmin" type="number" value="14" min="1" max="200"> – <input id="a14Dmax" type="number" value="45" min="1" max="200">
+        <label class="lbl" for="a14Exit" title="days until you plan to close or roll; blank = your typical hold for that entry DTE, from your closed A14s">Exit after</label><input id="a14Exit" type="number" value="" placeholder="your hold" min="1" max="120"> days
         <label class="lbl" for="a14Vol" title="volatility for the odds at the exit date">Odds from</label><select id="a14Vol"><option value="rv20">realised 20d</option><option value="iv">implied (ATM)</option><option value="custom">custom %</option></select><input id="a14VolC" type="number" value="15" min="3" max="80" hidden>
         <label class="lbl" for="a14Cr" title="minimum net credit per lot in points; -1 allows up to a 1-point debit">Min credit</label><input id="a14Cr" type="number" value="-1" step="0.5">
         <label class="lbl" for="a14UpLo" title="where the upper long sits, % from spot">Upper long</label><input id="a14UpLo" type="number" value="-1.5" step="0.5"> to <input id="a14UpHi" type="number" value="1" step="0.5"> %
@@ -175,12 +175,13 @@
         <button type="submit">Scan</button><button type="button" id="a14Fetch">Fetch chain from TWS</button>
       </form>
       <div class="small muted" id="a14Meta" style="margin-top:6px"></div>
+      <div class="small muted" id="a14DteNote">DTE defaults to 14–45: your closed A14s earned far more per day held there than at 46+ DTE (per-day numbers below, from the Journal). Widen it to compare: the per-day column uses your real holding period for each entry DTE.</div>
       <div id="a14Trend" style="margin-top:10px"></div>
     </div>
     <div class="grid" data-subs id="tab-a14-grid">
       <section class="panel c4" data-sub="Scanner"><header><h2>Where the edge is</h2><span class="small muted" id="a14HeatNote"></span></header><div class="chart" id="a14Heat"></div></section>
       <section class="panel c8 scrollp" data-sub="Scanner"><header><h2>Top setups</h2><span class="small muted">put BWB, 1 lot = +1 upper / −2 short / +1 lower · $ per lot · click a column to rank, a row for its risk graph</span></header><div id="a14Table"></div>
-        <p class="note">Priced from a live TWS chain (frozen closing quotes outside market hours): own IV from mids off the put-call-parity forward, one smile per expiry, every leg priced from it. The exit scenario holds each strike's IV (sticky strike) and lets time pass; the odds use a lognormal with the chosen volatility, which understates crash risk, so check the −1σ column and the risk graph too. "Your usual" = upper long within ±1% of spot and short 0.5–3.5% below, like your A14 entries in ONE. Risk = the loss below the lower wing (or the debit, if larger).</p></section>
+        <p class="note">Priced from a live TWS chain (frozen closing quotes outside market hours): own IV from mids off the put-call-parity forward, one smile per expiry, every leg priced from it. The exit scenario holds each strike's IV (sticky strike) and lets time pass; the odds use a lognormal with the chosen volatility, which understates crash risk, so check the −1σ and Stress columns and the risk graph too. Stress = index −5% by the exit date with every strike's IV 5 points higher, a typical sell-off. Exit date = your average days held for that entry DTE (Journal) unless you type one. "Your usual" = upper long within ±1% of spot and short 0.5–3.5% below, like your A14 entries in ONE. Risk = the loss below the lower wing (or the debit, if larger).</p></section>
       <section class="panel modalp" id="a14DetailPanel" hidden><header><h2>Selected setup</h2><button type="button" class="ghost mclose">Close</button></header><div id="a14Detail"></div></section>
       <section class="panel c12" data-sub="Your history"><header><h2>Your A14 history</h2><span class="small muted">entries from the ONE Summary Report</span></header><div id="a14Hist"><div class="state">Loading…</div></div></section>
     </div>
@@ -323,7 +324,7 @@
         <ol>
           <li><b>Term structure</b> — today's SPX vol curve and the TimeEdge / Triple Calendar / TimeZone entry rules with ✓/✕ for each check.</li>
           <li><b>Calendar scanner</b> — pick SPX or RUT and how to rank (contango, contango z-score, forward premium, forward vol − realised). Press <i>Scan</i>.</li>
-          <li>Read the <b>heatmap</b>: rows = front expiry, columns = back expiry, green = better. Click a cell to see that pair's history. In the Top pairs table, hover the # badge for why a pair ranks there.</li>
+          <li>Read the <b>heatmap</b>: rows = front expiry, columns = back expiry, green = better. Click a cell to see that pair's history. In the Top pairs table, hover the # badge for why a pair ranks there. Click a row: below its contango history is the calendar's risk graph with your 15% / 20% stops and the overnight move that hits each. The strategy gates now also check VIX/VIX3M above 0.834 and no CPI / FOMC / payrolls / PCE / GDP within 3 days, the same rules as the readiness bar.</li>
           <li>Rule of thumb from your own Evidence: avoid calendar entries with VIX/VIX3M at or below 0.834.</li>
           <li><b>Skew &amp; IV</b> — ATM IV, put skew and their z-scores. |z| ≥ 2 = unusual. z-scores fill in as daily recordings accumulate (20 sessions).</li>
         </ol>
@@ -364,10 +365,10 @@
           <ol>
             <li><b>Fresh chain:</b> press <i>Fetch chain from TWS</i> (about a minute; it also runs automatically after the close). Outside market hours it uses Friday's / yesterday's closing quotes.</li>
             <li><b>Check the trend panel first.</b> Your A14s entered when the index was above its 20-day average made about twice as much (11.3% vs 5.9%). Below it: wait for an up day or keep the short close to spot.</li>
-            <li><b>Set the filters:</b> Underlying, DTE window, <i>Exit after</i> (days you expect to hold), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
+            <li><b>Set the filters:</b> Underlying, DTE window (default 14–45, where your A14s earned the most per day held), <i>Exit after</i> (leave blank to use your typical hold for each entry DTE, from your closed A14s), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
             <li><b>Read the heatmap</b> ("Where the edge is"): rows = expiries, columns = short strike % below spot, greener = better expected return. Click a cell to filter the table to it.</li>
-            <li><b>Pick from the table.</b> Rank by E/risk (default), <i>E/risk per day</i> (capital use — compares short and long expiries fairly), θ/risk, P(profit) or profit/risk. Tick <i>your usual shapes only</i> to match how you normally build them. <b>Hover the # badge</b> for why a setup ranks there: what it is ranked on, its strengths (For) and what to check (Watch).</li>
-            <li><b>Click a row</b> for its risk graph: today, after your exit days, and at expiry, with the ±1σ zone shaded. Check the <b>−1σ at exit</b> loss before placing it.</li>
+            <li><b>Pick from the table.</b> Rank by E/risk (default), <i>E/risk per day</i> (capital use — divides by your real holding period, so it compares short and long expiries fairly), <i>Stress loss</i> (smallest loss in a −5%, IV +5 sell-off first), θ/risk, P(profit) or profit/risk. Tick <i>your usual shapes only</i> to match how you normally build them. <b>Hover the # badge</b> for why a setup ranks there: what it is ranked on, its strengths (For) and what to check (Watch).</li>
+            <li><b>Click a row</b> for its risk graph: today, after your exit days, and at expiry, with the ±1σ zone shaded. Check the <b>−1σ at exit</b> and <b>Stress at exit</b> losses before placing it (red dashed line = the exit curve with IV 5 points higher). A setup marked <i>fragile</i> loses more than half its risk in the stress.</li>
             <li>Build it in ONE / TWS yourself — the desk never sends orders.</li>
           </ol>
           <div>

@@ -196,30 +196,81 @@ def _nearest_pair(pairs, fd, bd):
     return min(pairs, key=lambda p: abs(p["fdte"] - fd) * 2 + abs(p["bdte"] - bd))
 
 
+_GATE_CACHE = {}
+
+
+def _cached(key, fn, ttl=600):
+    hit = _GATE_CACHE.get(key)
+    if hit and (dt.datetime.now() - hit[0]).total_seconds() < ttl:
+        return hit[1]
+    try:
+        v = fn()
+    except Exception:
+        v = None
+    _GATE_CACHE[key] = (dt.datetime.now(), v)
+    return v
+
+
+def entry_days():
+    """Closed calendar-family trades by US entry weekday (Saturday counted as Friday): n, P&L, win rate."""
+    from .trades import CALENDAR_FAMILY, journal
+    by = {}
+    for t in journal()[0]:
+        if t["strategy"] not in CALENDAR_FAMILY or t["status"] != "Closed" or t["pnl"] is None or not t["opened"]:
+            continue
+        wd = min(t["opened"].weekday(), 4)
+        b = by.setdefault(wd, {"n": 0, "pnl": 0.0, "win": 0})
+        b["n"] += 1; b["pnl"] += t["pnl"]; b["win"] += t["pnl"] > 0
+    names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    return {names[k]: {**v, "pnl": round(v["pnl"]), "win_rate": v["win"] / v["n"]} for k, v in sorted(by.items())}
+
+
+def _entry_note():
+    d = _cached("entry_days", entry_days) or {}
+    if not d:
+        return ""
+    best = max(d.items(), key=lambda kv: kv[1]["pnl"])
+    worst = min(d.items(), key=lambda kv: kv[1]["pnl"])
+    f = lambda kv: f"{kv[0]} {kv[1]['n']} trades {'−' if kv[1]['pnl'] < 0 else ''}${abs(kv[1]['pnl']):,.0f}, {round(100 * kv[1]['win_rate'])}% win"
+    return f" · your record by entry day: best {f(best)}; worst {f(worst)}"
+
+
 def strategy_gates(symbol, es, pairs):
-    """Rule checks folded in from Calendar-Scanner's STRATEGIES.md. Informational only."""
+    """Rule checks folded in from Calendar-Scanner's STRATEGIES.md plus the two filters from your own record
+    (the same ones the Trade readiness bar applies): VIX/VIX3M above 0.834 and no high-impact release within 3 days.
+    Informational only."""
+    from .readiness import _events, ivts_band
     df = cboe_curve_frame()
     vix, vix3m = (float(df["VIX"].iloc[-1]), float(df["VIX3M"].iloc[-1])) if len(df) else (None, None)
     backwardation = vix is not None and vix > vix3m
+    ivts = vix / vix3m if vix and vix3m else None
+    band = ivts_band(ivts)
+    ev = _cached("events", _events) or []
+    common = [("VIX/VIX3M above 0.834 (your June calendar losses were entered at 0.80–0.81)", ivts is not None and ivts > 0.834,
+               f"{ivts:.3f} · {band['label']}" if ivts else "–"),
+              ("No CPI / FOMC / payrolls / PCE / GDP within 3 days", not ev,
+               ", ".join(sorted({e['title'] for e in ev})) if ev else "none")]
+    day = _entry_note()
     gates = []
     if symbol == "SPX":
         p = _nearest_pair(pairs, 15, 22)
         if p:
             checks = [("Back IV − front IV ≤ 1.0 pt", p["contango"] <= 1.0, f"{p['contango']:+.2f} pts"),
-                      ("VIX below VIX3M (no backwardation)", not backwardation, f"VIX {vix:.2f} / VIX3M {vix3m:.2f}")]
-            gates.append({"name": "TimeEdge", "pair": p, "rule": "ATM put calendar, ~15 / 22 DTE, entry Thursday ~3:30 pm ET",
+                      ("VIX below VIX3M (no backwardation)", not backwardation, f"VIX {vix:.2f} / VIX3M {vix3m:.2f}")] + common
+            gates.append({"name": "TimeEdge", "pair": p,
+                          "rule": "ATM put calendar, ~15 / 22 DTE, late-session entry (card: Thursday ~3:30 pm ET)" + day + " · stop 15–20% of debit",
                           "checks": checks, "pass": all(c[1] for c in checks)})
         p = _nearest_pair(pairs, 21, 28)
         if p:
-            checks = [("VIX below VIX3M (no backwardation)", not backwardation, f"VIX {vix:.2f} / VIX3M {vix3m:.2f}")]
-            gates.append({"name": "Triple Calendar", "pair": p, "rule": "3 put calendars ATM and ±expected move, 21 / 28 DTE",
+            checks = [("VIX below VIX3M (no backwardation)", not backwardation, f"VIX {vix:.2f} / VIX3M {vix3m:.2f}")] + common
+            gates.append({"name": "Triple Calendar", "pair": p, "rule": "3 put calendars ATM and ±expected move, 21 / 28 DTE" + day,
                           "checks": checks, "pass": all(c[1] for c in checks)})
     if symbol == "RUT":
         p = _nearest_pair(pairs, 15, 43)
         if p:
             checks = [("VIX below VIX3M (no backwardation)", not backwardation, f"VIX {vix:.2f} / VIX3M {vix3m:.2f}"),
-                      ("Front not above back (calendar in contango)", p["contango"] >= 0, f"{p['contango']:+.2f} pts")]
-            gates.append({"name": "TimeZone", "pair": p, "rule": "RUT 14Δ 20-wide PCS + 40Δ put calendar, ~15 / 43 DTE",
+                      ("Front not above back (calendar in contango)", p["contango"] >= 0, f"{p['contango']:+.2f} pts")] + common
+            gates.append({"name": "TimeZone", "pair": p, "rule": "RUT 14Δ 20-wide PCS + 40Δ put calendar, ~15 / 43 DTE" + day + " · stop ~5%",
                           "checks": checks, "pass": all(c[1] for c in checks)})
     return gates
 
@@ -242,6 +293,65 @@ def pair_detail(symbol, front, back):
                        ON a.snap_id=b.snap_id AND b.expiry=? WHERE a.symbol=? AND a.expiry=? ORDER BY a.date""", (back, symbol, front))
     out["actual"] = [{"d": r["date"], "v": round((r["ba"] - r["fa"]) * 100, 3)} for r in rows if r["fa"] and r["ba"]]
     return out
+
+
+CAL_STOPS = (0.15, 0.20)  # TimeEdge card: stop at 15-20% of the debit
+
+
+def calendar_curve(symbol, front, back, strike=None):
+    """P&L of the ATM put calendar vs spot ($ per lot): tomorrow (overnight gap), half way to the front expiry,
+    at the front expiry, and tomorrow with IV 2 pts lower; plus the overnight moves that hit the card's stops.
+    Black-76 on the recorded snapshot's own IVs at that strike, sticky strike."""
+    from .a14 import put_price
+    snap, es = latest_snapshot(symbol)
+    f = next((e for e in es if e["expiry"] == front), None)
+    b = next((e for e in es if e["expiry"] == back), None)
+    if not f or not b:
+        return {"error": "That expiry pair is not in the latest snapshot."}
+    S0 = snap["spot"]
+    k, debit = _put_calendar_debit(snap["id"], front, back, strike or S0)
+    rows = db.query("SELECT expiry, strike, iv, fwd FROM quotes WHERE snap_id=? AND iv IS NOT NULL AND expiry IN (?,?) ORDER BY strike",
+                    (snap["id"], front, back))
+    leg = {}
+    for e, row in ((front, f), (back, b)):
+        r = [x for x in rows if x["expiry"] == e]
+        fw = next((x["fwd"] for x in r if x["fwd"]), None) or S0
+        leg[e] = {"F": fw, "T": row["t"], "ks": [x["strike"] for x in r], "ivs": [x["iv"] for x in r], "atm": row["atm_iv"]}
+    if k is None:  # the recorder keeps a delta ladder, so the two expiries often share no strike: model the ATM calendar
+        k = float(round((strike or leg[front]["F"]) / 5) * 5)
+    for L in leg.values():
+        L["iv"] = float(np.interp(k, L["ks"], L["ivs"])) if len(L["ks"]) >= 2 else L["atm"]
+    modelled = debit is None
+    if modelled:
+        debit = round(float(put_price(leg[back]["F"], k, leg[back]["T"], leg[back]["iv"]) - put_price(leg[front]["F"], k, leg[front]["T"], leg[front]["iv"])), 2)
+    if not debit or debit <= 0:
+        return {"error": "This pair prices at no debit (front IV well above back): no calendar to draw."}
+    lf, lb = leg[front], leg[back]
+    m = float(np.clip(4 * lf["iv"] * math.sqrt(max(lf["T"], 1 / 365)), 0.04, 0.12))
+    S = np.linspace(S0 * (1 - m), S0 * (1 + m), 161)
+
+    def val(days, dv=0.0, spots=S):
+        t = days / 365
+        Ff, Fb = spots * lf["F"] / S0, spots * lb["F"] / S0
+        return (put_price(Fb, k, max(lb["T"] - t, 1e-6), lb["iv"] + dv) - put_price(Ff, k, max(lf["T"] - t, 1e-6), lf["iv"] + dv)) * 100
+
+    v0 = float(val(0, spots=np.array([S0]))[0])
+    half = max(round(f["dte"] / 2), 1)
+    curves = {"tomorrow": val(1) - v0, "mid": val(half) - v0, "front_exp": val(f["dte"]) - v0, "tomorrow_ivdown": val(1, -0.02) - v0}
+    stops = []
+    fine = np.linspace(S0 * (1 - m), S0 * (1 + m), 801)
+    tm = val(1, spots=fine) - v0
+    for pct in CAL_STOPS:
+        lvl = -pct * debit * 100
+        hit = tm <= lvl
+        dn = fine[(fine < S0) & hit]
+        up = fine[(fine > S0) & hit]
+        stops.append({"pct": pct, "level": round(lvl), "down": None if not len(dn) else round(float(100 * (dn.max() / S0 - 1)), 2),
+                      "up": None if not len(up) else round(float(100 * (up.min() / S0 - 1)), 2)})
+    return {"symbol": symbol, "date": snap["date"], "spot": S0, "strike": k, "debit": debit, "fdte": int(f["dte"]), "bdte": int(b["dte"]),
+            "half": half, "S": S.round(2).tolist(), **{n: np.round(c, 1).tolist() for n, c in curves.items()},
+            "em_front": S0 * lf["iv"] * math.sqrt(lf["T"]), "em_day": S0 * lf["iv"] * math.sqrt(1 / 365),
+            "stops": stops, "iv_front": lf["iv"], "iv_back": lb["iv"], "modelled": modelled}
 
 
 # ------------------------------------------------------------------ skew / IV

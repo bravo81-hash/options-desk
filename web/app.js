@@ -129,6 +129,27 @@ function renderCal() {
     th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
   $("pairTable").querySelectorAll("tr.click").forEach((tr) => { const go = () => selectPair(tr.dataset.f, tr.dataset.b); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); });
 }
+async function pairRisk(front, back, strike) {
+  const box = document.createElement("div"); box.id = "pairRisk"; box.innerHTML = `<div class="state loading">Pricing the calendar…</div>`;
+  $("pairBox").appendChild(box);
+  const c = await api(`/api/pair/curve?symbol=${calData.symbol}&front=${front}&back=${back}${ok(strike) ? "&strike=" + strike : ""}`).catch((e) => ({error: e.message}));
+  if (c.error) { box.innerHTML = errBox(c.error); return; }
+  const usd = (v) => (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString();
+  const mv = (x) => ok(x) ? (x > 0 ? "+" : "") + x.toFixed(1) + "%" : "beyond the chart";
+  const dayMv = 100 * c.em_day / c.spot;
+  const stopTxt = c.stops.map((s) => `<div><span class="lbl">Stop ${Math.round(100 * s.pct)}% of debit</span><b>${usd(s.level)}</b><span class="small muted">hit overnight by ${mv(s.down)} / ${mv(s.up)} · a 1-day 1σ move is ±${dayMv.toFixed(1)}%</span></div>`).join("");
+  box.innerHTML = `<h3 style="margin:12px 0 6px">Risk at the card's stop · ${esc(c.symbol)} ${fmt(c.strike, 0)}P ${c.fdte}d / ${c.bdte}d, 1 lot</h3>
+    <div class="kv mini"><div><span class="lbl">Debit</span><b>${fmt(c.debit)}</b><span class="small muted">${c.modelled ? "modelled from the recorded smile (no common strike quoted)" : "recorded mid"} · ${esc(c.date)} 15:40 ET, not live</span></div>${stopTxt}</div>
+    <div class="chart" id="pairRiskChart"></div>${legend([["tomorrow (overnight gap)", "var(--s1)"], ["tomorrow, IV −2 pts", "var(--down)"], [`after ${c.half} days`, "var(--accent)"], ["at front expiry", "var(--faint)"], ["stop 15% / 20%", "var(--warn)"]])}
+    <p class="note">Black-76 on the snapshot's own IV at this strike, each strike's IV held (sticky strike); shaded = a 1-day 1σ move. Your worst June calendar lost 39% in one day: a move past the stop points above, or an IV drop on top of a smaller move, gets there before you can adjust. Size so a full-debit loss on one trade is acceptable, and exit at the stop.</p>`;
+  const flat = (v) => c.S.map(() => v);
+  window.riskChart($("pairRiskChart"), {label: "calendar risk graph", h: 240, xs: c.S, spot: c.spot, nowPnl: 0, ticks: 5,
+    fx: (v, long) => long ? `${c.symbol} ${fmt(v, 0)} (${(100 * (v / c.spot - 1)).toFixed(1)}%)` : fmt(v, 0),
+    series: [{name: "at front expiry", ys: c.front_exp, color: "var(--faint)", width: 1.4}, {name: `after ${c.half} days`, ys: c.mid, color: "var(--accent)", width: 1.8},
+      {name: "tomorrow", ys: c.tomorrow, color: "var(--s1)", width: 2.2, fill: true}, {name: "tomorrow, IV −2 pts", ys: c.tomorrow_ivdown, color: "var(--down)", width: 1.4, dash: "5 3"},
+      ...c.stops.map((s) => ({name: `stop ${Math.round(100 * s.pct)}%`, ys: flat(s.level), color: "var(--warn)", width: 1.2, dash: "2 3"}))],
+    bands: [[c.spot - c.em_day, c.spot + c.em_day]]});
+}
 async function selectPair(front, back) {
   calSel = {front, back}; renderCal();
   const p = calData.pairs.find((x) => x.front === front && x.back === back);
@@ -149,6 +170,7 @@ async function selectPair(front, back) {
       <div class="chart" id="pairChart"></div>${legend(series.map((s) => [s.name, s.color]))}
       <p class="note">Maturity-matched = today's ${p.fdte}d and ${p.bdte}d maturities re-measured on every past day, so it is comparable through time. The exact-pair line follows these two expiries as they age, from your recorded snapshots.${d.matched_src ? " Source: " + esc(d.matched_src) + "." : ""}</p>`;
     lineChart($("pairChart"), {label: "pair contango history", h: 220, mR: 112, series, refs: [{y: 0, color: "var(--line)"}], ft: (v) => sgn(v) + " pts"});
+    pairRisk(front, back, p.strike);
   } catch (e) { $("pairBox").innerHTML = errBox(e); }
 }
 $("calForm").addEventListener("submit", loadCal);

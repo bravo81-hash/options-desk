@@ -164,8 +164,31 @@ def realised_vol(sym, n=20):
     return float(np.std(lr, ddof=1) * math.sqrt(252))
 
 
+STRESS_MOVE, STRESS_VOL = -0.05, 0.05  # stress at the exit date: index -5%, every strike's IV +5 vol points
+_HOLD = {"t": None, "v": {}}
+
+
+def typical_hold():
+    """Average days held of your closed A14s per entry-DTE bucket (Journal / ONE), cached 10 minutes."""
+    now = dt.datetime.now()
+    if _HOLD["t"] is None or (now - _HOLD["t"]).total_seconds() > 600:
+        try:
+            _HOLD["v"] = {b: v["dit"] for b, v in stats()["by_dte"].items() if v["n"] >= 2}
+        except Exception:
+            _HOLD["v"] = {}
+        _HOLD["t"] = now
+    return _HOLD["v"]
+
+
+def hold_days(d, exit_days=None):
+    """Days to the modelled exit: a fixed number, or (None / 'auto') your typical hold for this entry DTE."""
+    if exit_days in (None, "auto"):
+        exit_days = round(typical_hold().get(bucket(d)) or 14)
+    return int(min(exit_days, max(d - 1, 1)))
+
+
 # ------------------------------------------------------------------ scan
-def scan(symbols=("SPX", "RUT"), dte_min=10, dte_max=100, exit_days=14, vol_basis="rv20", vol_custom=None,
+def scan(symbols=("SPX", "RUT"), dte_min=14, dte_max=45, exit_days=None, vol_basis="rv20", vol_custom=None,
          min_credit=-1.0, up_lo=-1.5, up_hi=1.0, top=40):
     raw = db.get_meta("a14_chain")
     if not raw:
@@ -210,8 +233,9 @@ def scan(symbols=("SPX", "RUT"), dte_min=10, dte_max=100, exit_days=14, vol_basi
             theta = (val(F0, max(T - 1 / 365, 1e-6)) - v0) * 100
             vega = (val(F0, T, 0.01) - v0) * 100
             # scenario at the exit: spot grid in implied-sigma units, sticky strike
-            h = min(exit_days, max(sm["dte"] - 1, 1))
+            h = hold_days(sm["dte"], exit_days)
             Th = max(T - h / 365, 1e-6)
+            stress = ((put_price(F0 * (1 + STRESS_MOVE), C, Th, ivs + STRESS_VOL) * np.array([1, -2, 1])).sum(axis=1) - v0) * 100
             atm = float(_iv_at(sm, F0))
             sd_h = atm * math.sqrt(h / 365)
             x = np.linspace(-4 * sd_h, 3 * sd_h, 71)
@@ -242,6 +266,8 @@ def scan(symbols=("SPX", "RUT"), dte_min=10, dte_max=100, exit_days=14, vol_basi
                      "tent_lo": None if np.isnan(tent_lo[j]) else float(100 * (math.exp(tent_lo[j]) * F0 / S0 - 1)),
                      "tent_hi": None if np.isnan(tent_hi[j]) else float(100 * (math.exp(tent_hi[j]) * F0 / S0 - 1)),
                      "down1sd_h": round(float(pnl_h[j, i1])), "h": h,
+                     "stress_h": round(float(stress[j])), "stress_risk": float(100 * stress[j] / (risk[j] * 100)),
+                     "exp_day": float(100 * exp_pnl[j] / (risk[j] * 100)) / h,
                      "upper_pct": 100 * (C[j, 0] / S0 - 1), "short_pct": short_pct, "atm_iv": atm,
                      "short_sd": (C[j, 1] / F0 - 1) / (atm * math.sqrt(T)),
                      "usual": bool(C[j, 0] >= S0 * 0.99 and C[j, 0] <= S0 * 1.01 and -3.5 <= short_pct <= -0.5)}
@@ -255,10 +281,11 @@ def scan(symbols=("SPX", "RUT"), dte_min=10, dte_max=100, exit_days=14, vol_basi
         return {"error": "No candidates in that window (is the chain empty for those expiries?).", **meta}
     meta["count"] = len(cands)
     heat_out = [{"sym": k[0], "expiry": k[1], "cells": {str(b): v for b, v in sorted(cells.items())}} for k, cells in sorted(heat.items())]
-    return {**meta, "candidates": cands, "heat": heat_out, "params": {"exit_days": exit_days, "vol_basis": vol_basis}}
+    return {**meta, "candidates": cands, "heat": heat_out, "params": {"exit_days": exit_days or "auto", "vol_basis": vol_basis, "hold": typical_hold(),
+                                                                 "stress": {"move": STRESS_MOVE, "vol": STRESS_VOL}}}
 
 
-def curve(sym, expiry, upper, short, lower, exit_days=14):
+def curve(sym, expiry, upper, short, lower, exit_days=None):
     """Risk-graph curves for one candidate: today, at the exit, at expiry ($ per lot vs spot)."""
     blob = json.loads(db.get_meta("a14_chain") or "{}")
     sb = blob.get("symbols", {}).get(sym)
@@ -274,14 +301,15 @@ def curve(sym, expiry, upper, short, lower, exit_days=14):
     span = max(4 * atm * math.sqrt(T), 0.06)
     S = np.linspace(S0 * (1 - span), S0 * (1 + span * 0.6), 161)
     fwd_ratio = F0 / S0
-    h = min(exit_days, max(sm["dte"] - 1, 1))
+    h = hold_days(sm["dte"], exit_days)
 
-    def at(t_left):
+    def at(t_left, bump=0.0):
         F = S * fwd_ratio ** (t_left / T if T else 0)
-        return ((put_price(F[:, None], C[None, :], max(t_left, 1e-6), ivs[None, :]) * wts).sum(axis=1) - v0) * 100
+        return ((put_price(F[:, None], C[None, :], max(t_left, 1e-6), ivs[None, :] + bump) * wts).sum(axis=1) - v0) * 100
 
     em = S0 * atm * math.sqrt(T)
     return {"spot": S0, "S": S.round(2).tolist(), "now": at(T).round(1).tolist(), "exit": at(T - h / 365).round(1).tolist(),
+            "stress": at(T - h / 365, STRESS_VOL).round(1).tolist(), "stress_vol": STRESS_VOL, "stress_move": STRESS_MOVE,
             "expiry": at(1e-6).round(1).tolist(), "h": h, "em": em, "em_h": S0 * atm * math.sqrt(h / 365), "atm_iv": atm,
             "strikes": [upper, short, lower]}
 

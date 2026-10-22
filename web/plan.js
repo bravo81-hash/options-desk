@@ -104,7 +104,7 @@ function trendBanner() {
   const dteCard = `<div><span class="lbl">Your closed A14s · return per day held</span><span class="small">${["≤21", "22–45", "46–70", "71+"].filter((k) => bd[k]).map((k) => `${k} DTE <b>${fmt(bd[k].per_day, 2)}%</b>/day (${fmt(bd[k].ret, 1)}% over ${Math.round(bd[k].dit)}d, n ${bd[k].n})`).join("<br>")}</span></div>`;
   $("a14Trend").innerHTML = `<div class="kv">${card("SPX")}${card("RUT")}${dteCard}</div>`;
 }
-const SORTS = {exp_risk: "E[P&L] at exit / risk", exp_day: "E/risk per day held (capital use)", theta_risk: "Theta / risk", pop_h: "P(profit) at exit", ror: "Max profit / risk"};
+const SORTS = {exp_risk: "E[P&L] at exit / risk", exp_day: "E/risk per day held (capital use)", stress_risk: "Stress loss / risk (smallest first)", theta_risk: "Theta / risk", pop_h: "P(profit) at exit", ror: "Max profit / risk"};
 function params() {
   const q = new URLSearchParams({sym: $("a14Sym").value, dte_min: $("a14Dmin").value, dte_max: $("a14Dmax").value, exit: $("a14Exit").value,
     vol: $("a14Vol").value, min_credit: $("a14Cr").value, up_lo: $("a14UpLo").value, up_hi: $("a14UpHi").value});
@@ -116,9 +116,9 @@ async function scan() {
   try {
     A = await api("/api/a14/scan?" + params());
     if (A.error) { $("a14Meta").textContent = ""; $("a14Heat").innerHTML = ""; $("a14Table").innerHTML = err(A.error); return; }
-    A.candidates.forEach((c) => { c.exp_day = c.exp_risk / Math.max(c.h, 1); });
     const m = Object.entries(A.symbols).map(([s, v]) => `${s} ${big(v.spot)} · RV20 ${ok(v.rv20) ? (100 * v.rv20).toFixed(1) + "%" : "–"}`).join(" · ");
-    $("a14Meta").textContent = `chain from TWS ${when(A.ts)} · ${m} · ${A.count} candidates`;
+    const hold = (A.params && A.params.hold) || {}, ex = A.params && A.params.exit_days;
+    $("a14Meta").textContent = `chain from TWS ${when(A.ts)} · ${m} · ${A.count} candidates · exit ${ex === "auto" ? "at your typical hold: " + Object.entries(hold).map(([k, v]) => `${k} DTE ${Math.round(v)}d`).join(", ") + " (14d where no history)" : "after " + ex + " days"}`;
     if (!ST) { ST = await api("/api/a14/stats").catch(() => null); trendBanner(); }
     cellFilter = null; heat(); table(); if (!HIST) history();
   } catch (e) { $("a14Table").innerHTML = err(e); }
@@ -136,7 +136,8 @@ function heat() {
 }
 const WHY = {
   exp_risk: (c) => `expected P&L on your exit date (${c.h}d) is <b>${fmt(c.exp_risk, 1)}%</b> of the risk`,
-  exp_day: (c) => `expected return is <b>${fmt(c.exp_day, 2)}%</b> of risk per day held, the best use of capital over ${c.h} days`,
+  exp_day: (c) => `expected return is <b>${fmt(c.exp_day, 2)}%</b> of risk per day held over ${c.h} days (your typical hold for ${c.dte} DTE unless you set the exit)`,
+  stress_risk: (c) => `in the stress (index −5%, IV +5 pts by day ${c.h}) the P&L is <b>${money(c.stress_h)}</b>, ${Math.round(c.stress_risk)}% of the risk`,
   theta_risk: (c) => `time decay earns <b>${fmt(c.theta_risk, 2)}%</b> of the risk per day (${money(c.theta)}/day per lot)`,
   pop_h: (c) => `<b>${Math.round(100 * c.pop_h)}%</b> chance of being in profit on your exit date`,
   ror: (c) => `max profit is <b>${fmt(c.ror, 2)}x</b> the risk if the index pins the short strike at expiry`,
@@ -148,6 +149,7 @@ function rankWhy(c, rank, total) {
   if (c.theta > 0) pros.push(`earns ${money(c.theta)} a day from time decay`); else cons.push(`negative theta today (${money(c.theta)}/day): needs the market to come to it`);
   if (c.usual) pros.push("shaped like your past A14 entries");
   if (tr && ST.by_trend) (upTrend(tr) ? pros : cons).push(upTrend(tr) ? `${c.sym} above its 20-day average (your better entry condition)` : `${c.sym} below its 20-day average (your A14s averaged ${fmt(ST.by_trend.below.ret, 1)}% vs ${fmt(ST.by_trend.above.ret, 1)}% above it)`);
+  if (ok(c.stress_risk) && c.stress_risk < -50) cons.push(`fragile: the stress (−5%, IV +5) costs ${money(c.stress_h)}, ${Math.round(-c.stress_risk)}% of risk`);
   if (ok(c.down1sd_h) && c.down1sd_h < -0.5 * c.risk) cons.push(`a 1σ drop by exit costs ${money(c.down1sd_h)} (${Math.round(100 * -c.down1sd_h / c.risk)}% of risk)`);
   if (c.short_sd > -0.15) cons.push("short strike at the money: the profit zone is narrow and close");
   if (c.dte <= 14) cons.push(`${c.dte} days to expiry: fast gamma, little room to adjust`);
@@ -166,13 +168,13 @@ function table() {
   const th = (k, t, tip) => `<th class="n ${k === sortKey ? "sorted" : ""}" data-k="${k}" title="${esc(tip || "")}" style="cursor:pointer">${t}</th>`;
   $("a14Table").innerHTML = list.length ? `<div class="tbl"><table><thead><tr><th class="n" title="rank by the chosen metric · hover a badge for why">#</th><th>Expiry</th><th>Strikes (upper / short / lower)</th><th class="n">Wings</th><th class="n" title="per lot, points; + = credit">Credit</th>
     <th class="n">Max profit</th><th class="n">Risk</th>${th("ror", "Profit/risk")}<th class="n">θ/day</th><th class="n">Δ</th><th class="n">Vega</th>
-    ${th("theta_risk", "θ/risk", "theta per day as % of risk")}${th("exp_risk", "E/risk", "expected P&L at the exit date as % of risk")}${th("exp_day", "E/risk per day", "expected return at the exit date, as % of risk, divided by the days held: compares short and long expiries on capital use")}${th("pop_h", "P(profit)", "probability of a profit at the exit date")}<th class="n" title="spot range (from today) where the position is in profit at the exit date">Profit zone at exit</th><th class="n" title="short strike distance in implied standard deviations to expiry">Short σ</th></tr></thead><tbody>${
+    ${th("theta_risk", "θ/risk", "theta per day as % of risk")}${th("exp_risk", "E/risk", "expected P&L at the exit date as % of risk")}${th("exp_day", "E/risk per day", "expected return at the exit date, as % of risk, divided by the days held (your typical hold for that entry DTE): compares short and long expiries on capital use")}${th("stress_risk", "Stress", "P&L by the exit date if the index falls 5% and every strike's IV rises 5 points, $ per lot")}${th("pop_h", "P(profit)", "probability of a profit at the exit date")}<th class="n" title="spot range (from today) where the position is in profit at the exit date">Profit zone at exit</th><th class="n" title="short strike distance in implied standard deviations to expiry">Short σ</th></tr></thead><tbody>${
     list.map((c, i) => `<tr data-i="${i}" class="${pick && pick.sym === c.sym && pick.expiry === c.expiry && pick.upper === c.upper && pick.short === c.short && pick.lower === c.lower ? "sel" : ""}" style="cursor:pointer">
       <td class="n"><span class="rank" data-i="${i}">${i + 1}</span></td><td>${c.sym} ${xd(c.expiry)} <span class="muted">${c.dte}d ${esc(c.cls || "")}</span>${c.usual ? ` <span class="chip">your usual</span>` : ""}${trendOf(c.sym) ? ` <span class="chip ${upTrend(trendOf(c.sym)) ? "pos" : "wrn"}" title="${c.sym} ${pctS(trendOf(c.sym).vs_sma20, 1)} vs its 20-day average">${upTrend(trendOf(c.sym)) ? "trend ↑" : "below 20d"}</span>` : ""}</td>
       <td class="mono">${big(c.upper)} / ${big(c.short)} / ${big(c.lower)} <span class="muted small">${pctS(c.upper_pct)} / ${pctS(c.short_pct)}</span></td>
       <td class="n mono">${c.U}/${c.L}</td><td class="n mono ${cls(c.credit)}">${sgn(c.credit, 2)}</td><td class="n">${money(c.max_profit)}</td><td class="n">${money(c.risk)}</td><td class="n">${fmt(c.ror, 2)}</td>
       <td class="n ${cls(c.theta)}">${money(c.theta)}</td><td class="n">${fmt(c.delta, 1)}</td><td class="n">${fmt(c.vega, 0)}</td>
-      <td class="n">${fmt(c.theta_risk, 2)}%</td><td class="n ${cls(c.exp_risk)}"><b>${fmt(c.exp_risk, 1)}%</b></td><td class="n">${fmt(c.exp_day, 2)}%</td><td class="n">${ok(c.pop_h) ? Math.round(100 * c.pop_h) + "%" : "–"}</td>
+      <td class="n">${fmt(c.theta_risk, 2)}%</td><td class="n ${cls(c.exp_risk)}"><b>${fmt(c.exp_risk, 1)}%</b></td><td class="n">${fmt(c.exp_day, 2)}%</td><td class="n ${c.stress_risk < -50 ? "neg" : ""}" title="${Math.round(c.stress_risk)}% of risk">${money(c.stress_h)}</td><td class="n">${ok(c.pop_h) ? Math.round(100 * c.pop_h) + "%" : "–"}</td>
       <td class="n small">${ok(c.tent_lo) ? pctS(c.tent_lo) : "–"} to ${ok(c.tent_hi) ? pctS(c.tent_hi) : "no upside loss"}</td><td class="n">${fmt(c.short_sd, 2)}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="state">Nothing matches. Loosen the filters (credit, DTE, upper-long range) or untick "your usual shapes only".</div>`;
   bindTip($("a14Table"), ".rank", (n) => rankWhy(list[+n.dataset.i], +n.dataset.i + 1, total));
@@ -190,12 +192,12 @@ async function detail() {
   $("a14Detail").innerHTML = `<h3 style="margin:0 0 8px">${c.sym} ${xd(c.expiry)} · +1 ${big(c.upper)}P / −2 ${big(c.short)}P / +1 ${big(c.lower)}P <span class="muted small">per lot</span></h3>
     <div class="kv" style="margin-bottom:10px">${kpi("Credit", sgn(c.credit, 2) + " pts", c.credit >= 0 ? "no upside risk" : "debit = upside risk")}${kpi("Max profit", money(c.max_profit), "at the short strike, at expiry")}
     ${kpi("Risk", money(c.risk), "below the lower wing")}${kpi("θ / day", money(c.theta), `${fmt(c.theta_risk, 2)}% of risk`, cls(c.theta))}${kpi("Δ · vega", `${fmt(c.delta, 1)} · ${fmt(c.vega, 0)}`, "$ per point · $ per vol point")}
-    ${kpi(`At exit (${r.h}d)`, money(c.exp_h), `expected · P(profit) ${Math.round(100 * c.pop_h)}%`, cls(c.exp_h))}${kpi("−1σ at exit", money(c.down1sd_h), `spot −${(100 * r.em_h / r.spot).toFixed(1)}% by the exit date`, cls(c.down1sd_h))}</div>
-    <div class="chart" id="a14Chart"></div>${legend([["today", "var(--s1)"], [`after ${r.h} days`, "var(--accent)"], ["at expiry", "var(--faint)"], ["±1σ to expiry", "var(--s1)", 1]])}`;
+    ${kpi(`At exit (${r.h}d)`, money(c.exp_h), `expected · P(profit) ${Math.round(100 * c.pop_h)}%`, cls(c.exp_h))}${kpi("−1σ at exit", money(c.down1sd_h), `spot −${(100 * r.em_h / r.spot).toFixed(1)}% by the exit date`, cls(c.down1sd_h))}${kpi("Stress at exit", money(c.stress_h), `−5% and IV +5 pts · ${Math.round(-c.stress_risk)}% of risk`, c.stress_risk < -50 ? "neg" : cls(c.stress_h))}</div>
+    <div class="chart" id="a14Chart"></div>${legend([["today", "var(--s1)"], [`after ${r.h} days`, "var(--accent)"], [`after ${r.h} days, IV +5 pts`, "var(--down)"], ["at expiry", "var(--faint)"], ["±1σ to expiry", "var(--s1)", 1]])}`;
   const xs = r.S, S0 = r.spot;
   window.riskChart($("a14Chart"), {label: "BWB risk graph", h: 280, xs, spot: S0, nowPnl: 0, ticks: 5,
     fx: (v, long) => long ? `${c.sym} ${big(v)} (${pctS(100 * (v / S0 - 1))})` : big(v),
-    series: [{name: "at expiry", ys: r.expiry, color: "var(--faint)", width: 1.4}, {name: `after ${r.h} days`, ys: r.exit, color: "var(--accent)", width: 2.2, fill: true}, {name: "today", ys: r.now, color: "var(--s1)", width: 1.6}],
+    series: [{name: "at expiry", ys: r.expiry, color: "var(--faint)", width: 1.4}, {name: `after ${r.h} days`, ys: r.exit, color: "var(--accent)", width: 2.2, fill: true}, {name: `after ${r.h} days, IV +5 pts`, ys: r.stress, color: "var(--down)", width: 1.6, dash: "5 3"}, {name: "today", ys: r.now, color: "var(--s1)", width: 1.6}],
     bands: [[S0 - r.em, S0 + r.em]]});
 }
 function history() {
