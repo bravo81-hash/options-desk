@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, journal, pick, readiness, season, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
+from desk import ROOT, a14, accounts, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -355,6 +355,24 @@ def api_tws():
     return ok(recorder.connection_check())
 
 
+# ------------------------------------------------------------------ encrypted cloud snapshot
+@app.get("/api/snapshot")
+def api_snapshot():
+    return ok(snapshot.info())
+
+
+@app.post("/api/snapshot/key")
+def api_snapshot_key():
+    body = request.get_json(silent=True) or {}
+    return ok(snapshot.set_passphrase(body.get("passphrase")))
+
+
+@app.post("/api/snapshot/publish")
+def api_snapshot_publish():
+    threading.Thread(target=snapshot.publish, kwargs={"force": True}, daemon=True).start()
+    return ok({"started": True})
+
+
 # ------------------------------------------------------------------ scheduler
 def next_record_time(now=None):
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ET)
@@ -430,6 +448,10 @@ def scheduler():
             session_jobs(now)
         except Exception as e:
             recorder._log(f"session jobs failed: {e}")
+        try:
+            snapshot.auto()  # encrypted cloud snapshot when anything it shows has changed
+        except Exception as e:
+            recorder._log(f"cloud snapshot failed: {e}")
         time.sleep(60)
 
 
@@ -456,6 +478,7 @@ if __name__ == "__main__":
         accounts.import_tws_matcher_history()  # one-off seed of daily NAV / P&L history
     except Exception as e:
         print("NAV history import skipped:", e)
+    snapshot.FLASK = app
     threading.Thread(target=scheduler, daemon=True).start()
     url = f"http://127.0.0.1:{CFG['port']}/"
     if "--no-browser" not in sys.argv:

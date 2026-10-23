@@ -251,10 +251,29 @@ async function loadRec() {
       inv.snapshots.map((r) => `<tr><td><b>${esc(r.symbol)} surface snapshots</b></td><td class="n">${r.n}</td><td class="mono small">${r.a}</td><td class="mono small">${r.b}</td></tr>`).join("") +
       inv.history.map((r) => `<tr><td>${esc(r.symbol)}</td><td class="n">${r.n.toLocaleString()}</td><td class="mono small">${r.a}</td><td class="mono small">${r.b}</td></tr>`).join("")}</tbody></table></div>`;
     $("recLog").textContent = (s.recorder.log || []).join("\n") || "No activity yet.";
+    if (!window.DESK_CLOUD) loadSnap();
     $("btnRecord").disabled = s.recorder.running;
     if (s.recorder.running) setTimeout(loadRec, 3000);
   } catch (e) { $("recKv").innerHTML = errBox(e); }
 }
+async function loadSnap() {
+  const s = await api("/api/snapshot").catch(() => null); if (!s) return;
+  $("snapKv").innerHTML = `<div><span class="lbl">Passphrase</span><b class="${s.key_set ? "pos" : "wrn"}">${s.key_set ? "set" : "not set"}</b><span class="small muted">${s.key_set_at ? "since " + new Date(s.key_set_at).toLocaleString() : "nothing is published until you set one"}</span></div>
+    <div><span class="lbl">Last published</span><b>${s.last ? new Date(s.last).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"}) : "never"}</b><span class="small muted">${s.running ? "publishing…" : s.bytes ? Math.round(s.bytes / 1024).toLocaleString() + " kB encrypted" + (s.entries ? " · " + s.entries + " views" : "") : ""}</span></div>
+    <div><span class="lbl">Automatic</span><b>${s.auto ? "on" : "off"}</b><span class="small muted">${s.error ? `<span class="neg">${esc(s.error)}</span>` : "when anything changes, at most every 20 min"}</span></div>`;
+  if (s.running) setTimeout(loadSnap, 3000);
+}
+$("snapKeyForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const a = $("snapP1").value, b = $("snapP2").value;
+  if (a !== b) { $("snapMsg").innerHTML = `<span class="neg">The two entries differ.</span>`; return; }
+  const r = await api("/api/snapshot/key", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({passphrase: a})});
+  $("snapP1").value = $("snapP2").value = "";
+  if (r.error) { $("snapMsg").innerHTML = `<span class="neg">${esc(r.error)}</span>`; return; }
+  $("snapMsg").textContent = "Passphrase set. Publishing…";
+  await api("/api/snapshot/publish", {method: "POST"}); setTimeout(loadSnap, 1500);
+});
+$("snapPub").addEventListener("click", async () => { $("snapMsg").textContent = "Publishing…"; await api("/api/snapshot/publish", {method: "POST"}); setTimeout(loadSnap, 1500); });
 $("btnRecord").addEventListener("click", async () => { $("recMsg").textContent = "Starting…"; const r = await api("/api/record", {method: "POST"}); $("recMsg").textContent = r.started ? "Recording started. This takes about 2 minutes." : r.message; loadRec(); });
 $("btnHist").addEventListener("click", async () => { $("recMsg").textContent = "Downloading CBOE history…"; const r = await api("/api/refresh-history", {method: "POST"}); $("recMsg").textContent = r.error || "CBOE history refreshed."; loadRec(); });
 $("btnTws").addEventListener("click", async () => { $("recMsg").textContent = "Connecting…"; const r = await api("/api/tws"); $("recMsg").innerHTML = r.ok ? `<span class="pos">TWS connection OK (read-only).</span>` : `<span class="neg">Could not connect: ${esc(r.error || "")}. Check TWS is open and API socket clients are enabled on port 7496.</span>`; });

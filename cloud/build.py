@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -176,6 +177,25 @@ def build_pages():
         s = re.sub(r"(<head[^>]*>)", r'\1<script src="cloud.js"></script>', s, count=1)
         p.write_text(s, encoding="utf-8")
     (SITE / ".nojekyll").write_text("")
+    fetch_snapshot()
+
+
+def fetch_snapshot():
+    """The laptop's encrypted snapshot (branch `snapshot`, ciphertext only; desk/snapshot.py). Optional: the
+    page also reads it straight from the branch, this copy just survives networks that block raw GitHub."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return  # never shallow-fetch into the laptop's own repo
+    try:
+        subprocess.run(["git", "fetch", "-q", "--depth=1", "origin", "snapshot"], cwd=ROOT, check=True, capture_output=True, timeout=120)
+        blob = subprocess.run(["git", "show", "FETCH_HEAD:snapshot.json"], cwd=ROOT, check=True, capture_output=True, timeout=60).stdout
+        env = json.loads(blob)
+        if env.get("v") != 1 or not env.get("ct"):
+            raise ValueError("not an encrypted snapshot")
+        (SITE / "private").mkdir(exist_ok=True)
+        (SITE / "private" / "snapshot.json").write_bytes(blob)
+        log(f"encrypted snapshot from {env.get('built')} ({len(blob) // 1024} kB)")
+    except Exception as e:
+        log(f"no encrypted snapshot: {e}")
 
 
 def main():
