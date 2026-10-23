@@ -111,7 +111,7 @@ const mktOpen = () => { const p = new Intl.DateTimeFormat("en-US", {timeZone: "A
   const g = (t) => (p.find((x) => x.type === t) || {}).value, h = +g("hour"), m = +g("minute"), wd = g("weekday");
   return !["Sat", "Sun"].includes(wd) && (h * 60 + m) >= 570 && (h * 60 + m) < 960; };
 function tradesTable(T) {
-  const cols = [["name", "Trade"], ["acct", "Account"], ["pnlNow", "Total return", 1], ["totalPct", "Total %", 1], ["perDay", "% / day", 1], ["paceNow", "Pace now", 1], ["dollarDay", "$ / day", 1], ["dayChg", "Today's return", 1], ["dayPct", "Today %", 1],
+  const cols = [["name", "Trade"], ["acct", "Account"], ["pnlNow", "Total return", 1], ["totalPct", "Total %", 1], ["perDay", "% / day", 1], ["paceNow", "Pace now", 1], ["planPri", "Plan", 1], ["dollarDay", "$ / day", 1], ["dayChg", "Today's return", 1], ["dayPct", "Today %", 1],
     ["openedMs", "Opened", 1], ["ditNow", "Days in trade", 1], ["firstExp", "Days to expiry", 1], ["margin", "Margin", 1]];
   T.forEach((t) => { t.acct = label(t); });
   const s = tSort, rows = [...T].sort((a, b) => { const x = a[s.k], y = b[s.k]; if (!ok(x) && typeof x !== "string") return 1; if (!ok(y) && typeof y !== "string") return -1;
@@ -120,11 +120,11 @@ function tradesTable(T) {
   return `<div class="tbl"><table><thead><tr>${cols.map(([k, l, n]) => `<th class="sort ${n ? "n" : ""}" tabindex="0" data-k="${k}" ${s.k === k ? `aria-sort="${s.dir < 0 ? "descending" : "ascending"}"` : ""}>${l}${s.k === k ? (s.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>${
     rows.map((t) => `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td>${esc(t.name)}</td><td>${esc(t.acct)}</td>
       <td class="n ${cls(t.pnlNow)}">${money(t.pnlNow)}</td><td class="n ${cls(t.totalPct)}">${pctS(t.totalPct)}</td>
-      <td class="n ${cls(t.perDay)}" title="total return ÷ ${Math.max(t.ditNow || 0, 1)} days in trade">${ok(t.perDay) ? fmt(t.perDay, 2) + "%" : "–"}</td><td class="n" title="theta/day at today's IVs ÷ margin: what it earns from here">${ok(t.paceNow) ? fmt(t.paceNow, 2) + "% " + speedChip(t) : "–"}</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td>
+      <td class="n ${cls(t.perDay)}" title="total return ÷ ${Math.max(t.ditNow || 0, 1)} days in trade">${ok(t.perDay) ? fmt(t.perDay, 2) + "%" : "–"}</td><td class="n" title="theta/day at today's IVs ÷ margin: what it earns from here">${ok(t.paceNow) ? fmt(t.paceNow, 2) + "% " + speedChip(t) : "–"}</td><td>${planChip(t)}</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td>
       <td class="n ${cls(t.dayChg)}">${money(t.dayChg)}</td><td class="n ${cls(t.dayPct)}">${pctS(t.dayPct)}</td>
       <td class="n">${dshort(t.openedMs)}</td><td class="n">${t.ditNow ?? "–"}</td><td class="n" title="${esc(dexp(t.firstExp) + (t.lastExp > t.firstExp + DAY ? " / " + dexp(t.lastExp) : ""))}">${dteTxt(t)}</td><td class="n">${money(t.margin)}</td></tr>`).join("")}
     <tr><td><b>Total</b></td><td></td><td class="n ${cls(tot("pnlNow"))}"><b>${money(tot("pnlNow"))}</b></td><td class="n">${mg ? pctS(100 * tot("pnlNow") / mg) : "–"}</td>
-      <td class="n" title="book: total $ per day ÷ total margin">${mg ? fmt(100 * tot("dollarDay") / mg, 2) + "%" : "–"}</td><td class="n" title="book: theta/day ÷ margin">${mg ? fmt(T.reduce((a, t) => a + (ok(t.paceNow) ? t.paceNow * (t.margin || 0) : 0), 0) / mg, 2) + "%" : "–"}</td><td class="n"><b>${money(tot("dollarDay"))}</b></td>
+      <td class="n" title="book: total $ per day ÷ total margin">${mg ? fmt(100 * tot("dollarDay") / mg, 2) + "%" : "–"}</td><td class="n" title="book: theta/day ÷ margin">${mg ? fmt(T.reduce((a, t) => a + (ok(t.paceNow) ? t.paceNow * (t.margin || 0) : 0), 0) / mg, 2) + "%" : "–"}</td><td></td><td class="n"><b>${money(tot("dollarDay"))}</b></td>
       <td class="n ${cls(tot("dayChg"))}"><b>${money(tot("dayChg"))}</b></td><td class="n">${mg ? pctS(100 * tot("dayChg") / mg) : "–"}</td><td></td><td></td><td></td><td class="n">${money(mg)}</td></tr></tbody></table></div>`;
 }
 function label(t) { return R.labels[t.ib_account] || t.group; }
@@ -185,13 +185,98 @@ function capitalView(T) {
     <p class="note">Pace now = theta per day at today's IVs ÷ ONE margin: what the trade earns from here if nothing moves. % / day so far = realised and open P&amp;L ÷ margin ÷ days held; a trade 3+ weeks in with that under half the target is flagged <i>slow so far</i> even if theta looks fine, because moves and adjustments have been eating the decay. Gap to target uses the better of the two paces. It changes with the market (theta grows near expiry; adjustments reset it). A slow trade is a question, not an instruction: would that margin earn more in a fresh 14–45 DTE A14 (check the A14 scanner's <i>fast</i> rows and the readiness bar for size)? Longer-dated trades also carry less gamma risk. "Past usual hold" = held 25% longer than your closed A14s with the same entry DTE.</p>`;
 }
 
+
+/* ---------- trade plan: TP / SL / time / adjust gates from your ONE history (A14: 56 closed trades, 365 adjustments) ---------- */
+// all levels are % of ONE margin; adjust: "gated" = the gates in planOf, "one" = the card's one adjustment then exit, "never"
+const CARDS = {
+  A14: {tp: (t) => (t.entryDte <= 21 ? 5 : 7), decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
+  Allantis: {tp: () => 7, decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
+  HV7: {tp: () => 5, stop: -10, timeDte: 2, adjust: "never"},
+  TimeEdge: {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
+  "Triple Cal": {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
+  TimeZone: {tp: () => 5, stop: -5, timeDte: 7, adjust: "one"},
+  Flyagonal: {tp: () => 10, timeFrac: 2 / 3, adjust: "one"},
+};
+const PRI = {exit: 0, close: 1, decide: 2, slow: 3, hold: 4};
+function planOf(t) {
+  const c = CARDS[t.strategy];
+  t.plan = null; t.planPri = null;
+  if (!c || !ok(t.totalPct)) return;
+  const p = t.totalPct, dte = dteOf(t.firstExp), tp = c.tp(t), usd = (pct) => money(t.margin * pct / 100);
+  const move = ok(t.entry_spot) && ok(t.spot) ? 100 * (t.spot / t.entry_spot - 1) : null;
+  const timeHit = ok(c.timeDte) ? dte <= c.timeDte : ok(t.entryDte) && (t.ditNow || 0) >= c.timeFrac * t.entryDte;
+  const slow = c.pace && (t.slowSoFar || t.overstay);
+  const slowWhy = t.slowSoFar ? `${fmt(t.perDay, 2)}%/day after ${t.ditNow} days, under the ${fmt(SPEED().slow, 2)}% slow line` : `held ${t.ditNow}d vs ${Math.round(t.usualHold)}d usual for this entry DTE`;
+  let act, label, why;
+  if (ok(c.stop) && p <= c.stop) [act, label, why] = ["exit", "Exit: hard stop", `${pctS(p)} is at or past the ${c.stop}% stop. Exit; no adjustment.`];
+  else if (p >= tp) [act, label, why] = ["close", "Close: target", `${pctS(p)} reached the +${tp}% target. Holding 10 more sessions helped only half your exits; +7% targets earned 22% more per margin-day.`];
+  else if (timeHit) [act, label, why] = ["close", "Close: time stop", ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop.` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration.`];
+  else if (slow && p >= 0) [act, label, why] = ["close", "Close: slow, green", `${slowWhy}. Free the margin while it's green.`];
+  else if (ok(c.decide) && p <= c.decide) [act, label, why] = ["decide", "Decide today", `${pctS(p)} is past the ${c.decide}% line: adjust today if the gates pass, otherwise exit.`];
+  else if (slow) [act, label, why] = ["slow", "Slow: exit at green", `${slowWhy}. Close at the next close at or above 0%; no new adjustments.`];
+  else [act, label, why] = ["hold", "Hold", `between ${ok(c.decide) ? c.decide : c.stop ?? "–"}% and +${tp}%: let it work.`];
+  // adjustment gate
+  let adj, how = "";
+  if (c.adjust === "never") adj = {ok: "no", why: "this strategy is never adjusted"};
+  else if (c.adjust === "one") adj = !ok(t.adjustments) ? {ok: "?", why: "adjustment count unknown: export a ONE Detail Report"}
+    : t.adjustments >= 1 ? {ok: "no", why: `${t.adjustments} adjustment${t.adjustments > 1 ? "s" : ""} made already: the card allows one, so a further breach means exit (backtest: 2+ adjustments cut the average from +8.1% to +0.9%)`}
+    : {ok: "one", why: "one adjustment allowed by the card, then exit"};
+  else {
+    const no = [];
+    if (p >= 3) no.push(`up ${pctS(p)}: never adjust a winner (yours at +3 to +6% helped only 36%)`);
+    if (p >= 0 && p < 3 && ok(move) && Math.abs(move) < 1.5) no.push(`green and ${t.underlying} only ${pctS(move)} from entry (small-move adjustments helped 44–47%)`);
+    if (p >= 0 && p < 3 && !ok(move)) no.push("green, and the entry price is unknown");
+    if (ok(c.stop) && p <= c.stop) no.push("past the hard stop");
+    if (dte <= c.timeDte) no.push("inside the time stop");
+    if (no.length) adj = {ok: "no", why: no.join(" · ")};
+    else if (dte <= 10) adj = {ok: "reduce", why: `${dte} DTE: only adjustments that reduce risk; otherwise let the target, stop or time stop decide`};
+    else if (dte <= 21) adj = {ok: "roll out", why: `${dte} DTE: inside 10–21, roll out to a new expiry or close; no reshaping (yours there helped 38%)`};
+    else adj = {ok: "yes", why: `${p < 0 ? "red" : "moved"}${ok(move) ? `, ${t.underlying} ${pctS(move)} from entry` : ""}, ${dte} DTE`};
+    if (adj.ok !== "no") how = ok(move) && move >= 1.5 ? "roll the shorts up or add a call side (+2 to +3% median)"
+      : ok(move) && move <= -1.5 && dte > 21 ? "roll out in time (+6% median, 75% helped); don't roll the shorts down (−6%)"
+      : "roll out in time or reduce; reshaping in the same expiry is a coin flip";
+  }
+  t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, adj, how,
+    lv: {tp: usd(tp), decide: ok(c.decide) ? usd(c.decide) : null, stop: ok(c.stop) ? usd(c.stop) : null},
+    band: ok(t.entry_spot) ? [t.entry_spot * 0.985, t.entry_spot * 1.015] : null};
+  t.planPri = t.plan.pri;
+}
+const PLAN_CLS = {exit: "neg", close: "pos", decide: "neg", slow: "wrn", hold: "muted"};
+const planChip = (t) => t.plan ? `<span class="chip ${PLAN_CLS[t.plan.act]}" title="${esc(t.plan.why)}">${esc(t.plan.label)}</span>` : `<span class="small muted" title="no card rules for ${esc(t.strategy || "this trade")}">–</span>`;
+const ADJ_CLS = {yes: "pos", one: "pos", "roll out": "wrn", reduce: "wrn", no: "muted", "?": "muted"};
+function planView(T) {
+  const P = T.filter((t) => t.plan).sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
+  if (!P.length) return `<div class="state">No open trade has card rules (A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal, Flyagonal).</div>`;
+  const n = (k) => P.filter((t) => t.plan.act === k).length, mg = (k) => money(P.filter((t) => t.plan.act === k).reduce((a, t) => a + (t.margin || 0), 0));
+  const lvl = (pct, d) => ok(pct) ? `${pct > 0 ? "+" : ""}${pct}% <span class="small muted">${d}</span>` : "–";
+  const exp = R.detail_exported ? esc(R.detail_exported.replace("T", " ")) : null;
+  return `<div class="kv mini" style="margin-bottom:10px">${[["Exit or decide today", n("exit") + n("decide"), "neg", ""], ["Close now", n("close"), "pos", mg("close") + " margin"], ["Slow: exit at next green", n("slow"), "wrn", mg("slow") + " margin"], ["Hold", n("hold"), "", ""]]
+    .map(([l, v, k, sub]) => `<div><span class="lbl">${l}</span><b class="${v ? k : ""}">${v}</b><span class="small muted">${sub}</span></div>`).join("")}</div>
+    <div class="tbl"><table><thead><tr><th>Trade</th><th>Card</th><th class="n">Total</th><th class="n">Target</th><th class="n" title="adjust today (if the gates pass) or exit">Decide line</th><th class="n">Hard stop</th>
+      <th class="n" title="days to first expiry / time stop">DTE / time stop</th><th class="n" title="underlying vs the entry session's close; the adjust gate needs ±1.5% unless the trade is red">Move since entry</th><th class="n" title="ONE Detail Report${exp ? " exported " + exp : ""}">Adjustments</th><th>Adjust?</th><th>Action</th></tr></thead><tbody>${
+    P.map((t) => { const q = t.plan;
+      return `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td>${esc(t.name)} <span class="small muted">${esc(label(t))}</span></td><td>${esc(t.strategy)}</td>
+        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b></td><td class="n">${lvl(q.tp, q.lv.tp)}</td><td class="n">${lvl(q.decide, q.lv.decide)}</td><td class="n">${lvl(q.stop, q.lv.stop)}</td>
+        <td class="n ${ok(q.timeDte) && q.dte <= q.timeDte ? "wrn" : ""}">${q.dte}d${ok(q.timeDte) ? ` <span class="small muted">/ ${q.timeDte}</span>` : ""}</td>
+        <td class="n" title="${q.band ? esc(`entry close ${fmt(t.entry_spot, 0)} · ±1.5% = ${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}`) : ""}">${ok(q.move) ? `<span class="${Math.abs(q.move) >= 1.5 ? "wrn" : ""}">${pctS(q.move)}</span>` : "–"}</td>
+        <td class="n">${t.adjustments ?? "–"}</td>
+        <td><span class="chip ${ADJ_CLS[q.adj.ok]}" title="${esc(q.adj.why + (q.how ? " → " + q.how : ""))}">${esc(q.adj.ok)}</span></td>
+        <td>${planChip(t)} <span class="small muted">${esc(q.why)}</span></td></tr>`; }).join("")}</tbody></table></div>
+    <p class="note">Checked in this order every day: hard stop → target → time stop → slow (under ${fmt(SPEED().slow, 2)}%/day after 3+ weeks, or 25% past your usual hold) → decide line → otherwise hold.
+    <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
+    How: market up → roll the shorts up or add a call side; market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
+    Calendars: one adjustment, then a further breach is an exit. A14 target is +5% when entered at 21 DTE or less, +7% beyond.
+    Rules come from your ONE history (56 closed A14s; 365 adjustments, each compared with holding the pre-adjustment legs to the same exit), model error about ±2% of margin. Flags, not orders.
+    ${exp ? `Adjustment counts: ONE Detail Report exported ${exp}; trades adjusted since then show the older count.` : "Export a ONE Detail Report to Documents for adjustment counts."}</p>`;
+}
+
 function render() {
   if (!R) return;
   const c = ctl();
   $("rkDaysTxt").textContent = c.days === 0 ? "today" : `+${c.days}d (${new Date(now() + c.days * DAY).toLocaleDateString([], {month: "short", day: "numeric"})})`;
   $("rkVolTxt").textContent = `${c.dv >= 0 ? "+" : ""}${Math.round(c.dv * 100)} pts`;
   const T = R.trades.filter((t) => !c.acct || label(t) === c.acct);
-  T.forEach((t) => { t.beta = t.underlying === "RUT" ? c.beta : 1; paceOf(t); });
+  T.forEach((t) => { t.beta = t.underlying === "RUT" ? c.beta : 1; paceOf(t); planOf(t); });
   const N = 81, xsPct = Array.from({length: N}, (_, i) => -c.range + 2 * c.range * i / (N - 1));
   // book
   const accts = [...new Set(T.map(label))];
@@ -221,10 +306,11 @@ function render() {
     tile("Vega / vol pt", money(sumG("vega")), "all legs +1 IV point", cls(sumG("vega"))) +
     tile("Worst in range", money(total("dated")[worstIdx]), `at ${fxp(xsPct[worstIdx], true)} on the chosen date · margin ${money(T.reduce((s, t) => s + (t.margin || 0), 0))}`, "neg");
   $("rkTable").innerHTML = tradesTable(T);
+  $("rkPlan").innerHTML = planView(T);
   $("rkCapital").innerHTML = capitalView(T);
   $("rkTable").querySelectorAll("th.sort").forEach((th) => { const go = () => { tSort = {k: th.dataset.k, dir: tSort.k === th.dataset.k ? -tSort.dir : (["pnlNow", "dayChg", "totalPct", "dayPct", "margin", "ditNow", "perDay", "paceNow", "dollarDay"].includes(th.dataset.k) ? -1 : 1)}; render(); };
     th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
-  document.querySelectorAll("#rkTable tr.click, #rkCapital tr.click").forEach((tr) => { const go = () => openDetail(tr.dataset.id); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); });
+  document.querySelectorAll("#rkTable tr.click, #rkCapital tr.click, #rkPlan tr.click").forEach((tr) => { const go = () => openDetail(tr.dataset.id); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); });
   // groups
   const recon = new Map(R.recon.map((r) => [r.label, r]));
   $("rkGroups").innerHTML = accts.map((a) => {
@@ -260,7 +346,11 @@ function openDetail(id, quiet) {
   riskChart($("rkDetailChart"), {label: t.name, h: 300, xs, spot: t.spot, nowPnl: t.pnlNow, fx: (v, long) => long ? `${t.underlying} ${v.toFixed(0)} (${((v / t.spot - 1) * 100).toFixed(1)}%)` : Math.round(v), series, ticks: 6});
   $("rkDetailLegend").innerHTML = legend(series.map((s) => [s.name, s.color]));
   const be = []; for (let i = 1; i < N; i++) { const a = cv.expiry[i - 1], b = cv.expiry[i]; if ((a < 0) !== (b < 0)) be.push(xs[i - 1] + (xs[i] - xs[i - 1]) * (0 - a) / (b - a)); }
-  $("rkDetailLegs").innerHTML = `<div class="small muted">ONE P&amp;L (realised + commissions) ${money(t.one_pnl)} · open legs at TWS mid ${money(t.unreal)} · margin ${money(t.margin)} · days in trade ${t.dit ?? "–"}${be.length ? ` · first-expiry breakevens ${be.map((b) => b.toFixed(0)).join(" / ")}` : ""}</div>
+  paceOf(t); planOf(t);
+  const q = t.plan;
+  $("rkDetailLegs").innerHTML = (q ? `<div class="kv mini" style="margin:8px 0">${[["Action", planChip(t), q.why], ["Target", `+${q.tp}%`, q.lv.tp], ["Decide line", ok(q.decide) ? q.decide + "%" : "–", q.lv.decide || ""], ["Hard stop", ok(q.stop) ? q.stop + "%" : "–", q.lv.stop || ""],
+    ["Adjust?", `<span class="chip ${ADJ_CLS[q.adj.ok]}">${esc(q.adj.ok)}</span>`, q.adj.why + (q.how ? " → " + q.how : "")], ["Adjust band (±1.5%)", q.band ? `${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}` : "–", ok(q.move) ? `${t.underlying} ${pctS(q.move)} since entry` : ""]]
+    .map(([l, b, sub]) => `<div><span class="lbl">${l}</span><b>${b}</b><span class="small muted">${esc(sub)}</span></div>`).join("")}</div>` : "") + `<div class="small muted">ONE P&amp;L (realised + commissions) ${money(t.one_pnl)} · open legs at TWS mid ${money(t.unreal)} · margin ${money(t.margin)} · days in trade ${t.dit ?? "–"}${be.length ? ` · first-expiry breakevens ${be.map((b) => b.toFixed(0)).join(" / ")}` : ""}</div>
     <div class="tbl"><table><thead><tr><th>Leg</th><th class="n">Qty</th><th class="n">Open</th><th class="n">Bid</th><th class="n">Ask</th><th class="n">Mid</th><th class="n">IV</th><th class="n">Leg P&amp;L</th><th>Expires</th></tr></thead><tbody>${
       t.legs.map((l) => `<tr><td class="mono">${esc(l.symbol)}</td><td class="n ${l.qty < 0 ? "neg" : ""}">${l.qty > 0 ? "+" : ""}${l.qty}</td><td class="n">${fmt(l.open_price)}</td><td class="n">${fmt(l.mark && l.mark.bid)}</td><td class="n">${fmt(l.mark && l.mark.ask)}</td><td class="n">${fmt(l.mid)}</td><td class="n" title="${esc((l.mark && l.mark.iv_src) || "same-expiry average")}">${fmt(l.vol * 100, 1)}%${l.mark && l.mark.iv_src === "surface" ? "ˢ" : l.mark && ok(l.mark.iv) ? "" : "*"}</td><td class="n ${cls(l.mid == null ? null : l.qty * (l.mid - l.open_price))}">${l.mid == null ? "–" : money(l.qty * MULT * (l.mid - l.open_price))}</td><td class="small mono">${l.expiry_iso.slice(0, 16).replace("T", " ")} ET</td></tr>`).join("")
     }</tbody></table></div><p class="note">ˢ in-the-money leg: IV taken from your recorded surface at that strike (TWS model IVs are unreliable deep in the money). * no IV available: average of the trade's other legs in the same expiry.</p>`;

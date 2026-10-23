@@ -14,7 +14,7 @@ import re
 import threading
 
 from . import db, load_config
-from .trades import _newest
+from .trades import _newest, classify
 from .volmath import implied_vol
 
 logging.getLogger("ib_async").setLevel(logging.CRITICAL)
@@ -110,6 +110,54 @@ def load_open_trades(path=None):
             m["commission"] += lg["commission"]
         t["legs"] = [lg for lg in merged.values() if lg["qty"]]
     return [t for t in trades if t["legs"]], path
+
+
+_adj_cache = {}
+
+
+def adjustment_counts():
+    """{account#trade_id: adjustments} from the newest ONE Detail Report (every fill, timestamped): fills within
+    15 minutes are one event; the first event is the entry, every later one an adjustment. None if no report."""
+    import os
+    path = _newest(load_config()["trade_files"].get("one_detail_glob", []))
+    if not path:
+        return {}, None
+    key = (path, os.path.getmtime(path))
+    if key in _adj_cache:
+        return _adj_cache[key]
+    times, cur = {}, None
+    with open(path, encoding="utf-8-sig") as fh:
+        for r in csv.reader(fh):
+            if len(r) > 15 and r[0] == "" and r[2] in ("Open", "Closed", "Expired") and r[1]:
+                cur = f"{r[1]}#{r[6]}" if r[2] == "Open" else None
+                if cur:
+                    times[cur] = []
+            elif cur and len(r) > 13 and r[0] == "" and r[1] == "" and r[5] in ("Buy", "Sell"):
+                t = _local_dt(r[4])
+                if t:
+                    times[cur].append(t)
+    out = {}
+    for k, ts in times.items():
+        ev, last = 0, None
+        for t in sorted(ts):
+            if last is None or (t - last).total_seconds() >= 900:
+                ev += 1
+            last = t
+        out[k] = max(ev - 1, 0)
+    exported = dt.datetime.fromtimestamp(key[1]).isoformat(timespec="minutes")
+    _adj_cache.clear()
+    _adj_cache[key] = (out, exported)
+    return out, exported
+
+
+def _entry_spot(underlying, opened):
+    """Index close on the US session the trade was entered (ONE local time - 14h)."""
+    t = _local_dt(opened or "")
+    if not t:
+        return None
+    rows = db.query("SELECT close FROM index_daily WHERE symbol=? AND date<=? ORDER BY date DESC LIMIT 1",
+                    (underlying, (t - dt.timedelta(hours=14)).date().isoformat()))
+    return rows[0]["close"] if rows else None
 
 
 # ------------------------------------------------------------------ TWS marks
@@ -379,14 +427,18 @@ def payload():
                     mk["iv"] = implied_vol(mk["mid"], t["spot"], lg["strike"], tt, lg["right"])
                     mk["iv_src"] = "from mid" if mk["iv"] else None
     recon = reconcile(trades, m.get("positions", [])) if m.get("positions") else []
+    adj, adj_ts = adjustment_counts()
     for t in trades:
         t["prev_spot"] = m.get("prev_close", {}).get(t["underlying"])
+        t["strategy"] = classify(t["group"], t["name"])
+        t["entry_spot"] = _entry_spot(t["underlying"], t["opened"])
+        t["adjustments"] = adj.get(t["id"])
         try:
             t["opened_iso"] = _local_dt(t["opened"]).isoformat()
         except Exception:
             t["opened_iso"] = None
     return {"trades": trades, "one_file": path, "one_fresh": one_freshness(path), "marks_ts": m.get("ts"), "spots": spots, "stocks": m.get("stocks", []),
-            "missing": m.get("missing", []), "recon": recon, "status": status,
+            "missing": m.get("missing", []), "recon": recon, "status": status, "detail_exported": adj_ts,
             "labels": load_config()["risk"]["account_labels"]}
 
 

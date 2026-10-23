@@ -28,6 +28,10 @@
       "~/Documents/*-ONESummaryReport.csv",
       "~/Downloads/*-ONESummaryReport.csv"
     ],
+    "one_detail_glob": [
+      "~/Documents/*-ONEDetailReport.csv",
+      "~/Downloads/*-ONEDetailReport.csv"
+    ],
     "optionstrat_glob": [
       "~/Downloads/all-expired-by-symbol-*.xlsx"
     ],
