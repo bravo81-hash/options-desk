@@ -158,13 +158,13 @@ def _remote():
     return r.stdout.strip()
 
 
-def _push(path):
+def _push(path, message="encrypted snapshot"):
     if not (BARE / "HEAD").exists():
         subprocess.run(["git", "init", "--bare", "-q", str(BARE)], check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     blob = _git("hash-object", "-w", str(path))
-    tree = _git("mktree", inp=f"100644 blob {blob}\tsnapshot.json\n")
+    tree = _git("mktree", "-z", inp=f"100644 blob {blob}\tsnapshot.json\0")  # NUL-terminated: text mode on Windows turns \n into \r\n
     env_id = ["-c", "user.name=options-desk", "-c", "user.email=options-desk@localhost"]
-    commit = _git(*env_id, "commit-tree", tree, "-m", "encrypted snapshot")
+    commit = _git(*env_id, "commit-tree", tree, "-m", message)
     _git("push", "--force", "-q", _remote(), f"{commit}:refs/heads/{BRANCH}")
     _git("update-ref", f"refs/heads/{BRANCH}", commit)
     _git("gc", "--prune=now", "-q")
