@@ -567,7 +567,7 @@ async function loadVol() {
     <div class="sub"><h3>VIX · 20-day ±2σ band</h3><div class="chart" id="vixChart"></div>${legend([["VIX", "var(--ink)"], ["20D mean", "var(--s1)"], ["±2σ band", "color-mix(in srgb, var(--s1) 25%, var(--panel))", 1], ["≥ +1σ", "var(--warn)", 1], ["≥ +2σ", "var(--down)", 1]])}</div>
     <div class="sub"><h3>Term structure <span class="chip ${st[1]}" style="margin-left:6px">${st[0]}</span></h3><div class="chart" id="termChart"></div>${legend([["Today", "var(--s1)"], ["1 week ago", "var(--s2)"], ["1 month ago", "var(--s3)"]])}</div>
     <div class="sub"><h3>Implied vs realised · 120 sessions</h3><div class="chart" id="vrpChart"></div>${legend([["VIX", "var(--s1)"], ["RVX", "var(--s2)"], ["dashed: 20-day realised (SPX, RUT)", "var(--muted)"]])}</div>
-    <div class="sub"><h3>VIX / VIX3M · 1 year</h3><div class="chart" id="ivtsChart"></div>${legend([["VIX/VIX3M", "var(--s3)"], ["0.834: June calendar losses at or below", "var(--info)"], ["0.90 warning", "var(--warn)"], ["1.00 backwardation", "var(--down)"]])}</div>
+    <div class="sub"><h3>VIX / VIX3M · 1 year</h3><div class="chart" id="ivtsChart"></div>${legend([["VIX/VIX3M", "var(--s3)"], ["0.834: steep contango", "var(--info)"], ["0.90: calendar gate, A14 size down", "var(--warn)"], ["1.00 backwardation", "var(--down)"]])}</div>
     </div>`;
   lineChart($("vixChart"), {label: "VIX with 20-day bands", h: 200, dates, band: {lo, hi},
     series: [{name: "VIX", short: "VIX", vals, color: "var(--ink)", width: 1.8}, {name: "20D mean", vals: m.slice(-n), color: "var(--s1)", width: 1.2, label: false}],

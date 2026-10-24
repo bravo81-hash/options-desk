@@ -35,7 +35,7 @@ _lock = threading.Lock()
 KEEP = {"calendar": ["symbol"], "pair": ["symbol", "front", "back"], "pair/curve": ["symbol", "front", "back", "strike"],
         "skew": ["symbol", "tenor"], "pick": ["vol"], "a14/scan": ["sym", "vol"], "a14/curve": ["sym", "expiry", "u", "s", "l"]}
 PLAIN = ["risk", "a14/stats", "a14/history", "journal", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
-         "md/account", "freshness"]
+         "md/account", "freshness", "backtest"]
 A14_CURVES = 30  # risk curves for the top candidates per underlying (default sort: E/risk per day)
 
 

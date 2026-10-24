@@ -4,8 +4,9 @@
 Both structures are priced from the same TWS chain (the A14 scanner's), with the same smile, the same exit
 horizon and the same odds (lognormal at the chosen vol), so their expected returns are comparable. On top of
 that model edge come your own rules and track record:
-* calendars: VIX/VIX3M at or below 0.834 is where your June calendar losses were entered; TimeEdge /
-  Triple Calendar / TimeZone gates; your calendar-family results above and below that line;
+* calendars: VIX/VIX3M below 0.90 and the index above its 20-day average (2009-2026 model backtest; the old
+  0.834 line came from one cluster of June 2026 losses); TimeEdge / Triple Calendar / TimeZone gates; your
+  calendar-family results above and below 0.834 as context;
 * A14: the index above or below its 20-day average, and your A14 results in each case.
 The model edge is ranked per day held, so a calendar held to its front expiry and a BWB held for the
 exit days compete on how hard the capital works.
@@ -18,7 +19,8 @@ import numpy as np
 from . import a14, db
 from .history import series
 
-IVTS_LINE = 0.834
+IVTS_LINE = 0.834  # your own calendar record is still split here (context only)
+CAL_MAX_IVTS = 0.90  # calendar gate from the backtest
 
 
 def _ivts():
@@ -105,6 +107,17 @@ def _calendar_record(evidence_trades):
     return out
 
 
+def _cal_band_odds(ivts):
+    """Backtest line for today's VIX/VIX3M step (TimeEdge card exits), or '' while it is computing."""
+    from .backtest import results
+    try:
+        fine = results().get("cal", {}).get("fine") or []
+        b = next((x for x in fine if x["lo"] <= ivts < x["hi"]), None)
+        return f": since 2009, calendars entered at {b['lo']:.2f}–{min(b['hi'], 9):.2f} averaged {b['avg']:+.1f}% of the debit, {round(100 * b['win'])}% winners ({b['n']}, model)" if b else ""
+    except Exception:
+        return ""
+
+
 def today(exit_days=14, vol_basis="rv20"):
     from . import analytics
     if not db.get_meta("a14_chain"):
@@ -128,9 +141,10 @@ def today(exit_days=14, vol_basis="rv20"):
         bt = st["by_trend"]["above" if up else "below"]
         checks_b = [{"ok": up, "text": f"Short-term trend (20-day): {sym} {'above' if up else 'below'} its average ({tr.get('vs_sma20', 0):+.1f}%): your A14s averaged {bt['ret']:.1f}% ({bt['n']} trades) entered like this"}]
         g_list = gates.get(sym, [])
-        checks_c = [{"ok": ivts is not None and ivts > IVTS_LINE,
-                     "text": f"VIX/VIX3M {ivts:.3f} ({'not ' if ivts > IVTS_LINE else ''}in the steep-contango band at or below 0.834): your calendars there made "
-                             f"${cal_rec['above' if ivts > IVTS_LINE else 'below']['pnl']:,.0f} over {cal_rec['above' if ivts > IVTS_LINE else 'below']['n']} trades"}]
+        side = "above" if ivts is not None and ivts > IVTS_LINE else "below"
+        checks_c = [{"ok": ivts is not None and ivts < CAL_MAX_IVTS,
+                     "text": f"VIX/VIX3M {ivts:.3f} {'below' if ivts is not None and ivts < CAL_MAX_IVTS else 'at or above'} 0.90{_cal_band_odds(ivts)}"
+                             f"; your own calendars {'above' if side == 'above' else 'at or below'} 0.834: ${cal_rec[side]['pnl']:,.0f} over {cal_rec[side]['n']} trades"}]
         for g in g_list:
             checks_c.append({"ok": g["pass"], "text": f"{g['name']} rules {'pass' if g['pass'] else 'fail'}: " +
                              "; ".join(f"{t} ({v})" for t, ok_, v in g["checks"] if not ok_) if not g["pass"] else f"{g['name']} rules pass"})

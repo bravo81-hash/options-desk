@@ -149,8 +149,8 @@ def suggest_note(t, ctx, adj, swing):
     md = ctx.get("maxdn")
     if md is not None and md <= -3:
         bits.append(f"{'survived' if win else 'hit by'} a {abs(md):.1f}% drop in {t['underlying']}")
-    if t["strategy"] in ("TimeEdge", "TimeZone", "Triple Cal") and ctx.get("ivts") and ctx["ivts"] <= 0.834:
-        bits.append(f"entered at VIX/VIX3M {ctx['ivts']:.2f} (steep contango — your calendar loss zone)")
+    if t["strategy"] in ("TimeEdge", "TimeZone", "Triple Cal") and ctx.get("ivts") and ctx["ivts"] >= 0.90:
+        bits.append(f"entered at VIX/VIX3M {ctx['ivts']:.2f} (0.90+: calendars lost on average there since 2009)")
     if t["strategy"] == "A14" and ctx.get("vs_sma20") is not None and ctx["vs_sma20"] < 0:
         bits.append("entered below the 20-day average (weaker A14 setup)")
     if swing and swing.get("mae") is not None and win and swing["mae"] < -0.5 * abs(pnl):

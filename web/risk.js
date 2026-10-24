@@ -188,8 +188,10 @@ function capitalView(T) {
 
 /* ---------- trade plan: TP / SL / time / adjust gates from your ONE history (A14: 56 closed trades, 365 adjustments) ---------- */
 // all levels are % of ONE margin; adjust: "gated" = the gates in planOf, "one" = the card's one adjustment then exit, "never"
+// A14 stop: −20 (was the card's −10). In the 2009–2026 model backtest (Evidence → Since 2009) −10 was hit in 28–46% of
+// A14s (14–60 DTE), mostly on VIX pops that later reverted, and cost more than it saved at every SPX entry DTE from 14 to 60.
 const CARDS = {
-  A14: {tp: (t) => (t.entryDte <= 21 ? 5 : 7), decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
+  A14: {tp: (t) => (t.entryDte <= 21 ? 5 : 7), decide: -6, stop: -20, timeDte: 2, adjust: "gated", pace: true, holdPastDecide: true},
   Allantis: {tp: () => 7, decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
   HV7: {tp: () => 5, stop: -10, timeDte: 2, adjust: "never"},
   TimeEdge: {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
@@ -212,7 +214,9 @@ function planOf(t) {
   else if (p >= tp) [act, label, why] = ["close", "Close: target", `${pctS(p)} reached the +${tp}% target. Holding 10 more sessions helped only half your exits; +7% targets earned 22% more per margin-day.`];
   else if (timeHit) [act, label, why] = ["close", "Close: time stop", ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop.` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration.`];
   else if (slow && p >= 0) [act, label, why] = ["close", "Close: slow, green", `${slowWhy}. Free the margin while it's green.`];
-  else if (ok(c.decide) && p <= c.decide) [act, label, why] = ["decide", "Decide today", `${pctS(p)} is past the ${c.decide}% line: adjust today if the gates pass, otherwise exit.`];
+  else if (ok(c.decide) && p <= c.decide) [act, label, why] = ["decide", "Decide today", c.holdPastDecide
+    ? `${pctS(p)} is past the ${c.decide}% line: adjust today if the gates pass; if you don't adjust, hold to the ${c.stop}% stop rather than exiting here (since 2009, A14 exits this early cost more than they saved; model).`
+    : `${pctS(p)} is past the ${c.decide}% line: adjust today if the gates pass, otherwise exit.`];
   else if (slow) [act, label, why] = ["slow", "Slow: exit at green", `${slowWhy}. Close at the next close at or above 0%; no new adjustments.`];
   else [act, label, why] = ["hold", "Hold", `between ${ok(c.decide) ? c.decide : c.stop ?? "–"}% and +${tp}%: let it work.`];
   // adjustment gate
@@ -266,6 +270,7 @@ function planView(T) {
     <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
     How: market up → roll the shorts up or add a call side; market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
     Calendars: one adjustment, then a further breach is an exit. A14 target is +5% when entered at 21 DTE or less, +7% beyond.
+    A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.
     Rules come from your ONE history (56 closed A14s; 365 adjustments, each compared with holding the pre-adjustment legs to the same exit), model error about ±2% of margin. Flags, not orders.
     ${exp ? `Adjustment counts: ONE Detail Report exported ${exp}; trades adjusted since then show the older count.` : "Export a ONE Detail Report to Documents for adjustment counts."}</p>`;
 }

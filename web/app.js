@@ -71,7 +71,7 @@ async function loadToday() {
     $("termLegend").innerHTML = legend(t.curves.map((c, k) => [`${c.label} (${shortDate(c.date)})`, cols[k]]));
     lineChart($("ratioChart"), {label: "VIX/VIX3M", h: 190, series: [{name: "VIX / VIX3M", short: "", data: t.ratio.hist, color: "var(--ink)", width: 1.4}],
       refs: [{y: 1, label: "1.00", color: "var(--down)"}, {y: 0.83, label: "0.83", color: "var(--warn)"}], fy: (v) => v.toFixed(2), ft: (v) => v.toFixed(3)});
-    $("ratioNote").textContent = "Above 1.00 = backwardation (TimeEdge hard skip). In your own history, calendar-family losers clustered when this ratio was at or below about 0.83 (June 2–4 entries were 0.80–0.81). See the Evidence tab.";
+    $("ratioNote").textContent = "Above 1.00 = backwardation (TimeEdge hard skip). Since 2009 (model backtest, Evidence → Since 2009): calendars entered below 0.90 with SPX above its 20-day average averaged about +4% of the debit; at 0.90+ they lost on average. Your June 2–4 calendar losses (0.80–0.81) were one shock that the backtest reproduces; steep contango was otherwise the best calendar zone.";
     $("gates").innerHTML = gateCards([...(spx.gates || []), ...(rut.gates || [])]);
     const vc = {VIX9D: "var(--s2)", VIX: "var(--ink)", VIX3M: "var(--s1)"};
     lineChart($("vixHist"), {label: "VIX9D VIX VIX3M", h: 220, series: Object.entries(t.vix_hist).map(([k, d]) => ({name: k, short: k, data: d, color: vc[k], width: k === "VIX" ? 1.8 : 1.3}))});
@@ -209,6 +209,7 @@ $("skHistSel").addEventListener("change", drawSkHist);
 /* ---------------- evidence ---------------- */
 let evData = null;
 async function loadEvidence() {
+  if (window.loadBacktest) window.loadBacktest();
   try {
     evData = await api("/api/evidence");
     if (evData.error) { $("evStrat").innerHTML = errBox(evData.error); return; }
@@ -225,7 +226,7 @@ async function loadEvidence() {
     const T = [...evData.trades].sort((a, b) => a.pnl - b.pnl);
     $("evTrades").innerHTML = `<div class="tbl"><table><thead><tr><th>Entered</th><th>Strategy</th><th>Trade</th><th class="n">P&amp;L</th><th class="n">Return</th><th class="n">VIX/VIX3M</th><th class="n">VIX9D/VIX</th><th class="n">Slope 15→22</th><th class="n">VIX 5d chg</th><th class="n">SPX 5d %</th><th>Source</th></tr></thead><tbody>${
       T.map((t) => `<tr><td class="mono small">${t.date}</td><td>${esc(t.strategy)}</td><td class="small">${esc(t.name)}</td><td class="n ${t.pnl >= 0 ? "pos" : "neg"}">${Math.round(t.pnl).toLocaleString()}</td><td class="n">${fmt(t.ret_pct, 1)}%</td>
-        <td class="n ${t.vix_vix3m <= 0.83 ? "wrn" : ""}">${fmt(t.vix_vix3m, 3)}</td><td class="n">${fmt(t.vix9d_vix, 3)}</td><td class="n">${fmt(t.slope_15_22, 2)}</td><td class="n">${sgn(t.vix_chg5)}</td><td class="n">${sgn(t.spx_ret5)}</td><td class="small muted">${esc(t.source)}</td></tr>`).join("")}</tbody></table></div>`;
+        <td class="n ${t.vix_vix3m >= 0.90 ? "wrn" : ""}">${fmt(t.vix_vix3m, 3)}</td><td class="n">${fmt(t.vix9d_vix, 3)}</td><td class="n">${fmt(t.slope_15_22, 2)}</td><td class="n">${sgn(t.vix_chg5)}</td><td class="n">${sgn(t.spx_ret5)}</td><td class="small muted">${esc(t.source)}</td></tr>`).join("")}</tbody></table></div>`;
     drawEv();
   } catch (e) { $("evStrat").innerHTML = errBox(e); }
 }

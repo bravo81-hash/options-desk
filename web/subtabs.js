@@ -45,8 +45,8 @@ document.addEventListener("click", (e) => {
 /* One VIX/VIX3M scale for the whole app (same bands as the server's readiness.ivts_band) */
 function ivtsBand(v) {
   if (v == null || !isFinite(v)) return {band: "unknown", label: "–", cls: "", a14: "", cal: ""};
-  if (v >= 1.0) return {band: "backwardation", label: "backwardation", cls: "neg", a14: "A14: wait for it to end", cal: "calendars: blocked"};
-  if (v >= 0.90) return {band: "flat", label: "flat — stress building", cls: "wrn", a14: "A14: caution, size down", cal: "calendars: ok"};
+  if (v >= 1.0) return {band: "backwardation", label: "backwardation", cls: "neg", a14: "A14: stand aside", cal: "calendars: blocked"};
+  if (v >= 0.90) return {band: "flat", label: "flat — stress building", cls: "wrn", a14: "A14: size down", cal: "calendars: avoid"};
   if (v > 0.834) return {band: "normal", label: "normal contango", cls: "", a14: "A14: ok", cal: "calendars: ok"};
-  return {band: "steep", label: "steep contango — calm", cls: "", a14: "A14: ok (calmest)", cal: "calendars: avoid (your June losses)"};
+  return {band: "steep", label: "steep contango — calm", cls: "", a14: "A14: ok (calmest)", cal: "calendars: ok (best zone since 2009)"};
 }

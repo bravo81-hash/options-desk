@@ -90,6 +90,17 @@ $("emRefresh").addEventListener("click", async () => {
 
 /* ================================================================ A14 scanner */
 let A = null, HIST = null, ST = null, sortKey = "exp_day", pick = null, cellFilter = null;
+let BT = null, IVB = null;  // 2009–2026 backtest odds by DTE and VIX/VIX3M band (Evidence → Since 2009), today's band
+async function btLoad() {
+  const [b, r] = await Promise.all([api("/api/backtest").catch(() => null), api("/api/readiness").catch(() => null)]);
+  BT = b && b.odds ? b : null; IVB = r && r.ivts_band ? r.ivts_band : null;
+}
+function btOdds(sym, dte) {
+  if (!BT || !IVB || !BT.odds[sym]) return null;
+  const d = Object.keys(BT.odds[sym]).map(Number).reduce((a, x) => (Math.abs(x - dte) < Math.abs(a - dte) ? x : a));
+  const o = BT.odds[sym][String(d)][IVB.band];
+  return o ? {d, ...o} : null;
+}
 const trendOf = (sym) => ST && ST.now && ST.now[sym];
 const upTrend = (tr) => tr && tr.vs_sma20 > 0;
 function trendBanner() {
@@ -104,7 +115,8 @@ function trendBanner() {
   const dteCard = `<div><span class="lbl">Your closed A14s · return per day held</span><span class="small">${["≤21", "22–45", "46–70", "71+"].filter((k) => bd[k]).map((k) => `${k} DTE <b>${fmt(bd[k].per_day, 2)}%</b>/day (${fmt(bd[k].ret, 1)}% over ${Math.round(bd[k].dit)}d, n ${bd[k].n})`).join("<br>")}</span></div>`;
   const sp = ST.speed, bm = (sp && sp.by_month) || [];
   const paceCard = sp ? `<div><span class="lbl">Your A14 pace by entry month · target ${fmt(sp.target, 2)}%/day</span><span class="small">${bm.map((m) => `${new Date(m.month + "-15").toLocaleDateString([], {month: "short"})} <b class="${m.per_day >= sp.target ? "pos" : m.per_day < sp.slow ? "neg" : ""}">${fmt(m.per_day, 2)}%</b>/day · entry ${Math.round(m.dte)} DTE · held ${Math.round(m.dit)}d (n ${m.n})`).join("<br>")}</span></div>` : "";
-  $("a14Trend").innerHTML = `<div class="kv">${card("SPX")}${card("RUT")}${dteCard}${paceCard}</div>`;
+  const btCard = BT && IVB && IVB.band !== "unknown" ? `<div><span class="lbl">Since 2009 · A14s entered in today's term structure (${esc(IVB.label)})</span><span class="small">${["SPX", "RUT"].map((u) => `${u} ` + [14, 21, 30, 45, 60].map((d) => { const o = BT.odds[u] && BT.odds[u][String(d)] && BT.odds[u][String(d)][IVB.band]; return o ? `${d}d <b class="${o.avg > 0 ? "pos" : "neg"}">${pctS(o.avg)}</b>` : ""; }).join(" · ")).join("<br>")}<br><span class="muted">avg per trade, % of margin, your exits with the −20% stop (model, after costs) · Evidence → Since 2009</span></span></div>` : "";
+  $("a14Trend").innerHTML = `<div class="kv">${card("SPX")}${card("RUT")}${btCard}${dteCard}${paceCard}</div>`;
 }
 const SORTS = {exp_day: "E/risk per day held (capital use)", exp_risk: "E[P&L] at exit / risk", stress_risk: "Stress loss / risk (smallest first)", theta_risk: "Theta / risk", pop_h: "P(profit) at exit", ror: "Max profit / risk"};
 function params() {
@@ -121,7 +133,7 @@ async function scan() {
     const m = Object.entries(A.symbols).map(([s, v]) => `${s} ${big(v.spot)} · RV20 ${ok(v.rv20) ? (100 * v.rv20).toFixed(1) + "%" : "–"}`).join(" · ");
     const hold = (A.params && A.params.hold) || {}, ex = A.params && A.params.exit_days;
     $("a14Meta").textContent = `chain from TWS ${when(A.ts)} · ${m} · ${A.count} candidates · exit ${ex === "auto" ? "at your typical hold: " + Object.entries(hold).map(([k, v]) => `${k} DTE ${Math.round(v)}d`).join(", ") + " (14d where no history)" : "after " + ex + " days"}`;
-    if (!ST) { ST = await api("/api/a14/stats").catch(() => null); trendBanner(); }
+    if (!ST) { [ST] = await Promise.all([api("/api/a14/stats").catch(() => null), btLoad()]); trendBanner(); }
     cellFilter = null; heat(); table(); if (!HIST) history();
   } catch (e) { $("a14Table").innerHTML = err(e); }
 }
@@ -153,6 +165,8 @@ function rankWhy(c, rank, total) {
   if (c.pop_h >= 0.75) pros.push(`high odds: ${Math.round(100 * c.pop_h)}% P(profit) at exit`); else if (c.pop_h < 0.5) cons.push(`below-even odds: ${Math.round(100 * c.pop_h)}% P(profit) at exit`);
   if (c.theta > 0) pros.push(`earns ${money(c.theta)} a day from time decay`); else cons.push(`negative theta today (${money(c.theta)}/day): needs the market to come to it`);
   if (c.usual) pros.push("shaped like your past A14 entries");
+  const bo = btOdds(c.sym, c.dte);
+  if (bo) (bo.avg > 0 ? pros : cons).push(`since 2009, ${c.sym} A14s entered at about ${bo.d} DTE in today's term structure (${IVB.label.toLowerCase()}) averaged ${pctS(bo.avg)} of margin with your exits, ${Math.round(100 * bo.win)}% winners (${bo.n} trades, model)`);
   if (tr && ST.by_trend) (upTrend(tr) ? pros : cons).push(upTrend(tr) ? `${c.sym} above its 20-day average (your better entry condition)` : `${c.sym} below its 20-day average (your A14s averaged ${fmt(ST.by_trend.below.ret, 1)}% vs ${fmt(ST.by_trend.above.ret, 1)}% above it)`);
   if (ok(c.stress_risk) && c.stress_risk < -50) cons.push(`fragile: the stress (−5%, IV +5) costs ${money(c.stress_h)}, ${Math.round(-c.stress_risk)}% of risk`);
   if (ok(c.down1sd_h) && c.down1sd_h < -0.5 * c.risk) cons.push(`a 1σ drop by exit costs ${money(c.down1sd_h)} (${Math.round(100 * -c.down1sd_h / c.risk)}% of risk)`);

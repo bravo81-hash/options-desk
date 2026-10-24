@@ -237,8 +237,9 @@ def _entry_note():
 
 def strategy_gates(symbol, es, pairs):
     """Rule checks folded in from Calendar-Scanner's STRATEGIES.md plus the two filters from your own record
-    (the same ones the Trade readiness bar applies): VIX/VIX3M above 0.834 and no high-impact release within 3 days.
-    Informational only."""
+    and the backtest (the same ones the Trade readiness bar applies): VIX/VIX3M below 0.90, the index above its
+    20-day average, and no high-impact release within 3 days. Informational only."""
+    from .a14 import trend
     from .readiness import _events, ivts_band
     df = cboe_curve_frame()
     vix, vix3m = (float(df["VIX"].iloc[-1]), float(df["VIX3M"].iloc[-1])) if len(df) else (None, None)
@@ -246,8 +247,11 @@ def strategy_gates(symbol, es, pairs):
     ivts = vix / vix3m if vix and vix3m else None
     band = ivts_band(ivts)
     ev = _cached("events", _events) or []
-    common = [("VIX/VIX3M above 0.834 (your June calendar losses were entered at 0.80–0.81)", ivts is not None and ivts > 0.834,
+    tr = (trend(symbol) or {}).get("vs_sma20")
+    common = [("VIX/VIX3M below 0.90 (since 2009, calendars entered at 0.90+ lost on average; model)", ivts is not None and ivts < 0.90,
                f"{ivts:.3f} · {band['label']}" if ivts else "–"),
+              (f"{symbol} above its 20-day average (below it, calendars lost on average since 2009; model)", tr is not None and tr > 0,
+               f"{tr:+.1f}%" if tr is not None else "–"),
               ("No CPI / FOMC / payrolls / PCE / GDP within 3 days", not ev,
                ", ".join(sorted({e['title'] for e in ev})) if ev else "none")]
     day = _entry_note()
