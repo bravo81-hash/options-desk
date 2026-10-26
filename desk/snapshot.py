@@ -36,7 +36,7 @@ KEEP = {"calendar": ["symbol"], "pair": ["symbol", "front", "back"], "pair/curve
         "skew": ["symbol", "tenor"], "pick": ["vol"], "a14/scan": ["sym", "vol"], "a14/curve": ["sym", "expiry", "u", "s", "l"]}
 PLAIN = ["risk", "a14/stats", "a14/history", "journal", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
          "md/account", "freshness", "backtest"]
-A14_CURVES = 30  # risk curves for the top candidates per underlying (default sort: E/risk per day)
+A14_CURVES = 30  # risk curves for the top candidates per underlying (default sort: since-2009 return per day)
 
 
 def jsnum(x):
@@ -128,7 +128,7 @@ def build():
             if sym == "SPX,RUT" and vol == "rv20":
                 cands = sc.get("candidates") or []
                 for u in ("SPX", "RUT"):
-                    top = sorted([c for c in cands if c.get("sym") == u and c.get("exp_day") is not None], key=lambda c: -c["exp_day"])[:A14_CURVES]
+                    top = sorted([c for c in cands if c.get("sym") == u and c.get("exp_day") is not None], key=lambda c: -(c.get("hist_day") if c.get("hist_day") is not None else c["exp_day"]))[:A14_CURVES]
                     for c in top:
                         get("a14/curve", {"sym": u, "expiry": c["expiry"], "u": jsnum(c["upper"]), "s": jsnum(c["short"]), "l": jsnum(c["lower"])})
     return _scrubber()(out)

@@ -402,6 +402,96 @@ def run():
     return out
 
 
+# ------------------------------------------------------------------ any BWB shape, for the A14 scanner
+_DATA = {"key": None, "D": None}
+_SCORE = {}
+_data_lock = threading.Lock()
+
+
+def data():
+    """load(), kept until the next SPX close."""
+    with _data_lock:
+        k = _last_close()
+        if _DATA["key"] != k or _DATA["D"] is None:
+            D = load()
+            D["ord"] = np.array([d.toordinal() for d in D["date"]])
+            _DATA.update(key=k, D=D)
+            _SCORE.clear()
+        return _DATA["D"]
+
+
+def sd_now(D, u, dte):
+    """Today's model 1-sd move to expiry (fraction), the unit the shapes are scaled in."""
+    return float(base_vol(D, u, len(D["days"]) - 1, dte)) * SKEW[u][0] * math.sqrt(dte / 365)
+
+
+def shape_score(D, u, dte, x, rule=None):
+    """Replay a put BWB with strikes at ln(K/S) = x * sd (x = upper, short, lower in model sd units) on every
+    Friday since 2009 at the same DTE, with the trade-plan exits. Vectorised over all entries. Returns a summary
+    for all entries and for each VIX/VIX3M band at entry."""
+    key = (u, int(dte), tuple(round(float(v), 2) for v in x))
+    if key in _SCORE:
+        return _SCORE[key]
+    rule = rule or plan_rule(dte)
+    o, n = D["ord"], len(D["ord"])
+    i0 = np.array([i for i, d in enumerate(D["date"]) if d.weekday() == 4 and i >= 21])
+    exp = o[i0] + dte
+    j = np.searchsorted(o, exp, side="right") - 1
+    keep = (j > i0) & (exp - o[np.minimum(j, n - 1)] <= 3) & (exp <= o[-1] + 3) & (j < n)
+    keep &= exp <= o[-1]
+    i0, exp, j = i0[keep], exp[keep], j[keep]
+    ln = j - i0 + 1
+    E = np.repeat(np.arange(len(i0)), ln)
+    first = np.concatenate([[0], np.cumsum(ln)[:-1]])
+    I = i0[E] + (np.arange(len(E)) - first[E])
+    days = (exp[E] - o[I]).astype(float)
+    S0 = D[u][i0]
+    sd = base_vol(D, u, i0, dte) * SKEW[u][0] * math.sqrt(dte / 365)
+    K = S0[:, None] * np.exp(np.asarray(x, dtype=float)[None, :] * sd[:, None])  # (entries, 3)
+    Ke = K[E]
+    iv = leg_iv(D, u, I[:, None], days[:, None], Ke)
+    v = (put_price(D[u][I][:, None], Ke, np.maximum(days, 0)[:, None] / 365, iv) * BWB_W).sum(axis=1)
+    Uw, Lw = K[:, 0] - K[:, 1], K[:, 1] - K[:, 2]
+    v = np.clip(v, np.minimum(Uw - Lw, 0)[E], Uw[E])
+    v0 = v[first]
+    risk = np.maximum.reduce([Lw - Uw + v0, v0, np.full(len(v0), 0.05)]) * 100
+    c = COST_SCALE * (COMM * 4 + SLIP[u] * 100) * S0 / D[u][-1]
+    pnl = (v - v0[E]) * 100 - 2 * c[E]
+    pnl[first] += c
+    r = 100 * pnl / risk[E]
+    held = (o[I] - o[i0][E]).astype(float)
+    tp, sl, tdte, pace = rule.get("tp"), rule.get("sl"), rule.get("time_dte", 2), rule.get("pace")
+    hit = days <= tdte
+    if tp is not None:
+        hit |= r >= tp
+    if sl is not None:
+        hit |= r <= -sl
+    if pace:
+        hit |= (held >= pace[0]) & (r < pace[1] * held) & (r >= 0)
+    hit[first] = False
+    last = first + ln - 1
+    hit[last] = True
+    hi = np.flatnonzero(hit)
+    ue, ix = np.unique(E[hi], return_index=True)
+    k = hi[ix]
+    ret, dh = r[k], np.maximum(held[k], 1)
+    why = np.where((sl is not None) & (ret <= -(sl or 0)), "stop", np.where((tp is not None) & (ret >= (tp or 1e9)), "target", "other"))
+    ivts = D["vix"][i0] / D["vix3m"][i0]
+    bands = np.array([ivts_band(float(q))["band"] for q in ivts])
+
+    def summ(m):
+        if m.sum() < 20:
+            return None
+        rr, dd = ret[m], dh[m]
+        return {"n": int(m.sum()), "avg": round(float(rr.mean()), 2), "win": round(float((rr > 0).mean()), 3),
+                "p_target": round(float((why[m] == "target").mean()), 3), "p_stop": round(float((why[m] == "stop").mean()), 3),
+                "days": round(float(dd.mean()), 1), "per_day": round(float(rr.sum() / dd.sum()), 3), "p5": round(float(np.percentile(rr, 5)), 1),
+                "worst": round(float(rr.min()), 1), "big_loss": round(float((rr < -50).mean()), 3)}
+    out = {"all": summ(np.ones(len(ret), bool)), **{b: summ(bands == b) for b in BANDS}, "rule": {k2: v2 for k2, v2 in rule.items()}}
+    _SCORE[key] = out
+    return out
+
+
 def _last_close():
     return (db.query("SELECT MAX(date) d FROM bars_daily WHERE symbol='^GSPC'") or [{}])[0].get("d")
 

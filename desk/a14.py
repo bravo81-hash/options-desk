@@ -280,9 +280,44 @@ def scan(symbols=("SPX", "RUT"), dte_min=14, dte_max=45, exit_days=None, vol_bas
     if not cands:
         return {"error": "No candidates in that window (is the chain empty for those expiries?).", **meta}
     meta["count"] = len(cands)
+    meta["hist"] = _hist_scores(cands)
     heat_out = [{"sym": k[0], "expiry": k[1], "cells": {str(b): v for b, v in sorted(cells.items())}} for k, cells in sorted(heat.items())]
     return {**meta, "candidates": cands, "heat": heat_out, "params": {"exit_days": exit_days or "auto", "vol_basis": vol_basis, "hold": typical_hold(),
                                                                  "stress": {"move": STRESS_MOVE, "vol": STRESS_VOL}}}
+
+
+HIST_MIN_N = 80  # use today's VIX/VIX3M band when it has at least this many past entries, else all entries
+
+
+def _hist_scores(cands):
+    """Each candidate replayed since 2009 (desk/backtest.shape_score): its strikes in today's model-sd units,
+    rebuilt on every past Friday at the same DTE, managed with your trade-plan exits. Adds hist_* fields;
+    ranking defaults to hist_day = average return per day held, in today's term-structure band."""
+    from . import backtest
+    from .readiness import ivts_band
+    try:
+        D = backtest.data()
+        band = ivts_band(float(D["vix"][-1] / D["vix3m"][-1]))
+        sds = {}
+        for c in cands:
+            k = (c["sym"], int(c["dte"]))
+            if k not in sds:
+                sds[k] = backtest.sd_now(D, *k)
+            sd = sds[k]
+            S0 = c["upper"] / (1 + c["upper_pct"] / 100)
+            x = [round(math.log(K / S0) / sd, 2) for K in (c["upper"], c["short"], c["lower"])]
+            sc = backtest.shape_score(D, c["sym"], int(c["dte"]), x)
+            b = sc.get(band["band"])
+            use = b if b and b["n"] >= HIST_MIN_N else sc["all"]
+            c["hist_all"], c["hist_band"] = sc["all"], b
+            c["hist_basis"] = "band" if use is b else "all"
+            if use:
+                c.update(hist_day=use["per_day"], hist_avg=use["avg"], hist_win=use["win"], hist_ptgt=use["p_target"],
+                         hist_pstop=use["p_stop"], hist_days=use["days"], hist_p5=use["p5"], hist_big=use["big_loss"])
+        return {"band": band["band"], "label": band["label"], "min_n": HIST_MIN_N, "rule": "target +5% (21 DTE or less) or +7%, stop −20%, out at 2 DTE, slow trades closed at the next green close"}
+    except Exception as e:
+        _log(f"history scores unavailable: {e}")
+        return {"error": str(e)}
 
 
 def curve(sym, expiry, upper, short, lower, exit_days=None):
