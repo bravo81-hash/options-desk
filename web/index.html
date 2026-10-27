@@ -20,7 +20,8 @@
     <div id="freshBar" class="freshbar" title="date of each data source vs the latest US close"></div>
     <button type="button" class="ghost themeBtn" id="themeBtn" title="Theme: follow Windows, light, or dark">Auto</button>
     <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="market" aria-selected="true">Market</button>
+      <button role="tab" data-tab="actions" aria-selected="true">Actions</button>
+      <button role="tab" data-tab="market">Market</button>
       <button role="tab" data-tab="pick">Today's pick</button>
       <button role="tab" data-tab="today">Term structure</button>
       <button role="tab" data-tab="cal">Calendar scanner</button>
@@ -40,7 +41,18 @@
   <section class="panel modalp" id="rdPanel" hidden><header><h2>Trade readiness</h2><button type="button" class="ghost mclose">Close</button></header><div id="rdBody"></div></section>
 
   <!-- MARKET (former Market Desk) -->
-  <section class="tab" id="tab-market">
+  <section class="tab" id="tab-actions">
+    <div class="grid">
+      <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
+        <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
+      <section class="panel c5"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
+      <section class="panel c7"><header><h2>Orders &amp; alerts to have in TWS</h2><span class="small muted">one GTC target close and two price alerts per open trade</span></header><div id="acOrders"></div></section>
+      <section class="panel c6"><header><h2>Coming up</h2><span class="small muted">next 3 days</span></header><div id="acComing"></div></section>
+      <section class="panel c6"><header><h2>Data check</h2><span class="small muted">anything that makes the numbers above out of date</span></header><div id="acChecks"></div></section>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-market" hidden>
     <iframe id="mdFrame" src="/market" title="Market" style="width:100%;border:0;display:block;min-height:300px" scrolling="no"></iframe>
   </section>
 
@@ -292,6 +304,7 @@
 
       <section class="panel c6" id="g-daily" data-sub="Start here"><header><h2>2 · Daily routine (10 minutes)</h2></header>
         <ol>
+          <li><b>Actions</b> (opens first) — the short list: open trades past a line in their card, whether new entries are on today and the best A14 shapes if so, the GTC target and alert levels to have in TWS, releases and time stops in the next 3 days, and any data that is out of date. Everything else below is the detail behind it.</li>
           <li><b>Trade readiness bar</b> (top of every tab) — the one size call for new premium selling, with a size per structure (A14 SPX/RUT, calendars SPX/RUT). Press <i>Why</i> for what set it. Check the data strip beside the title: anything red is older than the last close.</li>
           <li><b>Market</b> — the warnings, regime and VIX panels now show their tested odds; they are inputs to the readiness bar, not separate verdicts.</li>
           <li><b>Risk grid</b> — press <i>Refresh marks from TWS</i>. Check P&amp;L now, Delta per 1% and Worst in range. Sort Open trades by <i>Days to expiry</i> to see what needs managing.</li>
@@ -480,5 +493,6 @@
 <script src="season.js"></script>
 <script src="journal.js"></script>
 <script src="backtest.js"></script>
+<script src="actions.js"></script>
 </body>
 </html>

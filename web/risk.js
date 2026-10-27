@@ -434,5 +434,13 @@ async function refresh() {
 $("rkRefresh").addEventListener("click", refresh);
 $("rkClose").addEventListener("click", () => { sel = null; $("rkDetailPanel").hidden = true; });
 window.loadRisk = load;
+// for the Actions tab: every open trade with its plan (pace, trade plan, close order, alert levels)
+window.riskActions = async () => {
+  if (!R) await load();
+  if (!R || !R.trades) return null;
+  R.trades.forEach((t) => { t.beta = 1; paceOf(t); planOf(t); t.acctLabel = label(t); });
+  return {trades: R.trades, marks_ts: R.marks_ts, one_fresh: R.one_fresh, detail_exported: R.detail_exported, missing: R.missing || []};
+};
+window.riskOpen = (id) => openDetail(id);
 window.riskChart = riskChart;
 })();

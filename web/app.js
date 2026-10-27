@@ -39,8 +39,8 @@ const loaded = {};
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + name; });
-  try { localStorage.setItem("od.tab", name); } catch (e) {}
-  if (!loaded[name]) { loaded[name] = true; ({market: () => {}, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => window.loadA14(), pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }
+  try { sessionStorage.setItem("od.tab", name); } catch (e) {}
+  if (!loaded[name]) { loaded[name] = true; ({actions: () => window.loadActions(), market: () => {}, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => window.loadA14(), pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }
   else document.querySelectorAll(`#tab-${name} .chart`).forEach((c) => c._draw && c._draw());
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
@@ -279,8 +279,9 @@ $("btnRecord").addEventListener("click", async () => { $("recMsg").textContent =
 $("btnHist").addEventListener("click", async () => { $("recMsg").textContent = "Downloading CBOE history…"; const r = await api("/api/refresh-history", {method: "POST"}); $("recMsg").textContent = r.error || "CBOE history refreshed."; loadRec(); });
 $("btnTws").addEventListener("click", async () => { $("recMsg").textContent = "Connecting…"; const r = await api("/api/tws"); $("recMsg").innerHTML = r.ok ? `<span class="pos">TWS connection OK (read-only).</span>` : `<span class="neg">Could not connect: ${esc(r.error || "")}. Check TWS is open and API socket clients are enabled on port 7496.</span>`; });
 
-let start = "market"; try { start = localStorage.getItem("od.tab") || "market"; } catch (e) {}
-window.addEventListener("load", () => showTab(["market", "today", "cal", "skew", "risk", "pnl", "evidence", "rec"].includes(start) ? start : "market"));
+// a fresh open lands on Actions; a reload keeps the tab you were on
+let start = "actions"; try { start = sessionStorage.getItem("od.tab") || "actions"; } catch (e) {}
+window.addEventListener("load", () => showTab(["actions", "market", "today", "cal", "skew", "risk", "pnl", "evidence", "rec"].includes(start) ? start : "actions"));
 
 /* the Market tab is the former Market Desk page in a same-origin frame: size it to its content */
 (() => {
