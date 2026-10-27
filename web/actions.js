@@ -11,14 +11,48 @@ const go = (tab, text, sub) => `<a href="#" class="small" data-go="${tab}"${sub 
 const order = (o) => o ? `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>` : "–";
 const lv = (L, u) => !L ? "–" : L.past ? "already past" : [L.dn ? `${u} ↓ <b class="mono">${Math.round(L.dn).toLocaleString()}</b>` : null, L.up ? `↑ <b class="mono">${Math.round(L.up).toLocaleString()}</b>` : null].filter(Boolean).join(" · ") || "beyond −25% / +15%";
 
+/* ---------- filters: ticker, first expiry, account (remembered on this browser) ---------- */
+let L = null, SCAN = null;
+const FK = "od.acFilt";
+let F = (() => { try { return JSON.parse(localStorage.getItem(FK)) || {}; } catch (e) { return {}; } })();
+const expKey = (t) => new Date(t.firstExp).toLocaleDateString("en-CA", {timeZone: "America/New_York"});  // expiry date in New York (16:00 ET is next morning in Sydney)
+const expTxt = (k) => new Date(k + "T12:00:00").toLocaleDateString([], {day: "numeric", month: "short", year: "2-digit"});
+const KEYS = {sym: (t) => t.underlying, exp: expKey, acct: (t) => t.acctLabel};
+const pass = (t, skip) => Object.entries(KEYS).every(([k, f]) => k === skip || !F[k] || f(t) === F[k]);
+const pick = (Rk) => Rk && {...Rk, trades: Rk.trades.filter((t) => pass(t))};
+const active = () => Object.values(F).some(Boolean);
+
+function filters() {
+  const el = $("acFilt"); if (!el) return;
+  if (!L || !L.Rk) { el.innerHTML = ""; return; }
+  const T = L.Rk.trades;
+  Object.keys(KEYS).forEach((k) => { if (F[k] && !T.some((t) => KEYS[k](t) === F[k])) delete F[k]; });  // a filter whose trades have closed
+  const box = (k, label, txt = (v) => v) => {
+    const n = {}; T.filter((t) => pass(t, k)).forEach((t) => { const v = KEYS[k](t); if (v) n[v] = (n[v] || 0) + 1; });
+    return `<label class="small">${label} <select data-f="${k}"><option value="">All</option>${Object.keys(n).sort().map((v) => `<option value="${esc(v)}"${F[k] === v ? " selected" : ""}>${esc(txt(v))} (${n[v]})</option>`).join("")}</select></label>`;
+  };
+  el.innerHTML = `${box("sym", "Ticker")}${box("exp", "Expiry", expTxt)}${box("acct", "Account")}
+    ${active() ? `<button type="button" class="ghost" id="acFClear">Clear filters</button><span class="small muted">showing ${pick(L.Rk).trades.length} of ${T.length} open trades · releases and data checks are not filtered</span>` : `<span class="small muted">filters apply to the trade lists and the A14 shapes (ticker)</span>`}`;
+  el.querySelectorAll("select").forEach((s) => s.addEventListener("change", () => { F[s.dataset.f] = s.value || undefined; save(); render(); }));
+  const c = $("acFClear"); if (c) c.addEventListener("click", () => { F = {}; save(); render(); });
+}
+const save = () => { try { localStorage.setItem(FK, JSON.stringify(F)); } catch (e) {} };
+
+function render() {
+  filters();
+  const V = pick(L.Rk);
+  doToday(V); orders(V); coming(V, L.Rd); ideasRender();
+}
+
 async function load() {
   const host = $("acDo"); if (!host) return;
   $("acWhen").textContent = new Date().toLocaleString([], {weekday: "long", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
-  const [Rk, Rd, F, Sn] = await Promise.all([
+  const [Rk, Rd, Fr, Sn] = await Promise.all([
     window.riskActions ? window.riskActions().catch(() => null) : null,
     api("/api/readiness").catch(() => null), api("/api/freshness").catch(() => null),
     window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null)]);
-  doToday(Rk); entries(Rd); orders(Rk); coming(Rk, Rd); checks(Rk, F, Sn);
+  L = {Rk, Rd}; SCAN = null;
+  render(); entries(Rd); checks(Rk, Fr, Sn);
   ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
 }
 
@@ -26,8 +60,8 @@ function doToday(Rk) {
   if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Unlock your snapshot (top bar) to see your trades." : "Open trades unavailable: is the ONE Summary Report in Documents?"}</div>`; return; }
   const P = Rk.trades.filter((t) => t.plan && t.plan.act !== "hold").sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   const held = Rk.trades.filter((t) => t.plan && t.plan.act === "hold").length, noCard = Rk.trades.filter((t) => !t.plan).length;
-  $("acDoMeta").textContent = `${Rk.trades.length} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}`;
-  if (!P.length) { $("acDo").innerHTML = `<div class="state">Nothing to do on open trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
+  $("acDoMeta").textContent = `${Rk.trades.length}${active() ? ` of ${L.Rk.trades.length}` : ""} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}`;
+  if (!P.length) { $("acDo").innerHTML = `<div class="state">Nothing to do on ${active() ? "the filtered" : "open"} trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
   $("acDo").innerHTML = `<div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n">Total</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
     P.map((t) => { const q = t.plan, [k, word] = ACT[q.act] || ["", q.label];
       const use = q.act === "exit" ? `close now${q.stopPx ? ` · combo ~${q.stopPx.px.toFixed(2)}` : ""}`
@@ -48,13 +82,20 @@ function entries(Rd) {
 }
 
 async function ideas(Rd) {
-  const el = $("acIdeas");
-  const want = Rd && !Rd.error ? Rd.strategies.filter((s) => s.name.startsWith("A14") && s.size !== "Stand aside").map((s) => s.name.split(" ")[1]) : [];
-  el.innerHTML = `<div class="state">Ranking A14 shapes on history…</div>`;
+  const want = Rd && !Rd.error ? Rd.strategies.filter((x) => x.name.startsWith("A14") && x.size !== "Stand aside").map((x) => x.name.split(" ")[1]) : [];
+  $("acIdeas").innerHTML = `<div class="state">Ranking A14 shapes on history…</div>`;
   const A = await api("/api/a14/scan?sym=SPX,RUT&vol=rv20").catch(() => null);
+  SCAN = {A, want}; ideasRender();
+}
+
+function ideasRender() {
+  const el = $("acIdeas"); if (!SCAN) return;
+  const {A, want} = SCAN;
   if (!A || A.error || !A.candidates) { el.innerHTML = `<div class="state">${esc((A && A.error) || "No A14 chain yet.")} ${go("a14", "A14 scanner", "Scanner")}</div>`; return; }
   const pickN = (u) => A.candidates.filter((c) => c.sym === u && ok(c.hist_day)).sort((a, b) => b.hist_day - a.hist_day).slice(0, 2);
-  const rows = ["SPX", "RUT"].flatMap((u) => pickN(u).map((c) => ({...c, live: want.includes(u)})));
+  const syms = ["SPX", "RUT"].filter((u) => !F.sym || F.sym === u);
+  if (!syms.length) { el.innerHTML = `<div class="state small">No A14 scan for ${esc(F.sym)}.</div>`; return; }
+  const rows = syms.flatMap((u) => pickN(u).map((c) => ({...c, live: want.includes(u)})));
   el.innerHTML = `<div class="tbl"><table><thead><tr><th>Best A14 shape on history</th><th class="n">Credit</th><th class="n">Risk</th><th class="n">Since 2009</th><th class="n">Target / stop</th></tr></thead><tbody>${
     rows.map((c) => `<tr class="${c.live ? "" : "muted"}"><td>${c.sym} ${esc(String(c.expiry).slice(4, 6) + "/" + String(c.expiry).slice(6))} <span class="small muted">${c.dte}d</span> <span class="mono">${Math.round(c.upper)}/${Math.round(c.short)}/${Math.round(c.lower)}</span>${c.live ? "" : ` <span class="chip">stand aside</span>`}</td>
       <td class="n mono ${cls(c.credit)}">${c.credit > 0 ? "+" : ""}${c.credit.toFixed(2)}</td><td class="n">${money(c.risk)}</td><td class="n ${cls(c.hist_avg)}">${pctS(c.hist_avg)} <span class="small muted">${c.hist_day.toFixed(2)}%/d</span></td>
@@ -65,7 +106,7 @@ async function ideas(Rd) {
 function orders(Rk) {
   if (!Rk) { $("acOrders").innerHTML = ""; return; }
   const P = Rk.trades.filter((t) => t.plan && (t.plan.order || t.plan.at));
-  if (!P.length) { $("acOrders").innerHTML = `<div class="state">No carded trades.</div>`; return; }
+  if (!P.length) { $("acOrders").innerHTML = `<div class="state">No carded trades${active() ? " in the filter" : ""}.</div>`; return; }
   $("acOrders").innerHTML = `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">GTC target close</th><th class="n">Alert: decide</th><th class="n">Alert: stop</th></tr></thead><tbody>${
     P.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.firstExp - b.firstExp).map((t) => { const q = t.plan;
       return `<tr><td class="small">${esc(t.name)} <span class="muted">${esc(t.acctLabel || "")}</span></td><td class="n small">${order(q.order)}</td><td class="n small">${lv(q.at && q.at.decide, t.underlying)}</td><td class="n small">${lv(q.at && q.at.stop, t.underlying)}</td></tr>`; }).join("")}</tbody></table></div>
@@ -86,9 +127,9 @@ function coming(Rk, Rd) {
     : `<div class="state">No high-impact releases or time stops in the next 3 days.</div>`;
 }
 
-function checks(Rk, F, Sn) {
+function checks(Rk, Fr, Sn) {
   const bad = [];
-  if (F) F.sources.filter((x) => x.stale).forEach((x) => bad.push(`<b>${esc(x.name)}</b> is older than the last close <span class="muted">(${esc(x.what)})</span>`));
+  if (Fr) Fr.sources.filter((x) => x.stale).forEach((x) => bad.push(`<b>${esc(x.name)}</b> is older than the last close <span class="muted">(${esc(x.what)})</span>`));
   if (Rk && Rk.one_fresh && Rk.one_fresh.stale) bad.push(`<b>ONE Summary Report</b> is ${Rk.one_fresh.age_h != null ? Math.round(Rk.one_fresh.age_h) + "h old" : "missing"}${Rk.one_fresh.fills_since ? ` and IBKR has ${Rk.one_fresh.fills_since} fills since` : ""}: export it so the plan sees your latest trades`);
   if (Rk && Rk.marks_ts && Date.now() - Date.parse(Rk.marks_ts) > 18 * 3600e3) bad.push(`<b>TWS marks</b> are from ${esc(new Date(Rk.marks_ts).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"}))}: refresh them in the Risk grid for current totals and alert levels`);
   if (Rk && !Rk.marks_ts) bad.push("<b>No TWS marks yet</b>: press Refresh in the Risk grid with TWS running");
