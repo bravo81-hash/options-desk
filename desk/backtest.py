@@ -22,6 +22,7 @@ import math
 import threading
 
 import numpy as np
+import pandas as pd
 
 from . import db
 from .a14 import put_price
@@ -29,7 +30,7 @@ from .history import series
 from .readiness import ivts_band
 
 START = "2009-10-01"
-VERSION = 5
+VERSION = 6
 SKEW = {"SPX": (0.798, -1.102, 1.584), "RUT": (0.875, -0.735, 1.174)}  # fitted on your ONE fills, Jun-Oct 2026
 GEOM = {"SPX": (0.0, 0.29, 0.38), "RUT": (0.05, 0.33, 0.44)}  # upper offset, upper wing, lower wing (sd units)
 COMM, SLIP = 1.36, {"SPX": 0.25, "RUT": 0.15}
@@ -46,6 +47,37 @@ def _bars(sym):
     return {r["date"]: r["c"] for r in rows if r["c"]}
 
 
+def _bars_all(sym):
+    rows = db.query("SELECT date, c FROM bars_daily WHERE symbol=? ORDER BY date", (sym,))
+    return {r["date"]: r["c"] for r in rows if r["c"]}
+
+
+def _season_up(full, days, h=21, lookback=20):
+    """Seasonality tab's 21-day window: share of the previous 20 years in which SPX was higher 21 sessions after
+    the same calendar date (only years before the entry, so no look-ahead)."""
+    idx = pd.to_datetime(full.index)
+    vals = full.values
+    by_year = {}
+    for y in sorted(set(idx.year)):
+        m = idx.year == y
+        by_year[y] = (idx[m], np.flatnonzero(m))
+    out = np.full(len(days), np.nan)
+    for k, d in enumerate(days):
+        t = dt.date.fromisoformat(d)
+        ups = []
+        for y in range(t.year - lookback, t.year):
+            if y not in by_year:
+                continue
+            ds, ii = by_year[y]
+            j = ds.searchsorted(pd.Timestamp(year=y, month=t.month, day=min(t.day, 28 if t.month == 2 else t.day)))
+            if j >= len(ii) or ii[j] + h >= len(vals):
+                continue
+            ups.append(vals[ii[j] + h] > vals[ii[j]])
+        if len(ups) >= 10:
+            out[k] = 100 * np.mean(ups)
+    return out
+
+
 def load():
     spot = {"SPX": _bars("^GSPC"), "RUT": _bars("^RUT")}
     vol = {n: series(n, START).to_dict() for n in ("VIX9D", "VIX", "VIX3M", "VIX6M", "VIX1Y", "RVX")}
@@ -57,6 +89,18 @@ def load():
     v["VIX9D"] = np.where(np.isnan(v["VIX9D"]), v["VIX"], v["VIX9D"])  # before 2011: flat from VIX
     D["W"] = np.stack([v[n] ** 2 * t for n, t in zip(("VIX9D", "VIX", "VIX3M", "VIX6M", "VIX1Y"), TEN)], axis=1)  # total variance
     D["vix"], D["vix3m"], D["rvx"] = v["VIX"], v["VIX3M"], v["RVX"]
+    # signals from the other tabs, for the condition matrix (nan where a series has no value that day)
+    for n in ("SKEW", "VVIX"):
+        x = series(n).to_dict()
+        D[n.lower()] = np.array([x.get(d, np.nan) for d in days], dtype=float)
+    D["vix9d_raw"] = np.array([vol["VIX9D"].get(d, np.nan) for d in days], dtype=float) / 100
+    vx = series("VIX")
+    pct = vx.rolling(252).apply(lambda a: (a[:-1] < a[-1]).mean() * 100, raw=True).to_dict()  # 1-year percentile of VIX
+    D["vix_pct"] = np.array([pct.get(d, np.nan) for d in days], dtype=float)
+    full = pd.Series(_bars_all("^GSPC"))
+    sma200 = full.rolling(200).mean().to_dict()
+    D["SPX_sma200"] = np.array([sma200.get(d, np.nan) for d in days], dtype=float)
+    D["season"] = _season_up(full, days)
     for u in ("SPX", "RUT"):
         lr = np.diff(np.log(D[u]), prepend=np.nan)
         D[u + "_rv20"] = np.array([np.nanstd(lr[max(i - 19, 1):i + 1], ddof=1) * math.sqrt(252) if i >= 20 else np.nan for i in range(len(days))])
@@ -244,12 +288,40 @@ def cal_paths(D, u="SPX", front=15, back=22):
     return out
 
 
+def _cut(v, edges, labels):
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return None
+    return labels[int(np.searchsorted(edges, v, side="right"))]
+
+
+# condition buckets: key -> (tab, label, value from the _cond dict, edges, bucket labels)
+COND = {
+    "vix_band": ("Market", "VIX level", "vix", [15, 20, 30], ["<15", "15–20", "20–30", "30+"]),
+    "spx200": ("Market", "SPX vs its 200-day average", "spx200_pct", [0], ["below", "above"]),
+    "trend": ("Market", "Index vs its 20-day average", None, None, ["above", "below"]),
+    "ivts_band": ("Term structure", "VIX/VIX3M", "ivts", None, ["steep", "normal", "flat", "backwardation"]),
+    "front": ("Term structure", "VIX9D/VIX (front of the curve)", "front_r", [0.90, 1.0], ["<0.90", "0.90–1.00", "1.00+"]),
+    "ivpct": ("Skew & IV", "Implied vol: VIX 1-year percentile", "vix_pct", [25, 50, 75], ["<25", "25–50", "50–75", "75+"]),
+    "skew_b": ("Skew & IV", "SKEW index (tail skew)", "skew", [126, 142], ["<126", "126–142", "142+"]),
+    "vvix_b": ("Skew & IV", "VVIX (vol of vol)", "vvix", [85, 100, 115], ["<85", "85–100", "100–115", "115+"]),
+    "rvxs": ("Skew & IV", "RVX − VIX (RUT premium)", "rvx_spread", [3, 8], ["<3", "3–8", "8+"]),
+    "vrp_b": ("Expected moves", "Implied minus realised vol (index IV − 20-day realised)", "vrp", [0, 4, 8], ["<0", "0–4", "4–8", "8+"]),
+    "season": ("Seasonality", "Next 21 sessions: years up of the last 20", "season_up", [60, 75], ["<60%", "60–75%", "75%+"]),
+}
+
+
 def _cond(D, u, i):
     ivts = D["vix"][i] / D["vix3m"][i]
     vix = D["vix"][i] * 100
     rv = D[u + "_rv20"][i]
-    return {"date": D["days"][i], "year": D["days"][i][:4], "ivts": round(float(ivts), 3), "ivts_band": ivts_band(float(ivts))["band"],
-            "vix": round(float(vix), 1), "vix_band": "<15" if vix < 15 else "15–20" if vix < 20 else "20–30" if vix < 30 else "30+",
+    iv = (D["rvx"][i] if u == "RUT" else D["vix"][i]) * 100
+    raw = {"vix": vix, "spx200_pct": 100 * (D["SPX"][i] / D["SPX_sma200"][i] - 1), "front_r": D["vix9d_raw"][i] / D["vix"][i],
+           "vix_pct": D["vix_pct"][i], "skew": D["skew"][i], "vvix": D["vvix"][i], "rvx_spread": 100 * (D["rvx"][i] - D["vix"][i]),
+           "vrp": iv - 100 * rv, "season_up": D["season"][i]}
+    raw = {k: (None if v is None or np.isnan(v) else round(float(v), 3)) for k, v in raw.items()}
+    b = {k: _cut(raw[f], e, lab) for k, (_, _, f, e, lab) in COND.items() if e is not None}
+    return {**b, "raw": raw, "date": D["days"][i], "year": D["days"][i][:4], "ivts": round(float(ivts), 3),
+            "ivts_band": ivts_band(float(ivts))["band"], "vix": round(float(vix), 1),
             "trend": "above" if D[u][i] > D[u + "_sma20"][i] else "below",
             "vrp": None if np.isnan(rv) else round(float(vix - 100 * rv), 1)}
 
@@ -347,6 +419,29 @@ def _matrix(paths, rule):
             for b in BANDS}
 
 
+def _conds(paths, rule):
+    """Results per bucket of every condition in COND, plus SKEW buckets inside a normal term structure."""
+    res = [exit_at(p, **rule) for p in paths]
+    groups = {}
+    for p, r in zip(paths, res):
+        c = p["cond"]
+        for k in COND:
+            if c.get(k) is not None:
+                g = groups.setdefault(k, {}).setdefault(c[k], ([], []))
+                g[0].append(r); g[1].append(p)
+        if c["ivts_band"] == "normal" and c.get("skew_b"):
+            g = groups.setdefault("normal_skew", {}).setdefault(c["skew_b"], ([], []))
+            g[0].append(r); g[1].append(p)
+    return {"all": _sum(res, paths), **{k: {b: _sum(r, q) for b, (r, q) in v.items()} for k, v in groups.items()}}
+
+
+def conditions_now():
+    """Today's reading and bucket of every condition, per index (same code as the backtest entries)."""
+    D = data()
+    i = len(D["days"]) - 1
+    return {"date": D["days"][i], "SPX": _cond(D, "SPX", i), "RUT": _cond(D, "RUT", i)}
+
+
 def _years(paths, rule):
     return _by(paths, rule, "year")
 
@@ -366,7 +461,8 @@ def _ivts_fine(paths, rule):
 def run():
     D = load()
     out = {"version": VERSION, "built": dt.datetime.now().isoformat(timespec="seconds"), "from": D["days"][0], "to": D["days"][-1],
-           "rules": {k: v[0] for k, v in RULES.items()}, "a14": {}, "odds": {}, "managed": {}, "cal": {}, "matrix": {}}
+           "rules": {k: v[0] for k, v in RULES.items()}, "a14": {}, "odds": {}, "managed": {}, "cal": {}, "matrix": {}, "conds": {},
+           "cond_defs": {k: {"tab": t, "label": lab, "buckets": b} for k, (t, lab, _, _, b) in COND.items()}}
     for u in ("SPX", "RUT"):
         rows, odds = [], {}
         for dte in A14_DTE:
@@ -380,6 +476,7 @@ def run():
             odds[str(dte)] = {"all": row["plan"], **_by(paths, plan_rule(dte), "ivts_band")}
             if dte == 45:
                 out["matrix"][f"A14 {u}"] = {"dte": dte, "rule": "plan", "cells": _matrix(paths, plan_rule(dte))}
+                out["conds"][f"A14 {u}"] = _conds(paths, plan_rule(dte))
             if dte in (21, 45):
                 row["bands"] = {k: _by(paths, RULES[k][1](dte), "ivts_band") for k in ("card", "plan", "nostop")}
                 row["trend"] = _by(paths, plan_rule(dte), "trend")
@@ -402,7 +499,9 @@ def run():
             m[k] = {"label": label, **_sum([r[:3] for r in res]), "adj": round(float(np.mean([r[3] for r in res])), 1)}
         out["managed"][f"{u} {dte}"] = m
     for u in ("SPX", "RUT"):
-        out["matrix"][f"Calendar {u}"] = {"rule": CAL_RULE, "cells": _matrix(cal_paths(D, u), CAL_RULE)}
+        cpu = cal_paths(D, u)
+        out["matrix"][f"Calendar {u}"] = {"rule": CAL_RULE, "cells": _matrix(cpu, CAL_RULE)}
+        out["conds"][f"Calendar {u}"] = _conds(cpu, CAL_RULE)
     cp = cal_paths(D, "SPX")
     out["cal"] = {"rule": CAL_RULE, "n": len(cp), "debit": round(float(np.median([p["debit"] for p in cp]))),
                   "fine": _ivts_fine(cp, CAL_RULE), "trend": _by(cp, CAL_RULE, "trend"), "vix": _by(cp, CAL_RULE, "vix_band"),
@@ -505,6 +604,13 @@ def shape_score(D, u, dte, x, rule=None):
 
 def _last_close():
     return (db.query("SELECT MAX(date) d FROM bars_daily WHERE symbol='^GSPC'") or [{}])[0].get("d")
+
+
+def cached():
+    """The last stored results, without starting a computation (for notes that must not wait)."""
+    raw = db.get_meta("backtest")
+    cur = json.loads(raw) if raw else None
+    return cur if cur and cur.get("version") == VERSION else None
 
 
 def results(force=False):

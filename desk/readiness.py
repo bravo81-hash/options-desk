@@ -80,6 +80,23 @@ def matrix():
     return {name: {b: {t: f(b, t == "above") for t in ("above", "below")} for b in BANDS} for name, f in RULES.items()}
 
 
+def _skew_note():
+    """Information only: in a normal term structure the SKEW index split RUT A14 results in the model."""
+    try:
+        from . import backtest
+        from .history import series
+        R = backtest.cached()
+        g = R["conds"]["A14 RUT"]["normal_skew"]
+        sk = series("SKEW").dropna()
+        v = float(sk.iloc[-1])
+        b = "<126" if v < 126 else "126–142" if v < 142 else "142+"
+        other = {"<126": ["142+"], "142+": ["<126"], "126–142": ["<126", "142+"]}[b]
+        return (f"SKEW {v:.0f}: in a normal term structure RUT A14s averaged {g[b]['avg']:+.1f}% with SKEW {b} ({g[b]['n']} entries) vs "
+                + " and ".join(f"{g[o]['avg']:+.1f}% at {o}" for o in other) + " (model, information only)")
+    except Exception:
+        return None
+
+
 def _events():
     from .market import calendar
     today = dt.date.today()
@@ -143,6 +160,10 @@ def now():
             notes.append(f"RVX only {rvx:+.1f} over VIX: thin RUT premium, SPX preferred")
         if sym == "RUT" and rvx is not None and rvx >= 8:
             notes.append(f"RVX {rvx:+.1f} over VIX: rich RUT premium")
+        if sym == "RUT" and band["band"] == "normal":
+            n = _skew_note()
+            if n:
+                notes.append(n)
         strat.append({"name": f"A14 {sym}", "size": sz, "notes": notes or ["no strategy-specific flags"]})
     for sym in ("SPX", "RUT"):
         sz, notes = apply(size, cal_steps(band["band"], trends[sym]["short_up"])), []

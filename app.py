@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, backtest, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
+from desk import ROOT, a14, accounts, backtest, conditions, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -314,6 +314,11 @@ def api_pick():
 @app.get("/api/a14/stats")
 def api_a14_stats():
     return ok(a14.stats())
+
+
+@app.get("/api/conditions")
+def api_conditions():
+    return ok(conditions.now())
 
 
 @app.get("/api/backtest")

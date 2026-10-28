@@ -52,7 +52,7 @@ async function load() {
     api("/api/readiness").catch(() => null), api("/api/freshness").catch(() => null),
     window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null)]);
   L = {Rk, Rd}; SCAN = null;
-  render(); entries(Rd); checks(Rk, Fr, Sn); matrix(Rd);
+  render(); entries(Rd); checks(Rk, Fr, Sn); conditions(); matrix(Rd);
   ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
 }
 
@@ -71,6 +71,39 @@ function doToday(Rk) {
       return `<tr><td><span class="chip ${k}">${esc(word)}</span></td><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td>
         <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span></td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
         <td><a href="#" class="small" data-trade="${esc(t.id)}">detail →</a></td></tr>`; }).join("")}</tbody></table></div>`;
+}
+
+/* ---------- market conditions: one row per signal from the other tabs (desk/conditions.py) ---------- */
+const TABLINK = {"Market": "market", "Term structure": "today", "Skew & IV": "skew", "Expected moves": "em", "Seasonality": "season"};
+const EFF = {helps: ["pos", "helps"], hurts: ["neg", "hurts"], neutral: ["", "neutral"], thin: ["muted", "few entries"], none: ["muted", "no data"], "n/a": ["muted", "n/a"]};
+let condTries = 0;
+
+async function conditions() {
+  const el = $("acCond"); if (!el) return;
+  const C = await api("/api/conditions").catch((e) => ({error: e.message}));
+  if (!C || C.running || C.error) {
+    el.innerHTML = `<div class="state">${C && C.error ? esc(C.error) : "Backtest computing (about 10 seconds after an update)…"}</div>`;
+    if (C && C.running && condTries++ < 8) setTimeout(conditions, 15000);
+    return;
+  }
+  const S = STRUCTS, tally = Object.fromEntries(S.map((s) => [s, {helps: 0, hurts: 0}]));
+  let lastTab = "";
+  const body = C.rows.map((r) => {
+    const head = r.tab !== lastTab ? `<tr><td colspan="${S.length + 3}" style="padding-top:10px"><b>${esc(r.tab)}</b> ${go(TABLINK[r.tab], "open tab")}</td></tr>` : "";
+    lastTab = r.tab;
+    const cells = S.map((s) => { const c = r.cells[s] || {}, [k, word] = EFF[c.effect] || ["muted", "–"];
+      if (tally[s][c.effect] !== undefined) tally[s][c.effect]++;
+      return `<td class="n" title="${esc(c.bucket ? `bucket ${c.bucket}` : "")}"><span class="chip ${k}">${word}</span>${ok(c.avg) ? `<br><span class="small ${cls(c.avg)}">${pctS(c.avg)}</span><span class="small muted"> vs ${pctS(c.base)} · n ${c.n}</span>` : ""}</td>`; }).join("");
+    return `${head}<tr><td style="padding-left:14px">${esc(r.label)}</td><td class="small mono">${esc(r.reading)}</td>${cells}<td class="small muted" style="white-space:normal;min-width:180px">${esc(r.in_size)}</td></tr>`;
+  }).join("");
+  const sizeRow = `<tr style="border-top:2px solid var(--line)"><td><b>Size call</b> <span class="small muted">readiness bar</span></td><td class="small">market: <b>${esc(C.size)}</b></td>${S.map((s) => { const st = C.strategies[s];
+    return `<td class="n"><b class="${SIZE_CLS[st && st.size] || ""}">${esc(st ? st.size : "–")}</b><br><span class="small muted">${tally[s].helps} help · ${tally[s].hurts} hurt</span></td>`; }).join("")}<td></td></tr>`;
+  const f21 = C.season && C.season.fwd21;
+  el.innerHTML = `<div class="tbl"><table><thead><tr><th>Signal</th><th>Today${C.date ? ` <span class="muted">(${esc(C.date)})</span>` : ""}</th>${S.map((s) => `<th class="n">${s}</th>`).join("")}<th>In the size call?</th></tr></thead><tbody>${body}${sizeRow}</tbody></table></div>
+    <div class="kv mini" style="margin-top:8px">${C.odds.map((o) => `<div><span class="lbl">${esc(o.name)}</span><b class="${o.dd5 > C.base_dd5 * 1.3 ? "neg" : o.dd5 < C.base_dd5 * 0.85 ? "pos" : ""}">${ok(o.dd5) ? o.dd5.toFixed(0) + "%" : "–"}</b><span class="small muted">chance of a 5% SPX drop in 21 sessions (normally ${C.base_dd5.toFixed(0)}%) · ${esc(o.reading || "")}</span></div>`).join("")}
+      ${f21 ? `<div><span class="lbl">Seasonality, next 21 sessions</span><b>${f21.up.toFixed(0)}% up</b><span class="small muted">avg ${pctS(f21.mean)}, worst ${pctS(f21.worst)} over the last ${f21.n} years · ${esc(C.season.cycle || "")} year</span></div>` : ""}
+      <div><span class="lbl">High-impact releases, 3 days</span><b class="${C.events.length ? "wrn" : ""}">${C.events.length ? [...new Set(C.events.map((e) => e.title))].length + " releases" : "none"}</b><span class="small muted">${esc([...new Set(C.events.map((e) => e.title))].join(", ") || "calendars step down into CPI, FOMC, payrolls, PCE, GDP")}</span></div></div>
+    <p class="note">Each cell compares entries made in today's bucket of that signal with all entries of that structure since 2009: <b>helps</b> = at least ${C.rules.edge} point better than the structure's average, <b>hurts</b> = at least ${C.rules.edge} point worse, <b>few entries</b> = under ${C.rules.min_n} in the bucket. The signals overlap (high IV percentile, flat term structure and a falling index tend to come together), so count them as evidence, not votes: the size call above is the readiness bar's, and the last column says which signals feed it. The trend row uses today's term-structure band, as the size rule does. A14: ${esc(C.basis.A14)}. Calendars: ${esc(C.basis.Calendar)}. The model prices one fixed skew shape, so the SKEW, VVIX and IV-percentile rows show what those markets went on to do, not their effect on prices.</p>`;
 }
 
 /* ---------- decision matrix: readiness rules (desk/readiness.py matrix) x backtest cells ---------- */
