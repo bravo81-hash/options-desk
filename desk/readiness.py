@@ -10,7 +10,10 @@ Size: under 17% full, 17-23% three-quarter, 23-30% half, 30%+ (or any sit-out co
 Strategy rules then step individual structures down: A14 with VIX/VIX3M at 0.90+ (flat: one step, one more below
 the 20-day average; backwardation: stand aside), thin RUT premium. Below the 20-day average with the term structure
 normal (0.834-0.90) is not a step down: it was the model's best A14 cell since 2009 (45 DTE: SPX +2.2%, RUT +2.3% a
-trade); in steep contango it still is (rare, and negative in the model: SPX -6.1% over 10 entries, RUT -0.9% over 43); calendars stand aside at
+trade); in steep contango it still is (rare, and negative in the model: SPX -6.1% over 10 entries, RUT -0.9% over 43).
+A14 also steps down one with VIX9D/VIX at 0.90+ in a steep or normal term structure (front of the curve under stress):
+worse than below 0.90 in all 16 splits tested (SPX/RUT x 21-60 DTE x 2011-18 / 2019-26; SPX 45 DTE +4.3% vs 0.0% and
++2.3% vs -0.5%); calendars stand aside at
 VIX/VIX3M 0.90+ and step down below the 20-day average or into high-impact US releases (CPI, FOMC, payrolls,
 PCE, GDP) inside the next two sessions. The term-structure and trend rules are from the 2009-2026 model backtest
 (desk/backtest.py): calendars entered under 0.90 with the index above its 20-day average averaged about +4%
@@ -51,17 +54,22 @@ def ivts_band(v):
 BANDS = ["steep", "normal", "flat", "backwardation"]
 
 
-def a14_steps(band, trend_up):
-    """Steps down for an A14 from the term-structure band and the short-term trend; None = stand aside."""
+FRONT_LINE = 0.90  # VIX9D/VIX at or above this: the front of the curve is under stress
+
+
+def a14_steps(band, trend_up, front=None):
+    """Steps down for an A14 from the term-structure band, the short-term trend and VIX9D/VIX; None = stand aside."""
     if band == "backwardation":
         return None
     n = 1 if band == "flat" else 0
     if not trend_up and band != "normal":
         n += 1
+    if band in ("steep", "normal") and front is not None and front >= FRONT_LINE:
+        n += 1
     return n
 
 
-def cal_steps(band, trend_up):
+def cal_steps(band, trend_up, front=None):
     """Steps down for a calendar (before the release rule); None = stand aside."""
     if band in ("flat", "backwardation"):
         return None
@@ -75,9 +83,10 @@ def apply(size, steps):
     return "Stand aside" if steps is None else step_down(size, steps)
 
 
-def matrix():
-    """What the term-structure and trend rules do in every cell, before the market size and the other flags."""
-    return {name: {b: {t: f(b, t == "above") for t in ("above", "below")} for b in BANDS} for name, f in RULES.items()}
+def matrix(front=None):
+    """What the term-structure, trend and front-of-curve rules do in every cell (at today's VIX9D/VIX), before the
+    market size and the other flags."""
+    return {name: {b: {t: f(b, t == "above", front) for t in ("above", "below")} for b in BANDS} for name, f in RULES.items()}
 
 
 def _skew_note():
@@ -141,6 +150,7 @@ def now():
     band = ivts_band(ivts)
     events = _events()
     rvx = V["readings"].get("rvx_spread")
+    front = V["readings"].get("r9")  # VIX9D / VIX
     strat = []
     try:
         bt = a14_stats()["by_trend"]
@@ -149,9 +159,11 @@ def now():
         hist = "entries below the 20-day average have done worse"
     for sym in ("SPX", "RUT"):
         up = trends[sym]["short_up"]
-        sz, notes = apply(size, a14_steps(band["band"], up)), []
+        sz, notes = apply(size, a14_steps(band["band"], up, front)), []
         if band["band"] in ("backwardation", "flat"):
             notes.append(f"VIX/VIX3M {ivts:.3f}: {band['a14']}")
+        if band["band"] in ("steep", "normal") and front is not None and front >= FRONT_LINE:
+            notes.append(f"VIX9D/VIX {front:.3f} (0.90+): one step down: front-of-curve stress; A14s entered like this did worse in every split since 2011 (model)")
         if not up:
             notes.append(f"{sym} below its 20-day average: " + (f"one step down with the term structure {band['band']}; {hist}"
                          if band["band"] != "normal" else "no step down with a normal term structure: the model's best A14 cell since 2009"))
@@ -180,6 +192,6 @@ def now():
         strat.append({"name": f"Calendar {sym}", "size": sz, "notes": notes or ["no strategy-specific flags"]})
     opps = [c["label"] for c in V["conditions"] if c["active"] and c["kind"] == "take"]
     return {"size": size, "why": why, "risk": risk, "base": base, "inputs": inputs, "strategies": strat, "opportunities": opps,
-            "ivts": ivts, "ivts_band": band, "trends": trends, "matrix": matrix(), "events": events, "date": V["readings"]["date"],
+            "ivts": ivts, "ivts_band": band, "trends": trends, "matrix": matrix(front), "front": front, "events": events, "date": V["readings"]["date"],
             "warnings": {"total5": W["total5"], "total6": W["total6"], "stats": W["total_stats"], "all": W["all_totals"]},
             "rotation": R}

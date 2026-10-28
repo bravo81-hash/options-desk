@@ -14,7 +14,7 @@ IN_SIZE = {
     "spx200": "at the extreme: SPX below its 200-day is a VIX condition (caution)",
     "trend": "yes: A14 one step down outside a normal term structure; calendars one step down",
     "ivts_band": "yes: A14 step down when flat, stand aside in backwardation; calendars stand aside at 0.90+",
-    "front": "at the extreme: VIX9D at or above VIX is a VIX condition (caution)",
+    "front": "yes: A14 one step down at 0.90+ in a steep or normal term structure; 1.00+ is also a VIX condition (caution)",
     "ivpct": "no",
     "skew_b": "no: note on RUT A14s in a normal term structure",
     "vvix_b": "at the extreme: VVIX 110+ with VIX under 18 is a VIX condition (caution)",

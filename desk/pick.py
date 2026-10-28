@@ -16,7 +16,7 @@ import math
 
 import numpy as np
 
-from . import a14, db
+from . import a14, db, vixcond
 from .history import series
 
 IVTS_LINE = 0.834  # your own calendar record is still split here (context only)
@@ -123,6 +123,10 @@ def today(exit_days=14, vol_basis="rv20"):
     if not db.get_meta("a14_chain"):
         return {"error": "No chain yet: press Fetch chain on the A14 scanner (TWS must be running)."}
     ivts = _ivts()
+    try:
+        front = vixcond.now()["readings"].get("r9")
+    except Exception:
+        front = None
     st = a14.stats()
     ev = analytics.evidence()
     cal_rec = _calendar_record(ev.get("trades", []))
@@ -142,6 +146,10 @@ def today(exit_days=14, vol_basis="rv20"):
         calm = ivts is not None and 0.834 < ivts < 0.90  # below the 20-day average doesn't count against an A14 in a normal term structure
         checks_b = [{"ok": up or calm, "text": f"Short-term trend (20-day): {sym} {'above' if up else 'below'} its average ({tr.get('vs_sma20', 0):+.1f}%): your A14s averaged {bt['ret']:.1f}% ({bt['n']} trades) entered like this"
                      + ("" if up else "; with VIX/VIX3M 0.834–0.90 this was the model's best A14 cell since 2009" if calm else "; outside a normal term structure (0.834–0.90) the model lost on average")}]
+        if front is not None:
+            hot = front >= 0.90 and ivts is not None and ivts < 0.90
+            checks_b.append({"ok": not hot, "text": f"VIX9D/VIX {front:.3f}: " + ("front of the curve under stress (0.90+): A14s entered like this did worse in every split since 2011 (model); readiness steps A14 down one"
+                             if hot else "front of the curve calm (under 0.90)" if front < 0.90 else "at 0.90+, but the term-structure rule already covers it")})
         g_list = gates.get(sym, [])
         side = "above" if ivts is not None and ivts > IVTS_LINE else "below"
         checks_c = [{"ok": ivts is not None and ivts < CAL_MAX_IVTS,
