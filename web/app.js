@@ -50,6 +50,7 @@ function gateCards(gates) {
   if (!gates.length) return `<div class="state">${window.DESK_CLOUD ? "Strategy gates use the daily option recording: only on the laptop desk." : "No recorded snapshot yet. Use the Recorder tab."}</div>`;
   return gates.map((g) => `<div class="card ${g.pass ? "pass" : "fail"}"><div class="row" style="justify-content:space-between"><h2>${esc(g.name)}</h2><span class="chip ${g.pass ? "pos" : "neg"}">${g.pass ? "Rules pass" : "Rule fails"}</span></div>
     <span class="small muted">${esc(g.rule)}</span>
+    <span class="small">${segBar([{n: g.checks.filter((c) => c[1]).length, color: "var(--up)", label: "checks pass"}, {n: g.checks.filter((c) => !c[1]).length, color: "var(--down)", label: "checks fail"}], {w: 160})} ${g.checks.filter((c) => c[1]).length} of ${g.checks.length} checks pass</span>
     <span class="small">Nearest pair: <b class="mono">${g.pair.fdte} / ${g.pair.bdte} DTE</b> · contango <b class="mono">${sgn(g.pair.contango)}</b> pts${ok(g.pair.z) ? ` · <span class="${zcls(g.pair.z)}">${zTxt(g.pair.z)}</span>` : ""}${ok(g.pair.debit) ? ` · ATM put cal ${fmt(g.pair.debit)}` : ""}</span>
     <ul>${g.checks.map(([t, pass, v]) => `<li><span class="${pass ? "pos" : "neg"}">${pass ? "✓" : "✕"}</span> ${esc(t)} <span class="muted mono">${esc(v)}</span></li>`).join("")}</ul></div>`).join("");
 }
@@ -124,6 +125,9 @@ function renderCal() {
       <td class="n"><span class="rank" data-i="${i}">${i + 1}</span></td><td class="n">${p.fdte}d</td><td class="n">${p.bdte}d</td><td class="n">${fmt(p.front_iv)}</td><td class="n">${fmt(p.back_iv)}</td>
       <td class="n ${p.contango < 0 ? "neg" : ""}">${sgn(p.contango)}</td><td class="n ${zcls(p.z)}" title="${esc(p.zsrc || "")}">${ok(p.z) ? sgn(p.z) : "–"}</td>
       <td class="n">${fmt(p.fwd_vol)}</td><td class="n">${sgn(p.fwd_premium)}</td><td class="n">${sgn(p.fwd_vs_rv)}</td><td class="n">${fmt(p.debit)}</td></tr>`).join("")}</tbody></table></div>`;
+  const ci = cols.findIndex(([c]) => c === s.k), vals = rows.map((p) => p[s.k]).filter(ok), mx = Math.max(...vals.map(Math.abs), 1e-9), signed = vals.some((v) => v < 0);
+  if (ci >= 0) $("pairTable").querySelectorAll("tbody tr").forEach((tr, i) => { const td = tr.children[ci + 1], v = rows[i][s.k];
+    if (td && ok(v)) td.insertAdjacentHTML("afterbegin", hBarSvg(v, mx, {w: 44, zeroLeft: !signed, color: signed ? null : "var(--accent)", label: `${colName[s.k]} vs the largest in the list`}) + " "); });
   bindTip($("pairTable"), ".rank", (n) => calWhy(rows[+n.dataset.i], +n.dataset.i + 1, sorted.length, colName[s.k] || s.k, s));
   $("pairTable").querySelectorAll("th.sort").forEach((th) => { const go = () => { calSort = {k: th.dataset.k, dir: calSort.k === th.dataset.k ? -calSort.dir : -1}; renderCal(); };
     th.addEventListener("click", go); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
@@ -217,17 +221,23 @@ async function loadEvidence() {
     if (evData.error) { $("evStrat").innerHTML = errBox(evData.error); return; }
     $("evMeta").textContent = `${evData.n} closed trades · ONE: ${(evData.files.one || "none").split(/[\\/]/).pop()} · OptionStrat: ${(evData.files.optionstrat || "none").split(/[\\/]/).pop()}`;
     $("evStrat").innerHTML = evData.by_strategy.map((s) => `<div><span class="lbl">${esc(s.strategy)}</span><b class="${s.pnl >= 0 ? "pos" : "neg"}">${s.pnl >= 0 ? "+" : "−"}$${Math.abs(s.pnl).toLocaleString(undefined, {maximumFractionDigits: 0})}</b><span class="small muted">${s.n} trades · ${Math.round(100 * s.wins / s.n)}% winners</span></div>`).join("");
+    barChart($("evStratChart"), {label: "P&L by strategy ($k)", h: 130, unit: "k", items: evData.by_strategy.map((s) => ({label: s.strategy, v: s.pnl / 1000, n: s.n,
+      title: `<b>${esc(s.strategy)}</b>: ${s.pnl >= 0 ? "+" : "−"}$${Math.abs(s.pnl).toLocaleString(undefined, {maximumFractionDigits: 0})} · ${s.n} trades · ${Math.round(100 * s.wins / s.n)}% winners`}))});
     $("evNote").textContent = evData.note;
     $("evFeat").innerHTML = evData.features.map((f) => `<option value="${f.key}">${esc(f.label)}</option>`).join("");
     $("evFeat").value = "vix_vix3m";
-    $("evFeatTable").innerHTML = `<div class="tbl"><table><thead><tr><th>Condition at entry</th><th class="n">Winners (median)</th><th class="n">Losers (median)</th><th>Best skip rule in hindsight</th></tr></thead><tbody>${
-      evData.features.map((f) => { const b = f.best_rule; return `<tr class="click" data-k="${f.key}"><td title="${esc(f.hint)}">${esc(f.label)}</td><td class="n">${fmt(f.win_median, 3)}</td><td class="n">${fmt(f.loss_median, 3)}</td>
+    $("evFeatTable").innerHTML = `<div class="tbl"><table><thead><tr><th>Condition at entry</th><th class="n">Winners (median)</th><th class="n">Losers (median)</th><th>Every trade · medians</th><th>Best skip rule in hindsight</th></tr></thead><tbody>${
+      evData.features.map((f) => { const b = f.best_rule, xs = evData.trades.map((t) => t[f.key]).filter(ok);
+        const strip = xs.length ? bulletSvg(null, {w: 130, lo: Math.min(...xs), hi: Math.max(...xs), label: `${f.label}: each tick a trade (teal winner, red loser); thick = medians, dashed = skip line`,
+          marks: [...evData.trades.filter((t) => ok(t[f.key])).map((t) => ({v: t[f.key], width: 1, color: `color-mix(in srgb, ${t.win ? "var(--up)" : "var(--down)"} 45%, transparent)`})),
+            {v: f.win_median, color: "var(--up)", width: 3}, {v: f.loss_median, color: "var(--down)", width: 3}, ...(b ? [{v: b.threshold, color: "var(--ink)", width: 1.5, dash: 1}] : [])]}) : "";
+        return `<tr class="click" data-k="${f.key}"><td title="${esc(f.hint)}">${esc(f.label)}</td><td class="n">${fmt(f.win_median, 3)}</td><td class="n">${fmt(f.loss_median, 3)}</td><td>${strip}</td>
         <td class="small">${b ? `skip ${b.side} <b class="mono">${b.threshold}</b>: ${b.skipped} trades (${b.skipped_losers} losers, ${b.skipped_winners} winners), P&amp;L skipped <span class="${b.pnl_skipped < 0 ? "pos" : "neg"}">${b.pnl_skipped < 0 ? "−" : "+"}$${Math.abs(b.pnl_skipped).toLocaleString()}</span>` : "–"}</td></tr>`; }).join("")}</tbody></table></div>
       <p class="note">A rule that skips more losing P&amp;L than winning P&amp;L shows the skipped amount in teal. These are fitted to past trades, so treat them as things to watch, not filters to trust.</p>`;
     $("evFeatTable").querySelectorAll("tr.click").forEach((tr) => tr.addEventListener("click", () => { $("evFeat").value = tr.dataset.k; drawEv(); }));
-    const T = [...evData.trades].sort((a, b) => a.pnl - b.pnl);
+    const T = [...evData.trades].sort((a, b) => a.pnl - b.pnl), tmx = Math.max(...T.map((t) => Math.abs(t.pnl)), 1);
     $("evTrades").innerHTML = `<div class="tbl"><table><thead><tr><th>Entered</th><th>Strategy</th><th>Trade</th><th class="n">P&amp;L</th><th class="n">Return</th><th class="n">VIX/VIX3M</th><th class="n">VIX9D/VIX</th><th class="n">Slope 15→22</th><th class="n">VIX 5d chg</th><th class="n">SPX 5d %</th><th>Source</th></tr></thead><tbody>${
-      T.map((t) => `<tr><td class="mono small">${t.date}</td><td>${esc(t.strategy)}</td><td class="small">${esc(t.name)}</td><td class="n ${t.pnl >= 0 ? "pos" : "neg"}">${Math.round(t.pnl).toLocaleString()}</td><td class="n">${fmt(t.ret_pct, 1)}%</td>
+      T.map((t) => `<tr><td class="mono small">${t.date}</td><td>${esc(t.strategy)}</td><td class="small">${esc(t.name)}</td><td class="n ${t.pnl >= 0 ? "pos" : "neg"}">${hBarSvg(t.pnl, tmx, {w: 60, label: "P&L vs the largest trade"})} ${Math.round(t.pnl).toLocaleString()}</td><td class="n">${fmt(t.ret_pct, 1)}%</td>
         <td class="n ${t.vix_vix3m >= 0.90 ? "wrn" : ""}">${fmt(t.vix_vix3m, 3)}</td><td class="n">${fmt(t.vix9d_vix, 3)}</td><td class="n">${fmt(t.slope_15_22, 2)}</td><td class="n">${sgn(t.vix_chg5)}</td><td class="n">${sgn(t.spx_ret5)}</td><td class="small muted">${esc(t.source)}</td></tr>`).join("")}</tbody></table></div>`;
     drawEv();
   } catch (e) { $("evStrat").innerHTML = errBox(e); }

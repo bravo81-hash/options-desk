@@ -72,7 +72,7 @@ function render() {
   barChart($("btBandChart"), {label: `${u} ${d} DTE by VIX/VIX3M band`, h: 140, items: Object.keys(BAND).filter((b) => rb.bands.plan[b]).map((b) => ({label: b, v: rb.bands.plan[b].avg, n: rb.bands.plan[b].n,
     title: `${BAND[b]}: <b>${pctS(rb.bands.plan[b].avg)}</b> a trade with the −20% stop · ${pc(rb.bands.plan[b].win)} winners · ${rb.bands.plan[b].n} entries`}))});
   $("btWorst").innerHTML = `<div class="tbl"><table><thead><tr><th>Entered</th><th class="n">Return</th><th class="n">VIX</th><th class="n">VIX/VIX3M</th><th>Trend</th></tr></thead><tbody>${
-    (rb.worst || []).map((w) => `<tr><td class="mono small">${w.date}</td><td class="n neg">${pctS(w.ret, 0)}</td><td class="n">${fmt(w.vix, 1)}</td><td class="n">${fmt(w.ivts, 3)} <span class="small muted">${esc(w.band)}</span></td><td class="small">${esc(w.trend)}</td></tr>`).join("")}</tbody></table></div>
+    (rb.worst || []).map((w, i, W) => `<tr><td class="mono small">${w.date}</td><td class="n neg">${hBarSvg(w.ret, Math.max(...W.map((x) => Math.abs(x.ret))), {w: 60, zeroLeft: true, color: "var(--down)", label: "loss vs the worst entry"})} ${pctS(w.ret, 0)}</td><td class="n">${fmt(w.vix, 1)}</td><td class="n">${fmt(w.ivts, 3)} <span class="small muted">${esc(w.band)}</span></td><td class="small">${esc(w.trend)}</td></tr>`).join("")}</tbody></table></div>
     <p class="note">The ten worst ${u} ${d}-DTE A14s with no stop: almost all were entered with VIX in the low teens and the term structure calm, a week or two before a shock. Entry filters don't catch these; a stop and position size do.</p>`;
 
   // calendars

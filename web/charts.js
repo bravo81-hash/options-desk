@@ -96,6 +96,15 @@ function hBarSvg(v, max, cfg = {}) {
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(cfg.label || "bar")}" style="vertical-align:middle"><line x1="${x0}" x2="${x0}" y1="0" y2="${h}" stroke="var(--line)"/>${ok(v) ? `<rect x="${(v >= 0 || cfg.zeroLeft ? x0 : x0 - len).toFixed(1)}" y="1.5" width="${Math.max(len, 0.8).toFixed(1)}" height="${h - 3}" rx="1.5" fill="${col}"/>` : ""}${ok(cfg.tick) ? `<line x1="${(x0 + Math.min(cfg.tick / m, 1) * (cfg.zeroLeft ? w - 2 : w / 2 - 1)).toFixed(1)}" x2="${(x0 + Math.min(cfg.tick / m, 1) * (cfg.zeroLeft ? w - 2 : w / 2 - 1)).toFixed(1)}" y1="0" y2="${h}" stroke="var(--ink)" stroke-width="1.5"/>` : ""}</svg>`;
 }
 
+/* One bar split into proportional segments. parts: [{n, color, label}] */
+function segBar(parts, cfg = {}) {
+  const w = cfg.w || 120, h = cfg.h || 8, tot = parts.reduce((s, p) => s + (p.n || 0), 0);
+  if (!tot) return "";
+  let x = 0, s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(cfg.label || parts.map((p) => `${p.n} ${p.label}`).join(", "))}" style="vertical-align:middle">`;
+  parts.forEach((p) => { if (!p.n) return; const pw = p.n / tot * w; s += `<rect x="${(x + 0.5).toFixed(1)}" y="0" width="${Math.max(pw - 1, 0.8).toFixed(1)}" height="${h}" rx="1.5" fill="${p.color}"><title>${p.n} ${esc(p.label)}</title></rect>`; x += pw; });
+  return s + `</svg>`;
+}
+
 /* Ranges by category: a band from lo to hi (e.g. 10th-90th percentile), a dot at mid, a tick at the extreme.
    items: [{label, lo, hi, mid, ext, title}] */
 function rangeChart(el, cfg) {

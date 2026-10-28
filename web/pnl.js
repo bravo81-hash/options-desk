@@ -103,7 +103,7 @@ function recon() {
     const st = stk.length ? `<details><summary class="small muted">${stk.length} stock/ETF holding${stk.length > 1 ? "s" : ""} at IBKR, expected (ONE tracks the option strategies)</summary><div class="row">${stk.map((x) => `<span class="tag">${esc(x.symbol)} ${x.qty} @ ${fmt(x.avg_price)}</span>`).join("")}</div></details>` : "";
     const clean = !r.diffs.length && !r.drift.length;
     return `<div class="acard ${clean ? "ok" : "diff"}"><div class="row" style="justify-content:space-between"><h3>${esc(r.label)} <span class="muted">${esc(r.account)} · ${r.matched} contracts match</span></h3><span class="chip ${clean ? "pos" : "neg"}">${clean ? "Match" : "Diff"}</span></div>
-      <div class="row">${status}${drift}</div>${dtab}${ptab}${btab}${st}</div>`;
+      <div class="row">${status}${drift}${segBar([{n: r.matched, color: "var(--up)", label: "contracts match"}, {n: r.diffs.length, color: "var(--down)", label: "quantity differences"}, {n: r.drift.length, color: "var(--warn)", label: "fill-price errors"}], {w: 160, h: 10})}</div>${dtab}${ptab}${btab}${st}</div>`;
   });
   $("rcBody").innerHTML = oneStale(R) + (blocks.length ? `<div class="acctgrid">${blocks.join("")}</div>` : `<div class="state">No reconciliation yet: press Refresh from TWS.</div>`);
   // fills + ONE import
@@ -114,11 +114,17 @@ function recon() {
     <span class="small muted">IBKR Flex format that ONE imports (fills on that Sydney date). ONE's "link trades into positions" step is still manual.</span>`;
   $("oiDate").addEventListener("change", () => document.querySelectorAll("#oneImport a[data-acct]").forEach((a) => { a.href = `/api/one-import/${encodeURIComponent(a.dataset.acct)}.csv?date=${$("oiDate").value}`; }));
   const df = new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
-  $("rcFills").innerHTML = R.fills.length ? `<div class="tbl"><table><thead><tr><th>Time (yours)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
+  $("rcFills").innerHTML = R.fills.length ? `<div class="chart" id="rcFillChart"></div><div class="tbl"><table><thead><tr><th>Time (yours)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
     R.fills.map((f) => `<tr><td class="mono small">${f.time_utc ? df.format(new Date(f.time_utc)) : "–"}</td><td>${esc(f.label)}</td><td class="mono small">${esc(f.local_symbol || f.symbol)}</td><td class="${f.side === "BOT" ? "pos" : "neg"}">${f.side === "BOT" ? "Buy" : "Sell"}</td>
       <td class="n">${f.qty}</td><td class="n">${fmt(f.price)}</td><td class="n">${fmt(f.commission)}</td>
       <td><span class="chip ${f.status === "in ONE" ? "pos" : f.status === "not in ONE" ? "neg" : "muted"}">${esc(f.status)}</span></td><td class="small">${esc(f.one_trades.join(", ") || "–")}</td></tr>`).join("")}</tbody></table></div>`
     : `<div class="state">No fills recorded in the last 7 days yet. Fills are captured whenever the app refreshes from TWS (TWS itself only returns today's).</div>`;
+  if (R.fills.length) {
+    const byDay = {}, dd = new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short"});
+    R.fills.filter((f) => f.time_utc).forEach((f) => { const d = new Date(f.time_utc), k = d.toLocaleDateString("en-CA"); (byDay[k] = byDay[k] || {n: 0, miss: 0, label: dd.format(d)}).n++; if (f.status === "not in ONE") byDay[k].miss++; });
+    barChart($("rcFillChart"), {label: "fills per day (your time)", h: 110, items: Object.keys(byDay).sort().map((k) => ({label: byDay[k].label, v: byDay[k].n, color: byDay[k].miss ? "var(--down)" : "var(--accent)",
+      title: `${byDay[k].label}: <b>${byDay[k].n}</b> fills${byDay[k].miss ? ` · <b>${byDay[k].miss} not in ONE</b>` : " · all matched or pending"}`}))});
+  }
 }
 
 async function load() {
