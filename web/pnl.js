@@ -40,7 +40,12 @@ function weekly() {
     rows += `<tr><td>Week of ${dlabel(w.week)} ${note ? `<span class="small ${w.notes.some((n) => n.includes("not captured")) ? "wrn" : "muted"}" title="${esc(note)}">${esc(note.length > 70 ? note.slice(0, 68) + "…" : note)}</span>` : ""}</td>${A.map((a) => cell(w.acct[a.id])).join("")}
       <td class="n mono" style="${heat(pct ? totPct : tot, pct ? 3 : 20000)}"><b>${pct ? pctS(totPct) : money(tot)}</b></td></tr>`;
   });
-  $("plWeekly").innerHTML = `<div class="tbl"><table><thead><tr><th>Week (US dates)</th>${A.map((a) => `<th class="n">${esc(a.label)}</th>`).join("")}<th class="n">All accounts</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  $("plWeekly").innerHTML = `<div class="chart" id="plWeekChart"></div><div class="tbl"><table><thead><tr><th>Week (US dates)</th>${A.map((a) => `<th class="n">${esc(a.label)}</th>`).join("")}<th class="n">All accounts</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const wk = W.weeks.slice().sort((a, b) => a.week.localeCompare(b.week)).map((w) => {
+    const tot = A.reduce((s, a) => s + ((w.acct[a.id] || {}).pnl || 0), 0), navs = A.reduce((s, a) => s + (((w.acct[a.id] || {}).end_nav || 0) - ((w.acct[a.id] || {}).pnl || 0)), 0);
+    return {label: dlabel(w.week), v: pct ? (navs ? 100 * tot / navs : null) : tot / 1000,
+      title: `Week of ${esc(dlabel(w.week))}: <b>${pct ? pctS(navs ? 100 * tot / navs : null) : money(tot)}</b>` + A.map((a) => `<div>${esc(a.label)} ${money((w.acct[a.id] || {}).pnl)}</div>`).join("")}; });
+  barChart($("plWeekChart"), {label: "weekly P&L, all accounts", h: 150, unit: pct ? "%" : "k", items: wk});
   // monthly from the same daily rows
   const months = {};
   W.weeks.forEach((w) => A.forEach((a) => ((w.acct[a.id] || {}).daily || []).forEach((d) => {
@@ -48,13 +53,15 @@ function weekly() {
     const c = (o[a.id] = o[a.id] || {pnl: 0, first: null, days: 0}); c.pnl += d.pnl || 0; c.days++;
     if (!c.first || d.date < c.first.date) c.first = d; })));
   const mkeys = Object.keys(months).sort().reverse();
-  $("plMonthly").innerHTML = `<div class="tbl"><table><thead><tr><th>Month</th>${A.map((a) => `<th class="n">${esc(a.label)}</th>`).join("")}<th class="n">All</th></tr></thead><tbody>${
+  $("plMonthly").innerHTML = `<div class="chart" id="plMonthChart"></div><div class="tbl"><table><thead><tr><th>Month</th>${A.map((a) => `<th class="n">${esc(a.label)}</th>`).join("")}<th class="n">All</th></tr></thead><tbody>${
     mkeys.map((m) => { const o = months[m], tot = A.reduce((s, a) => s + ((o[a.id] || {}).pnl || 0), 0);
       const lab = new Date(m + "-15T12:00:00Z").toLocaleDateString([], {month: "short", year: "numeric", timeZone: "UTC"});
       return `<tr><td>${lab} <span class="small muted">${Math.max(...A.map((a) => (o[a.id] || {}).days || 0))} days</span></td>${A.map((a) => { const c = o[a.id]; if (!c) return `<td class="n muted">–</td>`;
         const base = c.first && c.first.nav ? c.first.nav - (c.first.pnl || 0) : null, p = base ? 100 * c.pnl / base : null;
         return `<td class="n mono" style="${heat(pct ? p : c.pnl, pct ? 5 : 20000)}">${pct ? pctS(p) : money(c.pnl)}</td>`; }).join("")}
         <td class="n mono"><b>${money(tot)}</b></td></tr>`; }).join("")}</tbody></table></div><p class="note">P&amp;L is the change in each account's net liquidation value (base currency, AUD), so it includes the AUD/USD move on USD holdings. A day that was not captured folds into the next captured day; deposits and withdrawals are not reported by the TWS API, so add them under <span class="mono">risk.cash_flows</span> in config.json. History starts ${dlabel(W.first)}.</p>`;
+  barChart($("plMonthChart"), {label: "monthly P&L, all accounts ($k)", h: 130, unit: "k", items: mkeys.slice().reverse().map((m) => { const tot = A.reduce((s, a) => s + ((months[m][a.id] || {}).pnl || 0), 0);
+    return {label: new Date(m + "-15T12:00:00Z").toLocaleDateString([], {month: "short", timeZone: "UTC"}), v: tot / 1000, title: `${m}: <b>${money(tot)}</b>` + A.map((a) => `<div>${esc(a.label)} ${money((months[m][a.id] || {}).pnl)}</div>`).join("")}; })});
   const pal = ["var(--s2)", "var(--s3)", "var(--s1)", "var(--s4)"];
   lineChart($("plNav"), {label: "NAV per account", h: 220, series: A.map((a, k) => ({name: a.label, short: a.label, data: W.nav[a.id] || [], color: pal[k % 4], width: 1.8, dots: (W.nav[a.id] || []).length < 50})),
     fy: (v) => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k" : v.toFixed(0), ft: (v) => money(v)});
@@ -73,7 +80,7 @@ function tickers() {
     const off = since && ok(navc) && Math.abs(navc - tot) > Math.max(500, 0.3 * Math.abs(navc));
     return `<div class="card"><div class="hd"><span class="sym">${esc(labels[a] || a)}</span><span class="mono ${cls(tot)}">${money(tot)}</span></div>
       <div class="tbl"><table><thead><tr><th>Ticker</th><th class="n">Day P&amp;L</th><th class="n" title="IBKR's own per-contract daily P&amp;L, for reference">IBKR's</th><th class="n">Contracts</th></tr></thead><tbody>${
-      rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n ${cls(v.daily)}">${money(v.daily)}${v.missing ? ` <span class="wrn" title="${v.missing} contract(s) left out: no TWS value now or at the last close, so no fair comparison">*</span>` : ""}</td><td class="n small muted">${money(v.ibkr)}</td><td class="n small muted">${v.open} open${v.closed ? ` · ${v.closed} closed` : ""}</td></tr>`).join("")}
+      rows.map(([k, v]) => `<tr><td>${esc(k)} ${hBarSvg(v.daily, Math.max(...rows.map(([, x]) => Math.abs(x.daily || 0)), 1), {w: 70, label: "day P&L vs the biggest mover"})}</td><td class="n ${cls(v.daily)}">${money(v.daily)}${v.missing ? ` <span class="wrn" title="${v.missing} contract(s) left out: no TWS value now or at the last close, so no fair comparison">*</span>` : ""}</td><td class="n small muted">${money(v.ibkr)}</td><td class="n small muted">${v.open} open${v.closed ? ` · ${v.closed} closed` : ""}</td></tr>`).join("")}
       ${since && ok((T.nav_change || {})[a]) ? `<tr><td class="muted">Other</td><td class="n muted" title="change in NAV minus the tickers above: cash interest, fees, AUD/USD, and contracts left out (*)">${money(T.nav_change[a] - tot)}</td><td></td><td class="n small muted">NAV change ${money(T.nav_change[a])}</td></tr>` : ""}</tbody></table></div>${off ? `<div class="state err small" style="margin-top:6px">Doesn't add up to the NAV change (${money(navc)})${miss ? `: ${miss} contract${miss > 1 ? "s" : ""} had no value at the last close or now` : ""}. Trust the NAV figure; the split by ticker is reliable once two complete closing captures exist.</div>` : ""}</div>`; }).join("")
     : `<div class="state">No data yet: press Refresh from TWS.</div>`;
 }

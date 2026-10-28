@@ -88,6 +88,35 @@ function sizeMeter(size) {
   return `<svg width="76" height="10" viewBox="0 0 76 10" role="img" aria-label="${esc(size)}">${[1, 2, 3, 4].map((i) => `<rect x="${(i - 1) * 19}" y="1" width="17" height="8" rx="2" fill="${i <= k ? col : "var(--soft)"}"/>`).join("")}</svg>`;
 }
 
+/* Horizontal bar around zero for a table cell (v and max in the same unit). */
+function hBarSvg(v, max, cfg = {}) {
+  const w = cfg.w || 90, h = cfg.h || 10, m = Math.max(Math.abs(max) || 1, 1e-9), x0 = cfg.zeroLeft ? 1 : w / 2;
+  const len = ok(v) ? Math.min(Math.abs(v) / m, 1) * (cfg.zeroLeft ? w - 2 : w / 2 - 1) : 0;
+  const col = cfg.color || (v >= 0 ? "var(--up)" : "var(--down)");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(cfg.label || "bar")}" style="vertical-align:middle"><line x1="${x0}" x2="${x0}" y1="0" y2="${h}" stroke="var(--line)"/>${ok(v) ? `<rect x="${(v >= 0 || cfg.zeroLeft ? x0 : x0 - len).toFixed(1)}" y="1.5" width="${Math.max(len, 0.8).toFixed(1)}" height="${h - 3}" rx="1.5" fill="${col}"/>` : ""}${ok(cfg.tick) ? `<line x1="${(x0 + Math.min(cfg.tick / m, 1) * (cfg.zeroLeft ? w - 2 : w / 2 - 1)).toFixed(1)}" x2="${(x0 + Math.min(cfg.tick / m, 1) * (cfg.zeroLeft ? w - 2 : w / 2 - 1)).toFixed(1)}" y1="0" y2="${h}" stroke="var(--ink)" stroke-width="1.5"/>` : ""}</svg>`;
+}
+
+/* Ranges by category: a band from lo to hi (e.g. 10th-90th percentile), a dot at mid, a tick at the extreme.
+   items: [{label, lo, hi, mid, ext, title}] */
+function rangeChart(el, cfg) {
+  mount(el, (W) => {
+    const H = cfg.h || 170, mL = 40, mR = 8, mT = 10, mB = 22, pw = W - mL - mR, ph = H - mT - mB, I = cfg.items;
+    const vals = I.flatMap((i) => [i.lo, i.hi, i.mid, i.ext]).filter(ok);
+    if (!vals.length) { el.innerHTML = `<div class="state">No data.</div>`; return; }
+    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals); const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+    const Y = (v) => mT + ph - (v - lo) * ph / (hi - lo), bw = pw / I.length;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.label || "ranges")}">`;
+    niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${+v.toFixed(1)}${cfg.unit ?? "%"}</text>`; });
+    I.forEach((it, k) => { const cx = mL + k * bw + bw / 2, bwid = Math.min(26, bw * 0.45);
+      if (ok(it.lo) && ok(it.hi)) s += `<rect class="rc" data-k="${k}" x="${(cx - bwid / 2).toFixed(1)}" y="${Y(it.hi).toFixed(1)}" width="${bwid.toFixed(1)}" height="${Math.max(Y(it.lo) - Y(it.hi), 1).toFixed(1)}" rx="3" fill="color-mix(in srgb, ${cfg.color || "var(--s1)"} 35%, transparent)" stroke="${cfg.color || "var(--s1)"}"/>`;
+      if (ok(it.ext)) s += `<line x1="${(cx - bwid / 2).toFixed(1)}" x2="${(cx + bwid / 2).toFixed(1)}" y1="${Y(it.ext).toFixed(1)}" y2="${Y(it.ext).toFixed(1)}" stroke="${cfg.extColor || "var(--down)"}" stroke-width="2"/><line x1="${cx}" x2="${cx}" y1="${Y(ok(it.lo) ? (it.ext < it.lo ? it.lo : it.hi) : 0).toFixed(1)}" y2="${Y(it.ext).toFixed(1)}" stroke="${cfg.extColor || "var(--down)"}" stroke-dasharray="2 2"/>`;
+      if (ok(it.mid)) s += `<circle cx="${cx}" cy="${Y(it.mid).toFixed(1)}" r="4" fill="${it.mid >= 0 ? "var(--up)" : "var(--down)"}" stroke="var(--panel)" stroke-width="1.5"/>`;
+      s += `<text x="${cx}" y="${H - 6}" text-anchor="middle">${esc(it.label)}</text>`; });
+    el.innerHTML = s + `</svg>`;
+    bindTip(el, ".rc", (n) => I[+n.dataset.k].title || "");
+  });
+}
+
 /* Vertical bars by category. items: [{label, v, n, title, hi}] (v in %) */
 function barChart(el, cfg) {
   mount(el, (W) => {

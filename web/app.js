@@ -185,9 +185,11 @@ async function loadSkew(ev) {
     const d = skData;
     $("skMeta").textContent = d.date ? `snapshot ${d.date} · ${d.recorded_days} recorded session${d.recorded_days === 1 ? "" : "s"}` : "no snapshot yet";
     const cur = Object.entries(d.current);
-    $("skCur").innerHTML = cur.length ? cur.map(([k, v]) => `<div><span class="lbl">${esc(k)}</span><b>${fmt(v.now)}${k === "ATM IV" ? "%" : " pts"}</b><span class="small ${zcls(v.z)}">${ok(v.z) ? zTxt(v.z) : `z after 20 sessions (${v.n} so far)`}</span></div>`).join("")
+    const zBar = (z) => ok(z) ? bulletSvg(z, {w: 150, lo: -3, hi: 3, color: Math.abs(z) >= 2 ? "var(--down)" : Math.abs(z) >= 1 ? "var(--warn)" : "var(--accent)", label: `z-score ${fmt(z, 2)} (0 = its usual level)`,
+      zones: [{from: -3, to: -2, color: "var(--down)"}, {from: -2, to: -1, color: "var(--warn)"}, {from: 1, to: 2, color: "var(--warn)"}, {from: 2, to: 3, color: "var(--down)"}], marks: [{v: 0, color: "var(--muted)", width: 1}]}) : "";
+    $("skCur").innerHTML = cur.length ? cur.map(([k, v]) => `<div><span class="lbl">${esc(k)}</span><b>${fmt(v.now)}${k === "ATM IV" ? "%" : " pts"}</b>${zBar(v.z)}<span class="small ${zcls(v.z)}">${ok(v.z) ? zTxt(v.z) : `z after 20 sessions (${v.n} so far)`}</span></div>`).join("")
       : `<div class="state">No recorded surface yet for ${d.symbol}. Record from the Recorder tab.</div>`;
-    $("skProxy").innerHTML = Object.entries(d.proxies).map(([k, v]) => `<div><span class="lbl">${esc(k)}</span><b>${fmt(v.now)}</b><span class="small ${zcls(v.z)}">${ok(v.z) ? `${zTxt(v.z)} · ${pctTxt(v.pct)}` : ""}</span></div>`).join("");
+    $("skProxy").innerHTML = Object.entries(d.proxies).map(([k, v]) => `<div><span class="lbl">${esc(k)}</span><b>${fmt(v.now)}</b>${zBar(v.z)}<span class="small ${zcls(v.z)}">${ok(v.z) ? `${zTxt(v.z)} · ${pctTxt(v.pct)}` : ""}</span></div>`).join("");
     const cols = {atm: ["ATM", "var(--ink)"], p25: ["25Δ put", "var(--s2)"], p10: ["10Δ put", "var(--down)"], c25: ["25Δ call", "var(--s1)"]};
     xyChart($("skTerm"), {label: "vol by expiry", xUnit: "d", series: Object.entries(cols).map(([k, [n, c]]) => ({name: n, color: c, pts: d.term.map((r) => [r.dte, r[k], `${n} ${r.dte}d`])}))});
     $("skTermLegend").innerHTML = legend(Object.values(cols));

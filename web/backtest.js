@@ -88,9 +88,13 @@ function render() {
     title: `VIX/VIX3M ${f.lo.toFixed(3)}–${f.hi > 2 ? "" : f.hi.toFixed(3)}: <b>${pctS(f.avg)}</b> · ${pc(f.win)} winners · ${f.n} entries`}))});
 
   // managed
-  $("btManaged").innerHTML = Object.entries(B.managed).map(([k, m]) => `<h3 class="small">${esc(k)} DTE</h3><div class="tbl"><table><thead><tr><th>Management</th><th class="n">Avg</th><th class="n">Winners</th><th class="n">Worst</th><th class="n">Adj. / trade</th></tr></thead><tbody>${
+  $("btManaged").innerHTML = Object.entries(B.managed).map(([k, m], i) => `<h3 class="small">${esc(k)} DTE</h3><div class="chart" id="btMg${i}"></div><div class="tbl"><table><thead><tr><th>Management</th><th class="n">Avg</th><th class="n">Winners</th><th class="n">Worst</th><th class="n">Adj. / trade</th></tr></thead><tbody>${
     ["static", "decide", "move", "move_nostop"].filter((k) => m[k]).map((k) => m[k]).map((v) => `<tr><td>${esc(v.label)}</td>${avgCell(v)}<td class="n">${pc(v.win)}</td><td class="n ${v.worst < -100 ? "neg" : ""}">${pctS(v.worst, 0)}</td><td class="n">${fmt(v.adj, 1)}</td></tr>`).join("")}</tbody></table></div>`).join("") +
     `<p class="note">Re-centre = close the BWB and open the same shape around today's close, same expiry, while more than 10 days remain; never when the trade is +3% or better. Each costs a combo side on 8 contracts. Without a stop, repeated re-centring in a selloff lost several times the original margin. Your own adjustments in 2026 (roll out on down moves, roll shorts up on up moves) are not modelled; the Trade plan's adjustment gates still come from them.</p>`;
+  const short = {static: "no adj", decide: "at −6%", move: "every 1.5%", move_nostop: "1.5%, no stop"};
+  Object.values(B.managed).forEach((m, i) => barChart($("btMg" + i), {label: "average by management rule", h: 110,
+    items: ["static", "decide", "move", "move_nostop"].filter((k) => m[k]).map((k) => ({label: short[k], v: m[k].avg,
+      title: `${esc(m[k].label)}: <b>${pctS(m[k].avg)}</b> · ${pc(m[k].win)} winners · worst ${pctS(m[k].worst, 0)} · ${fmt(m[k].adj, 1)} adjustments a trade`}))}));
 }
 
 window.loadBacktest = loadBacktest;

@@ -25,9 +25,9 @@ function render(el, V, compact) {
   const order = {sitout: 0, caution: 1, take: 2};
   active.sort((a, b) => order[a.kind] - order[b.kind]);
   const card = (c) => `<div class="vcc" style="border-left-color:${KIND[c.kind][1]}"><div><span class="vck" style="color:${KIND[c.kind][1]}">${KIND[c.kind][0]}</span> <b>${e(c.label)}</b></div>
-    <div>${e(c.advice)}</div><div class="small">${statLine(c.stats, base)}</div></div>`;
+    <div>${e(c.advice)}</div><div class="small">${statLine(c.stats, base)}</div>${c.stats && window.oddsBar ? window.oddsBar(c.stats.dd5, base.dd5) : ""}</div>`;
   const B = V.bucket.stats;
-  const bucket = `<div class="vcc" style="border-left-color:var(--line)"><div><span class="vck">VIX level</span> <b>VIX ${e(V.bucket.range)}</b> — the risk band you are in</div><div class="small">${statLine(B, base)}</div></div>`;
+  const bucket = `<div class="vcc" style="border-left-color:var(--line)"><div><span class="vck">VIX level</span> <b>VIX ${e(V.bucket.range)}</b> — the risk band you are in</div><div class="small">${statLine(B, base)}</div>${B && window.oddsBar ? window.oddsBar(B.dd5, base.dd5) : ""}</div>`;
   const prefer = V.prefer ? `<div class="small">Index: <b>${V.prefer}</b> has the better premium right now (RVX − VIX ${sg(R.rvx_spread, 1)}).</div>` : "";
   const timing = V.timing.length ? `<div class="small muted">${V.timing.map((t) => e(t)).join("<br>")}</div>` : "";
   const all = `<details><summary class="small muted">All ${V.conditions.length} conditions and their history</summary><div class="tbl"><table><thead><tr><th>Condition</th><th>Type</th><th class="n">Now</th><th class="n">Cases</th><th class="n">SPX 21d</th><th class="n">Up</th><th class="n">5% drop</th><th class="n">VIX 10d</th><th class="n">RUT 21d</th></tr></thead><tbody>${

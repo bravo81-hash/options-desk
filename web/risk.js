@@ -119,7 +119,7 @@ function tradesTable(T) {
   const tot = (k) => T.reduce((a, t) => a + (ok(t[k]) ? t[k] : 0), 0), mg = tot("margin");
   return `<div class="tbl"><table><thead><tr>${cols.map(([k, l, n]) => `<th class="sort ${n ? "n" : ""}" tabindex="0" data-k="${k}" ${s.k === k ? `aria-sort="${s.dir < 0 ? "descending" : "ascending"}"` : ""}>${l}${s.k === k ? (s.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>${
     rows.map((t) => `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td>${esc(t.name)}</td><td>${esc(t.acct)}</td>
-      <td class="n ${cls(t.pnlNow)}">${money(t.pnlNow)}</td><td class="n ${cls(t.totalPct)}">${pctS(t.totalPct)}</td>
+      <td class="n ${cls(t.pnlNow)}">${money(t.pnlNow)}</td><td class="n ${cls(t.totalPct)}">${hBarSvg(t.totalPct, 10, {w: 60, label: "total % of margin (full bar = 10%)"})} ${pctS(t.totalPct)}</td>
       <td class="n ${cls(t.perDay)}" title="total return ÷ ${Math.max(t.ditNow || 0, 1)} days in trade">${ok(t.perDay) ? fmt(t.perDay, 2) + "%" : "–"}</td><td class="n" title="theta/day at today's IVs ÷ margin: what it earns from here">${ok(t.paceNow) ? fmt(t.paceNow, 2) + "% " + speedChip(t) : "–"}</td><td>${planChip(t)}</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td>
       <td class="n ${cls(t.dayChg)}">${money(t.dayChg)}</td><td class="n ${cls(t.dayPct)}">${pctS(t.dayPct)}</td>
       <td class="n">${dshort(t.openedMs)}</td><td class="n">${t.ditNow ?? "–"}</td><td class="n" title="${esc(dexp(t.firstExp) + (t.lastExp > t.firstExp + DAY ? " / " + dexp(t.lastExp) : ""))}">${dteTxt(t)}</td><td class="n">${money(t.margin)}</td></tr>`).join("")}
