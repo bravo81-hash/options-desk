@@ -60,10 +60,11 @@ def now():
         for s in STRUCTS:
             u = s.split()[1]
             b = T[u].get(k)
-            cell = R["conds"][s].get(k, {}).get(b)
+            groups = R["conds"][s].get(k, {})
             if k == "trend":  # the trend's effect depends on the term structure: use today's band, as the size rule does
-                cell = R["matrix"][s]["cells"].get(T[u]["ivts_band"], {}).get(b)
-            cells[s] = {"bucket": b, **_effect(cell, R["conds"][s]["all"])}
+                groups = R["matrix"][s]["cells"].get(T[u]["ivts_band"], {})
+            dist = [{"b": x, "avg": groups[x]["avg"], "n": groups[x]["n"], "sel": x == b} for x in d["buckets"] if groups.get(x)]
+            cells[s] = {"bucket": b, "dist": dist, **_effect(groups.get(b), R["conds"][s]["all"])}
         if k == "rvxs":  # the RUT premium only matters for RUT structures
             for s in ("A14 SPX", "Calendar SPX"):
                 cells[s] = {"effect": "n/a"}

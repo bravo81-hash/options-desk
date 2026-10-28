@@ -283,6 +283,17 @@ const planChip = (t) => t.plan ? `<span class="chip ${PLAN_CLS[t.plan.act]}" tit
 const orderTxt = (o, short) => !o ? "–" : `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>${short ? "" : ` <span class="small muted">combo ${esc(o.ratio)}${ok(o.now) ? ` · now ${o.now.toFixed(2)}` : ""}</span>`}`;
 const lvTxt = (L, u) => !L ? "–" : L.past ? "already past" : [L.dn ? `${u} ↓ ${fmt(L.dn, 0)}` : null, L.up ? `↑ ${fmt(L.up, 0)}` : null].filter(Boolean).join(" · ") || "beyond −25% / +15%";
 const ADJ_CLS = {yes: "pos", one: "pos", "roll out": "wrn", reduce: "wrn", no: "muted", "?": "muted"};
+/* where a trade's total sits between its hard stop and target (decide line dashed) */
+function planBullet(t, w = 140) {
+  const q = t.plan; if (!q) return "";
+  const lo = ok(q.stop) ? q.stop : -10, hi = q.tp || 7;
+  return bulletSvg(t.totalPct, {w, lo: lo - 1, hi: hi + 1, label: `${pctS(t.totalPct)} · stop ${q.stop}% · decide ${q.decide ?? "–"}% · target +${q.tp}%`,
+    zones: [{from: lo, to: q.decide ?? lo, color: "var(--down)"}, {from: q.decide ?? lo, to: 0, color: "var(--warn)"}, {from: 0, to: hi, color: "var(--up)"}],
+    marks: [{v: q.stop, color: "var(--down)", label: `hard stop ${q.stop}%`}, {v: q.decide, color: "var(--warn)", dash: 1, label: `decide ${q.decide}%`},
+      {v: 0, color: "var(--muted)", width: 1}, {v: q.tp, color: "var(--up)", label: `target +${q.tp}%`}]});
+}
+window.planBullet = planBullet;
+
 function planView(T) {
   const P = T.filter((t) => t.plan).sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   if (!P.length) return `<div class="state">No open trade has card rules (A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal, Flyagonal).</div>`;
@@ -297,7 +308,7 @@ function planView(T) {
       <th class="n" title="index close where the trade reaches the decide line / the hard stop if the move happened today, IVs unchanged: set price alerts there">Alerts: decide / stop</th><th>Action</th></tr></thead><tbody>${
     P.map((t) => { const q = t.plan;
       return `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td>${esc(t.name)} <span class="small muted">${esc(label(t))}</span></td><td>${esc(t.strategy)}</td>
-        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b></td><td class="n">${lvl(q.tp, q.lv.tp)}</td><td class="n">${lvl(q.decide, q.lv.decide)}</td><td class="n">${lvl(q.stop, q.lv.stop)}</td>
+        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b><br>${planBullet(t, 120)}</td><td class="n">${lvl(q.tp, q.lv.tp)}</td><td class="n">${lvl(q.decide, q.lv.decide)}</td><td class="n">${lvl(q.stop, q.lv.stop)}</td>
         <td class="n ${ok(q.timeDte) && q.dte <= q.timeDte ? "wrn" : ""}">${q.dte}d${ok(q.timeDte) ? ` <span class="small muted">/ ${q.timeDte}</span>` : ""}</td>
         <td class="n" title="${q.band ? esc(`entry close ${fmt(t.entry_spot, 0)} · ±1.5% = ${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}`) : ""}">${ok(q.move) ? `<span class="${Math.abs(q.move) >= 1.5 ? "wrn" : ""}">${pctS(q.move)}</span>` : "–"}</td>
         <td class="n">${t.adjustments ?? "–"}</td>

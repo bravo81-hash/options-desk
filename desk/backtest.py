@@ -30,7 +30,7 @@ from .history import series
 from .readiness import ivts_band
 
 START = "2009-10-01"
-VERSION = 6
+VERSION = 7
 SKEW = {"SPX": (0.798, -1.102, 1.584), "RUT": (0.875, -0.735, 1.174)}  # fitted on your ONE fills, Jun-Oct 2026
 GEOM = {"SPX": (0.0, 0.29, 0.38), "RUT": (0.05, 0.33, 0.44)}  # upper offset, upper wing, lower wing (sd units)
 COMM, SLIP = 1.36, {"SPX": 0.25, "RUT": 0.15}
@@ -55,27 +55,20 @@ def _bars_all(sym):
 def _season_up(full, days, h=21, lookback=20):
     """Seasonality tab's 21-day window: share of the previous 20 years in which SPX was higher 21 sessions after
     the same calendar date (only years before the entry, so no look-ahead)."""
-    idx = pd.to_datetime(full.index)
-    vals = full.values
-    by_year = {}
-    for y in sorted(set(idx.year)):
-        m = idx.year == y
-        by_year[y] = (idx[m], np.flatnonzero(m))
-    out = np.full(len(days), np.nan)
-    for k, d in enumerate(days):
-        t = dt.date.fromisoformat(d)
-        ups = []
-        for y in range(t.year - lookback, t.year):
-            if y not in by_year:
-                continue
-            ds, ii = by_year[y]
-            j = ds.searchsorted(pd.Timestamp(year=y, month=t.month, day=min(t.day, 28 if t.month == 2 else t.day)))
-            if j >= len(ii) or ii[j] + h >= len(vals):
-                continue
-            ups.append(vals[ii[j] + h] > vals[ii[j]])
-        if len(ups) >= 10:
-            out[k] = 100 * np.mean(ups)
-    return out
+    idx = pd.to_datetime(full.index).values.astype("datetime64[D]")
+    vals = full.values.astype(float)
+    d = pd.to_datetime(pd.Series(days))
+    yrs, mon, day = d.dt.year.values, d.dt.month.values, np.where(d.dt.month.values == 2, np.minimum(d.dt.day.values, 28), d.dt.day.values)
+    ups, cnt = np.zeros(len(days)), np.zeros(len(days))
+    for k in range(1, lookback + 1):
+        tgt = pd.to_datetime(pd.DataFrame({"year": yrs - k, "month": mon, "day": day})).values.astype("datetime64[D]")
+        j = np.searchsorted(idx, tgt)
+        ok = (j + h < len(vals)) & (j < len(idx))
+        jj = np.where(ok, j, 0)
+        ok &= idx[jj].astype("datetime64[Y]") == tgt.astype("datetime64[Y]")
+        ups += ok & (vals[np.minimum(jj + h, len(vals) - 1)] > vals[jj])
+        cnt += ok
+    return np.where(cnt >= 10, 100 * ups / np.maximum(cnt, 1), np.nan)
 
 
 def load():
@@ -425,7 +418,7 @@ def _conds(paths, rule):
     groups = {}
     for p, r in zip(paths, res):
         c = p["cond"]
-        for k in COND:
+        for k in list(COND) + ["year"]:
             if c.get(k) is not None:
                 g = groups.setdefault(k, {}).setdefault(c[k], ([], []))
                 g[0].append(r); g[1].append(p)

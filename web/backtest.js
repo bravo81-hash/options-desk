@@ -49,26 +49,43 @@ function render() {
     ["SPX", "RUT"].flatMap((u) => B.a14[u].map((r) => `<tr><td>${u} ${r.dte} DTE <span class="small muted">target +${r.tp}%</span></td><td class="n small">${fmt(-r.credit, 2)} / $${Math.round(r.risk).toLocaleString()}</td>${R.map((k) => avgCell(r[k], `<span class="small muted"> · ${pc(r[k].win)}</span>`)).join("")}${avgCell(r.gated.plan, `<span class="small muted"> · ${pc(r.gated.plan.win)}</span>`)}<td class="n">${pc(r.plan.years_pos)}</td></tr>`)).join("")}</tbody></table></div>
     <p class="note">Average return per trade (% of margin) and winners. All rules: target +5% (entered at 21 DTE or less) or +7%, out at 2 DTE, slow trades (under 0.2%/day after 3 weeks) closed at the next green close; "Hold to 2 DTE" has no target or stop. Hover for the median, 5th percentile, worst trade, days held, %/day and stop rate.</p>`;
 
+  // A14: average by entry DTE, per exit rule (chart above the table)
+  $("btRules").insertAdjacentHTML("afterbegin", `<div class="chart" id="btDteChart"></div>${legend([["SPX revised (−20%)", "var(--s1)"], ["RUT revised (−20%)", "var(--s2)"], ["SPX card (−10%)", "var(--s3)"], ["RUT card (−10%)", "var(--s4)"]])}`);
+  xyChart($("btDteChart"), {label: "A14 average return by entry DTE", h: 170, xUnit: "d", series: [["SPX", "plan", "var(--s1)"], ["RUT", "plan", "var(--s2)"], ["SPX", "card", "var(--s3)", "4 3"], ["RUT", "card", "var(--s4)", "4 3"]]
+    .map(([u, k, color, dash]) => ({name: `${u} ${B.rules[k]}`, color, dash, pts: B.a14[u].map((r) => [r.dte, r[k].avg, `${r.dte} DTE`])}))});
+
+  // year by year (backtest v7)
+  const yr = (id, s) => { const g = B.conds && B.conds[s] && B.conds[s].year; const el = $(id); if (!el) return;
+    if (!g) { el.innerHTML = `<div class="state small">Recompute to see years.</div>`; return; }
+    barChart(el, {label: `${s} by entry year`, h: 150, items: Object.keys(g).sort().map((y) => ({label: "'" + y.slice(2), v: g[y].avg, n: g[y].n, hi: y === "2026",
+      title: `${y}: <b>${pctS(g[y].avg)}</b> a trade · ${pc(g[y].win)} winners · ${g[y].n} entries · worst ${pctS(g[y].worst, 0)}`}))}); };
+  yr("btYrA14SPX", "A14 SPX"); yr("btYrA14RUT", "A14 RUT"); yr("btYrCal", "Calendar SPX");
+
   // A14 by band
   const opts = ["SPX|21", "SPX|45", "RUT|21", "RUT|45"].filter((k) => { const [u, d] = k.split("|"); const r = row(u, +d); return r && r.bands; });
   if (!opts.includes(sel)) sel = opts[0];
   $("btBandSel").innerHTML = opts.map((k) => `<option value="${k}" ${k === sel ? "selected" : ""}>${k.replace("|", " ")} DTE</option>`).join("");
   const [u, d] = sel.split("|"), rb = row(u, +d);
-  $("btBands").innerHTML = `<div class="tbl"><table><thead><tr><th>VIX/VIX3M at entry</th><th class="n">Trades</th><th class="n">Stop −10%</th><th class="n">Stop −20%</th><th class="n">No stop</th><th class="n">No stop: lost &gt; 50%</th></tr></thead><tbody>${
+  $("btBands").innerHTML = `<div class="chart" id="btBandChart"></div><div class="tbl"><table><thead><tr><th>VIX/VIX3M at entry</th><th class="n">Trades</th><th class="n">Stop −10%</th><th class="n">Stop −20%</th><th class="n">No stop</th><th class="n">No stop: lost &gt; 50%</th></tr></thead><tbody>${
     Object.keys(BAND).filter((b) => rb.bands.plan[b]).map((b) => `<tr><td>${BAND[b]}</td><td class="n">${rb.bands.plan[b].n}</td>${avgCell(rb.bands.card[b])}${avgCell(rb.bands.plan[b])}${avgCell(rb.bands.nostop[b])}<td class="n">${pc(rb.bands.nostop[b].big_loss)}</td></tr>`).join("")}
     ${["above", "below"].filter((k) => rb.trend[k]).map((k) => `<tr><td>${u} ${k} its 20-day average</td><td class="n">${rb.trend[k].n}</td><td class="n">–</td>${avgCell(rb.trend[k])}<td class="n">–</td><td class="n">–</td></tr>`).join("")}</tbody></table></div>`;
+  barChart($("btBandChart"), {label: `${u} ${d} DTE by VIX/VIX3M band`, h: 140, items: Object.keys(BAND).filter((b) => rb.bands.plan[b]).map((b) => ({label: b, v: rb.bands.plan[b].avg, n: rb.bands.plan[b].n,
+    title: `${BAND[b]}: <b>${pctS(rb.bands.plan[b].avg)}</b> a trade with the −20% stop · ${pc(rb.bands.plan[b].win)} winners · ${rb.bands.plan[b].n} entries`}))});
   $("btWorst").innerHTML = `<div class="tbl"><table><thead><tr><th>Entered</th><th class="n">Return</th><th class="n">VIX</th><th class="n">VIX/VIX3M</th><th>Trend</th></tr></thead><tbody>${
     (rb.worst || []).map((w) => `<tr><td class="mono small">${w.date}</td><td class="n neg">${pctS(w.ret, 0)}</td><td class="n">${fmt(w.vix, 1)}</td><td class="n">${fmt(w.ivts, 3)} <span class="small muted">${esc(w.band)}</span></td><td class="small">${esc(w.trend)}</td></tr>`).join("")}</tbody></table></div>
     <p class="note">The ten worst ${u} ${d}-DTE A14s with no stop: almost all were entered with VIX in the low teens and the term structure calm, a week or two before a shock. Entry filters don't catch these; a stop and position size do.</p>`;
 
   // calendars
   const C = B.cal, mx = Math.max(...C.fine.map((f) => Math.abs(f.avg)), 1);
-  $("btCal").innerHTML = `<div class="tbl"><table><thead><tr><th>VIX/VIX3M at entry</th><th class="n">Trades</th><th class="n">Avg</th><th></th><th class="n">Winners</th><th class="n">Stop hit</th></tr></thead><tbody>${
+  $("btCal").innerHTML = `<div class="chart" id="btCalChart"></div><div class="tbl"><table><thead><tr><th>VIX/VIX3M at entry</th><th class="n">Trades</th><th class="n">Avg</th><th></th><th class="n">Winners</th><th class="n">Stop hit</th></tr></thead><tbody>${
     C.fine.map((f) => `<tr><td class="mono small">${f.lo.toFixed(3)} – ${f.hi > 2 ? "" : f.hi.toFixed(3)}</td><td class="n">${f.n}</td>${avgCell(f)}<td style="width:30%"><span style="display:inline-block;height:8px;width:${Math.round(48 * Math.abs(f.avg) / mx)}%;margin-left:${f.avg < 0 ? 50 - Math.round(48 * Math.abs(f.avg) / mx) : 50}%;background:${f.avg >= 0 ? "var(--up)" : "var(--down)"}"></span></td><td class="n">${pc(f.win)}</td><td class="n">${pc(f.stop)}</td></tr>`).join("")}
     ${["above", "below"].filter((k) => C.trend[k]).map((k) => `<tr><td>SPX ${k} its 20-day average</td><td class="n">${C.trend[k].n}</td>${avgCell(C.trend[k])}<td></td><td class="n">${pc(C.trend[k].win)}</td><td class="n">${pc(C.trend[k].stop)}</td></tr>`).join("")}</tbody></table></div>
     <div class="tbl"><table><thead><tr><th>Entry rule</th><th class="n">Trades</th><th class="n">Avg</th><th class="n">Winners</th><th class="n">Years +</th></tr></thead><tbody>${
     Object.values(C.gates).map((g) => `<tr><td>${esc(g.label)}</td><td class="n">${g.n}</td>${avgCell(g)}<td class="n">${pc(g.win)}</td><td class="n">${pc(g.years_pos)} <span class="small muted">of ${g.years}</span></td></tr>`).join("")}</tbody></table></div>
     <p class="note">SPX ATM put calendar, 15 / 22 DTE, entered every weekday, median debit $${C.debit.toLocaleString()}; returns % of the debit after costs. Model around your June losses: ${C.june.map((j) => `${j.date.slice(5)} (${j.ivts.toFixed(2)}) ${pctS(j.ret, 0)}`).join(" · ")}. Your own calendars entered at 0.90+ in late June mostly won small amounts; the 17-year sample is the better guide.</p>`;
+
+  barChart($("btCalChart"), {label: "Calendar average by VIX/VIX3M at entry", h: 140, items: C.fine.map((f) => ({label: f.hi > 2 ? `${f.lo.toFixed(2)}+` : f.hi.toFixed(2), v: f.avg, n: f.n, hi: f.lo >= 0.90,
+    title: `VIX/VIX3M ${f.lo.toFixed(3)}–${f.hi > 2 ? "" : f.hi.toFixed(3)}: <b>${pctS(f.avg)}</b> · ${pc(f.win)} winners · ${f.n} entries`}))});
 
   // managed
   $("btManaged").innerHTML = Object.entries(B.managed).map(([k, m]) => `<h3 class="small">${esc(k)} DTE</h3><div class="tbl"><table><thead><tr><th>Management</th><th class="n">Avg</th><th class="n">Winners</th><th class="n">Worst</th><th class="n">Adj. / trade</th></tr></thead><tbody>${

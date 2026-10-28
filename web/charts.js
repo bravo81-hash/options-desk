@@ -62,6 +62,50 @@ function lineChart(el, cfg) {
   });
 }
 
+/* ---------- small inline SVGs (strings, no mounting) for tables ---------- */
+/* Bullet: where a value sits on a scale with marked levels. marks: [{v, color, label}] */
+function bulletSvg(v, cfg) {
+  const w = cfg.w || 150, h = cfg.h || 22, lo = Math.min(cfg.lo, ok(v) ? v : cfg.lo), hi = Math.max(cfg.hi, ok(v) ? v : cfg.hi);
+  const X = (x) => 4 + (x - lo) * (w - 8) / ((hi - lo) || 1), y = h / 2;
+  let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(cfg.label || "position on scale")}"><title>${esc(cfg.label || "")}</title>`;
+  (cfg.zones || []).forEach((z) => { s += `<rect x="${X(Math.max(z.from, lo)).toFixed(1)}" y="${y - 4}" width="${Math.max(0, X(Math.min(z.to, hi)) - X(Math.max(z.from, lo))).toFixed(1)}" height="8" fill="color-mix(in srgb, ${z.color} 22%, transparent)"/>`; });
+  s += `<line x1="4" x2="${w - 4}" y1="${y}" y2="${y}" stroke="var(--line)"/>`;
+  (cfg.marks || []).forEach((m) => { if (ok(m.v)) s += `<line x1="${X(m.v).toFixed(1)}" x2="${X(m.v).toFixed(1)}" y1="${y - 7}" y2="${y + 7}" stroke="${m.color}" stroke-width="${m.width || 2}"${m.dash ? ` stroke-dasharray="2 2"` : ""}><title>${esc(m.label || "")}</title></line>`; });
+  if (ok(v)) s += `<circle cx="${X(v).toFixed(1)}" cy="${y}" r="5" fill="${cfg.color || (v >= 0 ? "var(--up)" : "var(--down)")}" stroke="var(--panel)" stroke-width="1.5"/>`;
+  return s + `</svg>`;
+}
+/* Mini bars around zero, one per bucket; the selected one drawn solid. items: [{label, v, n, sel}] */
+function sparkBars(items, cfg = {}) {
+  const w = cfg.w || 84, h = cfg.h || 26, n = items.length, m = Math.max(0.5, ...items.map((i) => Math.abs(i.v || 0))), bw = (w - 2) / Math.max(n, 1), y0 = h / 2;
+  let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(cfg.label || "results by bucket")}"><line x1="0" x2="${w}" y1="${y0}" y2="${y0}" stroke="var(--line)"/>`;
+  items.forEach((it, k) => { if (!ok(it.v)) return; const bh = Math.abs(it.v) / m * (h / 2 - 1), x = 1 + k * bw + bw * 0.15, col = it.v >= 0 ? "var(--up)" : "var(--down)";
+    s += `<rect x="${x.toFixed(1)}" y="${(it.v >= 0 ? y0 - bh : y0).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${Math.max(bh, 0.8).toFixed(1)}" fill="${col}" opacity="${it.sel ? 1 : 0.3}"${it.sel ? ` stroke="var(--ink)" stroke-width="1"` : ""}><title>${esc(`${it.label}: ${it.v > 0 ? "+" : ""}${it.v.toFixed(1)}%${ok(it.n) ? ` (${it.n})` : ""}${it.sel ? " ← today" : ""}`)}</title></rect>`; });
+  return s + `</svg>`;
+}
+/* Size meter: four segments, quarter to full. */
+function sizeMeter(size) {
+  const k = ["Stand aside", "Quarter size", "Half size", "Three-quarter size", "Full size"].indexOf(size), col = k <= 0 ? "var(--down)" : k <= 2 ? "var(--warn)" : "var(--up)";
+  return `<svg width="76" height="10" viewBox="0 0 76 10" role="img" aria-label="${esc(size)}">${[1, 2, 3, 4].map((i) => `<rect x="${(i - 1) * 19}" y="1" width="17" height="8" rx="2" fill="${i <= k ? col : "var(--soft)"}"/>`).join("")}</svg>`;
+}
+
+/* Vertical bars by category. items: [{label, v, n, title, hi}] (v in %) */
+function barChart(el, cfg) {
+  mount(el, (W) => {
+    const H = cfg.h || 180, mL = 40, mR = 8, mT = 10, mB = cfg.rotate ? 34 : 24, pw = W - mL - mR, ph = H - mT - mB, I = cfg.items.filter((i) => ok(i.v));
+    if (!I.length) { el.innerHTML = `<div class="state">No data.</div>`; return; }
+    let lo = Math.min(0, ...I.map((i) => i.v)), hi = Math.max(0, ...I.map((i) => i.v)); const pad = (hi - lo) * 0.08 || 1; lo -= lo < 0 ? pad : 0; hi += pad;
+    const Y = (v) => mT + ph - (v - lo) * ph / (hi - lo), bw = pw / cfg.items.length;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.label || "bar chart")}">`;
+    niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${+v.toFixed(1)}${cfg.unit ?? "%"}</text>`; });
+    const every = Math.ceil(cfg.items.length / Math.max(1, Math.floor(pw / (cfg.rotate ? 18 : 42))));
+    cfg.items.forEach((it, k) => { const x = mL + k * bw;
+      if (ok(it.v)) s += `<rect class="bc" data-k="${k}" x="${(x + bw * 0.14).toFixed(1)}" y="${Y(Math.max(it.v, 0)).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(Math.abs(Y(it.v) - Y(0)), 0.8).toFixed(1)}" rx="1.5" fill="${it.color || (it.v >= 0 ? "var(--up)" : "var(--down)")}" opacity="${it.dim ? 0.35 : 0.9}"${it.hi ? ` stroke="var(--ink)" stroke-width="1.5"` : ""}/>`;
+      if (k % every === 0) s += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - (cfg.rotate ? 18 : 8)}" text-anchor="middle">${esc(it.label)}</text>`; });
+    el.innerHTML = s + `</svg>`;
+    bindTip(el, ".bc", (n) => { const it = cfg.items[+n.dataset.k]; return it.title || `${esc(it.label)}: <b>${it.v > 0 ? "+" : ""}${it.v.toFixed(2)}${cfg.unit ?? "%"}</b>${ok(it.n) ? ` · ${it.n} entries` : ""}`; });
+  });
+}
+
 /* Numeric-x line chart (e.g. vol by DTE). series: [{name, pts:[[x,y]], color}] */
 function xyChart(el, cfg) {
   mount(el, (W) => {
