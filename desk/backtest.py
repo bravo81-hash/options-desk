@@ -29,7 +29,7 @@ from .history import series
 from .readiness import ivts_band
 
 START = "2009-10-01"
-VERSION = 4
+VERSION = 5
 SKEW = {"SPX": (0.798, -1.102, 1.584), "RUT": (0.875, -0.735, 1.174)}  # fitted on your ONE fills, Jun-Oct 2026
 GEOM = {"SPX": (0.0, 0.29, 0.38), "RUT": (0.05, 0.33, 0.44)}  # upper offset, upper wing, lower wing (sd units)
 COMM, SLIP = 1.36, {"SPX": 0.25, "RUT": 0.15}
@@ -340,6 +340,13 @@ def _by(paths, rule, key):
     return {k: _sum([exit_at(p, **rule) for p in v], v) for k, v in sorted(groups.items())}
 
 
+def _matrix(paths, rule):
+    """Results per term-structure band x short-term trend (the decision matrix cells)."""
+    return {b: {t: _sum([exit_at(p, **rule) for p in q], q) for t in ("above", "below")
+                for q in [[p for p in paths if p["cond"]["ivts_band"] == b and p["cond"]["trend"] == t]] if q}
+            for b in BANDS}
+
+
 def _years(paths, rule):
     return _by(paths, rule, "year")
 
@@ -359,7 +366,7 @@ def _ivts_fine(paths, rule):
 def run():
     D = load()
     out = {"version": VERSION, "built": dt.datetime.now().isoformat(timespec="seconds"), "from": D["days"][0], "to": D["days"][-1],
-           "rules": {k: v[0] for k, v in RULES.items()}, "a14": {}, "odds": {}, "managed": {}, "cal": {}}
+           "rules": {k: v[0] for k, v in RULES.items()}, "a14": {}, "odds": {}, "managed": {}, "cal": {}, "matrix": {}}
     for u in ("SPX", "RUT"):
         rows, odds = [], {}
         for dte in A14_DTE:
@@ -371,6 +378,8 @@ def run():
             row["gated"] = {k: _sum([exit_at(p, **RULES[k][1](dte)) for p in q], q)
                             for k in ("card", "plan", "nostop") for q in [[p for p in paths if p["cond"]["ivts"] < 0.90]]}
             odds[str(dte)] = {"all": row["plan"], **_by(paths, plan_rule(dte), "ivts_band")}
+            if dte == 45:
+                out["matrix"][f"A14 {u}"] = {"dte": dte, "rule": "plan", "cells": _matrix(paths, plan_rule(dte))}
             if dte in (21, 45):
                 row["bands"] = {k: _by(paths, RULES[k][1](dte), "ivts_band") for k in ("card", "plan", "nostop")}
                 row["trend"] = _by(paths, plan_rule(dte), "trend")
@@ -392,6 +401,8 @@ def run():
             res = a14_managed(D, u, dte, pace=(21, 0.2), **kw)
             m[k] = {"label": label, **_sum([r[:3] for r in res]), "adj": round(float(np.mean([r[3] for r in res])), 1)}
         out["managed"][f"{u} {dte}"] = m
+    for u in ("SPX", "RUT"):
+        out["matrix"][f"Calendar {u}"] = {"rule": CAL_RULE, "cells": _matrix(cal_paths(D, u), CAL_RULE)}
     cp = cal_paths(D, "SPX")
     out["cal"] = {"rule": CAL_RULE, "n": len(cp), "debit": round(float(np.median([p["debit"] for p in cp]))),
                   "fine": _ivts_fine(cp, CAL_RULE), "trend": _by(cp, CAL_RULE, "trend"), "vix": _by(cp, CAL_RULE, "vix_band"),

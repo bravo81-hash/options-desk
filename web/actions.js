@@ -52,7 +52,7 @@ async function load() {
     api("/api/readiness").catch(() => null), api("/api/freshness").catch(() => null),
     window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null)]);
   L = {Rk, Rd}; SCAN = null;
-  render(); entries(Rd); checks(Rk, Fr, Sn);
+  render(); entries(Rd); checks(Rk, Fr, Sn); matrix(Rd);
   ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
 }
 
@@ -71,6 +71,40 @@ function doToday(Rk) {
       return `<tr><td><span class="chip ${k}">${esc(word)}</span></td><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td>
         <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span></td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
         <td><a href="#" class="small" data-trade="${esc(t.id)}">detail →</a></td></tr>`; }).join("")}</tbody></table></div>`;
+}
+
+/* ---------- decision matrix: readiness rules (desk/readiness.py matrix) x backtest cells ---------- */
+const STEPS = ["Stand aside", "Quarter size", "Half size", "Three-quarter size", "Full size"];
+const SHORT = {"Stand aside": "aside", "Quarter size": "¼", "Half size": "½", "Three-quarter size": "¾", "Full size": "full"};
+const BANDS = [["steep", "Steep contango", "under 0.834"], ["normal", "Normal", "0.834–0.90"], ["flat", "Flat", "0.90–1.00"], ["backwardation", "Backwardation", "1.00+"]];
+const STRUCTS = ["A14 SPX", "A14 RUT", "Calendar SPX", "Calendar RUT"];
+let BT = null, btTries = 0;
+
+async function matrix(Rd) {
+  const el = $("acMatrix"); if (!el) return;
+  if (!Rd || Rd.error || !Rd.matrix) { el.innerHTML = `<div class="state">Readiness unavailable.</div>`; return; }
+  BT = await api("/api/backtest").catch(() => null);
+  matrixRender(Rd);
+  if (BT && !BT.matrix && !BT.error && btTries++ < 8) setTimeout(() => matrix(Rd), 20000);  // first run after an update computes in the background
+}
+
+function matrixRender(Rd) {
+  const size = Rd.size, cur = Rd.ivts_band.band;
+  const trendOf = (s) => (Rd.trends[s.split(" ")[1]] || {}).short_up ? "above" : "below";
+  const cell = (s, b, t) => {
+    const steps = Rd.matrix[s.split(" ")[0]][b][t];
+    const sz = steps === null ? "Stand aside" : STEPS[Math.max(0, STEPS.indexOf(size) - steps)];
+    const chip = steps === null ? `<span class="chip neg">stand aside</span>`
+      : `<span class="chip ${steps ? "wrn" : "pos"}">${steps ? `−${steps} step${steps > 1 ? "s" : ""}` : "no step"} → ${SHORT[sz]}</span>`;
+    const r = BT && BT.matrix && BT.matrix[s] && BT.matrix[s].cells[b] && BT.matrix[s].cells[b][t];
+    const now = b === cur && t === trendOf(s);
+    return `<td class="n"${now ? ` style="outline:2px solid var(--accent);outline-offset:-2px"` : ""}>${chip}<br><span class="small ${r ? cls(r.avg) : "muted"}">${r ? `${pctS(r.avg)} · ${Math.round(100 * r.win)}% won` : BT && BT.matrix ? "no entries" : "computing…"}</span>${r ? ` <span class="small muted">n ${r.n}</span>` : ""}</td>`;
+  };
+  const rows = BANDS.flatMap(([b, name, rng]) => ["above", "below"].map((t, k) => `<tr${b === cur ? ` style="background:color-mix(in srgb, var(--accent) 7%, transparent)"` : ""}>${k ? "" : `<td rowspan="2"><b>${name}</b><br><span class="small muted">VIX/VIX3M ${rng}</span></td>`}
+    <td class="small">${t} 20-day avg</td>${STRUCTS.map((s) => cell(s, b, t)).join("")}</tr>`)).join("");
+  $("acMatrix").innerHTML = `<p class="small" style="margin:0 0 6px">Today: VIX/VIX3M <b>${fmt(Rd.ivts, 3)}</b> (${esc(Rd.ivts_band.label)}) · SPX ${trendOf("A14 SPX")} and RUT ${trendOf("A14 RUT")} their 20-day averages · market size <b>${esc(size)}</b> (${esc(Rd.why)}).</p>
+    <div class="tbl"><table><thead><tr><th>Term structure</th><th>Index vs</th>${STRUCTS.map((s) => `<th class="n">${s}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">How to read it: the market size (from the drop odds in the readiness bar) is the starting point; each cell shows the steps the term-structure and trend rules take off it, and the size that leaves today. Other flags on top: thin RUT premium (RVX within 3 pts of VIX) steps RUT A14s down, a high-impact release within 3 days steps calendars down. Results: A14 = 45 DTE, your median shape, revised exits (target 7%, stop −20%, time and pace), % of max loss; calendars = 15/22 DTE ATM put calendar, target 5%, stop −15%, % of the debit. The model uses one fixed skew shape, so it shows the term-structure and trend effect, not that day's skew.</p>`;
 }
 
 function entries(Rd) {

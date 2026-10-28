@@ -139,7 +139,9 @@ def today(exit_days=14, vol_basis="rv20"):
         b = bwbs(sym, exit_days, vol_basis)
         c = calendars(sym, exit_days, vol_basis)
         bt = st["by_trend"]["above" if up else "below"]
-        checks_b = [{"ok": up, "text": f"Short-term trend (20-day): {sym} {'above' if up else 'below'} its average ({tr.get('vs_sma20', 0):+.1f}%): your A14s averaged {bt['ret']:.1f}% ({bt['n']} trades) entered like this"}]
+        calm = ivts is not None and 0.834 < ivts < 0.90  # below the 20-day average doesn't count against an A14 in a normal term structure
+        checks_b = [{"ok": up or calm, "text": f"Short-term trend (20-day): {sym} {'above' if up else 'below'} its average ({tr.get('vs_sma20', 0):+.1f}%): your A14s averaged {bt['ret']:.1f}% ({bt['n']} trades) entered like this"
+                     + ("" if up else "; with VIX/VIX3M 0.834–0.90 this was the model's best A14 cell since 2009" if calm else "; outside a normal term structure (0.834–0.90) the model lost on average")}]
         g_list = gates.get(sym, [])
         side = "above" if ivts is not None and ivts > IVTS_LINE else "below"
         checks_c = [{"ok": ivts is not None and ivts < CAL_MAX_IVTS,

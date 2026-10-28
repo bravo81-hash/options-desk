@@ -7,8 +7,10 @@ inputs overlap, so adding them would double count) and names which input set it:
 * Market warnings, the five tested ones (2010+);
 * sector rotation, offense vs defense (1999+).
 Size: under 17% full, 17-23% three-quarter, 23-30% half, 30%+ (or any sit-out condition) stand aside.
-Strategy rules then step individual structures down: A14 below the 20-day average (your A14 history) or with
-VIX/VIX3M at 0.90+ (flat: one step; backwardation: stand aside), thin RUT premium; calendars stand aside at
+Strategy rules then step individual structures down: A14 with VIX/VIX3M at 0.90+ (flat: one step, one more below
+the 20-day average; backwardation: stand aside), thin RUT premium. Below the 20-day average with the term structure
+normal (0.834-0.90) is not a step down: it was the model's best A14 cell since 2009 (45 DTE: SPX +2.2%, RUT +2.3% a
+trade); in steep contango it still is (rare, and negative in the model: SPX -6.1% over 10 entries, RUT -0.9% over 43); calendars stand aside at
 VIX/VIX3M 0.90+ and step down below the 20-day average or into high-impact US releases (CPI, FOMC, payrolls,
 PCE, GDP) inside the next two sessions. The term-structure and trend rules are from the 2009-2026 model backtest
 (desk/backtest.py): calendars entered under 0.90 with the index above its 20-day average averaged about +4%
@@ -44,6 +46,38 @@ def ivts_band(v):
         return {"band": "normal", "label": "Normal contango", "a14": "ok", "cal": "ok"}
     return {"band": "steep", "label": "Steep contango — calm", "a14": "ok: calmest backdrop",
             "cal": "ok: the best calendar zone since 2009 (model); your June 2–4 losses were one shock"}
+
+
+BANDS = ["steep", "normal", "flat", "backwardation"]
+
+
+def a14_steps(band, trend_up):
+    """Steps down for an A14 from the term-structure band and the short-term trend; None = stand aside."""
+    if band == "backwardation":
+        return None
+    n = 1 if band == "flat" else 0
+    if not trend_up and band != "normal":
+        n += 1
+    return n
+
+
+def cal_steps(band, trend_up):
+    """Steps down for a calendar (before the release rule); None = stand aside."""
+    if band in ("flat", "backwardation"):
+        return None
+    return 0 if trend_up else 1
+
+
+RULES = {"A14": a14_steps, "Calendar": cal_steps}
+
+
+def apply(size, steps):
+    return "Stand aside" if steps is None else step_down(size, steps)
+
+
+def matrix():
+    """What the term-structure and trend rules do in every cell, before the market size and the other flags."""
+    return {name: {b: {t: f(b, t == "above") for t in ("above", "below")} for b in BANDS} for name, f in RULES.items()}
 
 
 def _events():
@@ -97,13 +131,13 @@ def now():
     except Exception:
         hist = "entries below the 20-day average have done worse"
     for sym in ("SPX", "RUT"):
-        sz, notes = size, []
-        if not trends[sym]["short_up"]:
-            sz = step_down(sz)
-            notes.append(f"{sym} below its 20-day average (short-term trend): {hist}")
+        up = trends[sym]["short_up"]
+        sz, notes = apply(size, a14_steps(band["band"], up)), []
         if band["band"] in ("backwardation", "flat"):
-            sz = "Stand aside" if band["band"] == "backwardation" else step_down(sz)
             notes.append(f"VIX/VIX3M {ivts:.3f}: {band['a14']}")
+        if not up:
+            notes.append(f"{sym} below its 20-day average: " + (f"one step down with the term structure {band['band']}; {hist}"
+                         if band["band"] != "normal" else "no step down with a normal term structure: the model's best A14 cell since 2009"))
         if sym == "RUT" and rvx is not None and rvx <= 3:
             sz = step_down(sz)
             notes.append(f"RVX only {rvx:+.1f} over VIX: thin RUT premium, SPX preferred")
@@ -111,11 +145,10 @@ def now():
             notes.append(f"RVX {rvx:+.1f} over VIX: rich RUT premium")
         strat.append({"name": f"A14 {sym}", "size": sz, "notes": notes or ["no strategy-specific flags"]})
     for sym in ("SPX", "RUT"):
-        sz, notes = size, []
+        sz, notes = apply(size, cal_steps(band["band"], trends[sym]["short_up"])), []
         if band["band"] in ("backwardation", "flat"):
-            sz, notes = "Stand aside", [f"VIX/VIX3M {ivts:.3f}: {band['cal']}"]
+            notes.append(f"VIX/VIX3M {ivts:.3f}: {band['cal']}")
         if not trends[sym]["short_up"]:
-            sz = step_down(sz)
             notes.append(f"{sym} below its 20-day average: SPX calendars entered like this lost on average since 2009 (model)")
         if events:
             sz = step_down(sz)
@@ -126,6 +159,6 @@ def now():
         strat.append({"name": f"Calendar {sym}", "size": sz, "notes": notes or ["no strategy-specific flags"]})
     opps = [c["label"] for c in V["conditions"] if c["active"] and c["kind"] == "take"]
     return {"size": size, "why": why, "risk": risk, "base": base, "inputs": inputs, "strategies": strat, "opportunities": opps,
-            "ivts": ivts, "ivts_band": band, "trends": trends, "events": events, "date": V["readings"]["date"],
+            "ivts": ivts, "ivts_band": band, "trends": trends, "matrix": matrix(), "events": events, "date": V["readings"]["date"],
             "warnings": {"total5": W["total5"], "total6": W["total6"], "stats": W["total_stats"], "all": W["all_totals"]},
             "rotation": R}
