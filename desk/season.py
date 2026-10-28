@@ -60,25 +60,31 @@ def compute(sym="SPX", lookback=20, cycle="all", today=None):
 
     # ---- seasonal path: cumulative % from the prior year's last close, by trading day of the year
     def ypath(y):
+        yr = s[s.index.year == y]
+        if lv:
+            return yr.values.astype(float)  # a level needs no prior close, so the first year of history counts too
         prev = s[s.index.year < y]
         if not len(prev):
             return None
-        base = prev.iloc[-1]
-        yr = s[s.index.year == y]
-        return yr.values.astype(float) if lv else (yr / base - 1).values * 100
+        return (yr / prev.iloc[-1] - 1).values * 100
 
     paths = {y: ypath(y) for y in ys}
     paths = {y: p for y, p in paths.items() if p is not None and len(p) > 200}
+    if not paths:
+        return {"error": "Not enough full years for that filter."}
+    # years run 250-253 sessions: stretch each onto a common axis by its position in the year, so every point
+    # averages every year and the last point is each year's own year end (indexing raw sessions left the final
+    # one or two points to the few 253-session years)
     n = 253
-    mat = np.full((len(paths), n), np.nan)
-    for i, p in enumerate(paths.values()):
-        mat[i, :min(len(p), n)] = p[:n]
-    avg_path = np.nanmean(mat, axis=0)
-    med_path = np.nanmedian(mat, axis=0)
+    grid = np.linspace(0, 1, n)
+    mat = np.array([np.interp(grid, np.linspace(0, 1, len(p)), p) for p in paths.values()])
+    avg_path = mat.mean(axis=0)
+    med_path = np.median(mat, axis=0)
     cur_path = ypath(cur)
-    # month boundaries on the trading-day axis (typical year)
+    # month boundaries on the same axis (typical year)
     ref = s[s.index.year == ys[-1]]
-    month_ticks = [{"i": int(np.argmax(ref.index.month == m)), "label": MONTHS[m - 1]} for m in range(1, 13) if (ref.index.month == m).any()]
+    month_ticks = [{"i": round(int(np.argmax(ref.index.month == m)) * (n - 1) / (len(ref) - 1)), "label": MONTHS[m - 1]}
+                   for m in range(1, 13) if (ref.index.month == m).any()]
     today_i = int((s.index.year == cur).sum()) - 1
 
     # ---- forward windows from today's calendar date in each past year
