@@ -17,6 +17,7 @@
       "step": 5
     }
   },
+  "auto_update": {"enabled": true, "open_min": 15, "closed_min": 60, "surface_min": 60},
   "record": {
     "time_et": "15:40",
     "all_expiries_to_dte": 21,

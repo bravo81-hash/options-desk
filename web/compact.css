@@ -102,3 +102,6 @@ ul.checks{margin:0;padding-left:0;list-style:none;font-size:12px;display:flex;fl
 .jbar{position:relative;height:6px;background:var(--soft);border-radius:2px} .jbar i{position:absolute;top:0;bottom:0;border-radius:2px}
 .jnedit{display:flex;flex-direction:column;gap:4px;margin:8px 0}
 .jnedit textarea{font:inherit;font-size:13px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;resize:vertical}
+.updbox{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+#updMeta{cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+#updBtn:disabled{opacity:.7;cursor:progress}

@@ -18,6 +18,7 @@
       <div class="muted small">Market regime, breadth, sectors, accounts, SPX / RUT vol, calendars, skew and risk · TWS read-only · no orders</div>
     </div>
     <div id="freshBar" class="freshbar" title="date of each data source vs the latest US close"></div>
+    <div class="updbox"><button type="button" id="updBtn" title="Refresh every data source now: TWS positions and chains, index bars, ETFs, CBOE, calendar">Update all</button><span class="small" id="updMeta" role="button" tabindex="0" title="click for each source's result"></span></div>
     <button type="button" class="ghost themeBtn" id="themeBtn" title="Theme: follow Windows, light, or dark">Auto</button>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="actions" aria-selected="true">Actions</button>
@@ -38,6 +39,7 @@
     </nav>
   </header>
   <div class="readybar" id="readyBar"><span class="lbl">Trade readiness</span><span class="small muted">working it out…</span></div>
+  <section class="panel modalp" id="updPanel" hidden><header><h2>Update all</h2><button type="button" class="ghost mclose">Close</button></header><div id="updBody"></div></section>
   <section class="panel modalp" id="rdPanel" hidden><header><h2>Trade readiness</h2><button type="button" class="ghost mclose">Close</button></header><div id="rdBody"></div></section>
 
   <!-- MARKET (former Market Desk) -->
@@ -300,6 +302,7 @@
           <li><b>It starts on its own.</b> The app runs in the background from login. Opening TradingView or TWS opens this page (TWS: after about 90 seconds while it logs in).</li>
           <li><b>Address:</b> <span class="mono">http://127.0.0.1:8810</span> — bookmark it. Only one copy ever runs; starting it again just opens the page.</li>
           <li><b>TWS must be running</b> for live data: positions, marks, NAV, option chains, the VIX family. Without it the desk shows the last saved data and falls back to free sources.</li>
+          <li><b>Update all</b> (top of the page) refreshes every source in turn: TWS positions/NAV/fills, index bars, the A14 and expected-move chains, the option surface, then ETFs, CBOE and the calendar. It also runs on its own every 15 min while the US market is open and hourly otherwise; the open tab reloads when it finishes. Click the "Updated …" text for each source's result. Outside market hours the chains and surface keep their after-close capture (quotes are frozen).</li>
           <li><b>ONE:</b> export the Summary Report each day (Documents). The desk always reads the newest file; trade names and grouping come from it.</li>
           <li><b>Theme:</b> the button at the top cycles Auto / Light / Dark.</li>
           <li><b>Sub-tabs:</b> long tabs are split into sub-tabs (the small buttons under the controls) so each view fits on one screen; the desk remembers the last one you used.</li>
@@ -499,5 +502,6 @@
 <script src="journal.js"></script>
 <script src="backtest.js"></script>
 <script src="actions.js"></script>
+  <script src="update.js"></script>
 </body>
 </html>

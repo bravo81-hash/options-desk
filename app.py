@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, backtest, conditions, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk
+from desk import ROOT, a14, accounts, backtest, conditions, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -90,6 +90,17 @@ def api_status():
     return ok({"recorder": recorder.status, "inventory": analytics.inventory(),
                "next_record": nxt.isoformat() if nxt else None, "record_time_et": CFG["record"]["time_et"],
                "cboe_refreshed": db.get_meta("cboe_refreshed"), "last_record": db.get_meta("last_record")})
+
+
+@app.post("/api/update")
+def api_update():
+    """Update the whole desk: every source in turn (see desk/updater.py)."""
+    return ok({"started": updater.run_async("manual"), **updater.payload()})
+
+
+@app.get("/api/update/status")
+def api_update_status():
+    return ok(updater.payload())
 
 
 @app.post("/api/record")
@@ -243,8 +254,9 @@ def api_readiness():
     """Cached 5 minutes: it pulls VIX conditions, warnings and history stats together (~10 s cold)."""
     try:
         with _READY["lock"]:
-            if _READY["v"] is None or (time.time() - _READY["t"]) > 300 or request.args.get("fresh"):
-                _READY["v"], _READY["t"] = readiness.now(), time.time()
+            upd = updater.status["finished"]  # a finished desk update makes the cached verdict stale
+            if _READY["v"] is None or (time.time() - _READY["t"]) > 300 or request.args.get("fresh") or _READY.get("u") != upd:
+                _READY["v"], _READY["t"], _READY["u"] = readiness.now(), time.time(), upd
             return ok(_READY["v"])
     except Exception as e:
         return ok({"error": f"Readiness unavailable: {e}"})
@@ -445,19 +457,16 @@ def session_jobs(now):
 
 def scheduler():
     while True:
-        try:
-            market.refresh_all()  # yfinance bars + computed breadth; no-ops while fresh
-        except Exception as e:
-            recorder._log(f"market refresh failed: {e}")
-        try:
-            history.refresh_cboe()
-        except Exception as e:
-            recorder._log(f"CBOE refresh failed: {e}")
         now = dt.datetime.now(dt.timezone.utc).astimezone(ET)
         try:
-            session_jobs(now)
+            with updater.LOCK:  # never alongside a desk update: one TWS job at a time
+                session_jobs(now)
         except Exception as e:
             recorder._log(f"session jobs failed: {e}")
+        try:
+            updater.auto()  # whole-desk update every 15 min in US hours, hourly otherwise (config auto_update)
+        except Exception as e:
+            recorder._log(f"auto update failed: {e}")
         try:
             snapshot.auto()  # encrypted cloud snapshot when anything it shows has changed
         except Exception as e:

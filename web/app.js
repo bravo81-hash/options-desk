@@ -40,10 +40,22 @@ function showTab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + name; });
   try { sessionStorage.setItem("od.tab", name); } catch (e) {}
-  if (!loaded[name]) { loaded[name] = true; ({actions: () => window.loadActions(), market: () => {}, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => window.loadA14(), pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }
+  if (!loaded[name]) { loaded[name] = true; ({actions: () => window.loadActions(), market: () => { if (mdStale) { mdStale = false; try { $("mdFrame").contentWindow.location.reload(); } catch (e) {} } }, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => window.loadA14(), pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }
   else document.querySelectorAll(`#tab-${name} .chart`).forEach((c) => c._draw && c._draw());
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+/* after a desk update (update.js): every tab reloads on its next visit, the open one now (unless a pop-up is open) */
+let mdStale = false;
+window.deskReload = function () {
+  if (document.querySelector(".modalp:not([hidden])")) { setTimeout(window.deskReload, 5000); return; }
+  const cur = (document.querySelector('.tabs button[aria-selected="true"]') || {}).dataset?.tab || "actions";
+  Object.keys(loaded).forEach((k) => delete loaded[k]);
+  mdStale = true;
+  showTab(cur);
+  loadFresh();
+  if (window.loadReadiness) window.loadReadiness();
+};
 
 /* ---------------- today ---------------- */
 function gateCards(gates) {
