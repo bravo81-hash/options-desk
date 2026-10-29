@@ -25,7 +25,11 @@ def closes(sym):
     if sym == "VIX":
         v = series("VIX").dropna()
         v.index = pd.to_datetime(v.index)
-        return v[v > 0]
+        v = v[v > 0]
+        # the Cboe history has rows on exchange holidays (most years from 2022): keep S&P 500 sessions only,
+        # plus anything after the last S&P bar so a lagging index refresh does not drop today's VIX
+        spx = closes("SPX").index
+        return v[v.index.isin(spx) | (v.index > spx[-1])] if len(spx) else v
     yf_sym = INDICES[sym][0]
     fetch_yf_max([yf_sym])
     rows = db.query("SELECT date, c FROM bars_daily WHERE symbol=? ORDER BY date", (yf_sym,))
@@ -126,8 +130,7 @@ def compute(sym="SPX", lookback=20, cycle="all", today=None):
                            "worst": float(v.min()), "best": float(v.max()), "rv": float(np.nanmean(vv)) if len(vv) and not lv else None, "cur": table.get(cur, [None] * 12)[m - 1]})
 
     # ---- VIX through the month (1990 on): average change in points and how often it rose
-    vix = series("VIX").dropna()
-    vix.index = pd.to_datetime(vix.index)
+    vix = closes("VIX")
     vstats = []
     if len(vix):
         vme = vix.resample("ME").last()
