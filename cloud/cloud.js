@@ -116,7 +116,13 @@ window.DESK_CLOUD = true;
   /* ---------- page adjustments ---------- */
   const LAPTOP_TABS = {cal: "Calendar scanner", skew: "Skew & IV", risk: "Risk grid", em: "Expected moves", a14: "A14 scanner",
                        pnl: "P&L & Recon", journal: "Trade journal", evidence: "Evidence", rec: "Recorder"};
-  const notice = (what, locked) => `<div class="panel"><div class="state"><b>${what}</b> ${locked ? "comes from your encrypted laptop snapshot: unlock it with your passphrase in the bar at the top." : "is only on the laptop desk: it needs TWS (live option chains, positions, marks) or your private trade data. Set a snapshot passphrase on the laptop (Recorder tab) to bring it here, encrypted."}</div></div>`;
+  const PREVIEW = {pick: ["Live calendar and A14 setups from today's chain"], cal: ["Ranked calendar pairs for SPX and RUT", "Entry gates passed or failed"], skew: ["Put skew and IV by expiry", "How today compares with history"],
+                   risk: ["Every open trade against its stop, target and decide lines", "Greeks, capital use and the book graph"], em: ["Expected move per index for each expiry"],
+                   a14: ["A14 candidates ranked on history", "Suggested shapes and gates"], pnl: ["Weekly and monthly P&L", "ONE vs IBKR reconciliation and fills"],
+                   journal: ["Every closed trade with its notes"], evidence: ["Your trades against conditions at entry"], rec: ["The daily option recording"]};
+  const notice = (what, locked, id) => locked
+    ? `<div class="panel lockcard"><div class="ic">🔒</div><h2>${what}</h2><p class="small muted">Comes from your encrypted laptop snapshot. Once unlocked you'll see:</p><ul>${(PREVIEW[id] || []).map((x) => `<li>${x}</li>`).join("")}</ul><button type="button" class="unlockBtn">Unlock snapshot</button></div>`
+    : `<div class="panel"><div class="state"><b>${what}</b> is only on the laptop desk: it needs TWS (live option chains, positions, marks) or your private trade data. Set a snapshot passphrase on the laptop (Recorder tab) to bring it here.</div></div>`;
   const when = (iso) => new Date(iso).toLocaleString([], {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
   document.addEventListener("DOMContentLoaded", async () => {
     const isDesk = !!document.getElementById("readyBar");
@@ -127,37 +133,43 @@ window.DESK_CLOUD = true;
     if (!isDesk) return;
     let built = "";
     try { const c = await (await real(BASE + "api/cloud.json", {cache: "no-cache"})).json(); built = when(c.built); } catch (e) {}
-    const bar = document.createElement("div");
-    bar.className = "state";
-    bar.style.cssText = "margin:0 0 2px;font-size:12px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center";
-    const rb = document.getElementById("readyBar");
-    rb.parentNode.insertBefore(bar, rb);
-    const mkt = `<span><b>Cloud copy</b> · market data rebuilt every 30 minutes in US market hours and daily otherwise · last built ${built || "–"}</span>`;
+    const slot = document.getElementById("cloudSlot");
     const st = await snapReady;
+    const mkt = `<span class="muted">Cloud copy. Market data rebuilds every 30 minutes in US market hours and daily otherwise. Last built ${built || "–"}.</span>`;
+    const chip = (text, cls) => { slot.innerHTML = `<button type="button" class="snapchip ${cls}" id="snapChip">${text}</button><div class="snappop" id="snapPop" hidden></div>`; };
+    const pop = () => document.getElementById("snapPop");
     if (st.state === "open") {
-      bar.innerHTML = `${mkt}<span>· <b>Your trades</b>: laptop snapshot from ${when(st.env.built)} (marks, scanners and trades as of then; nothing here is live)</span><button type="button" class="ghost" id="snapLock">Lock</button>`;
+      chip("🔓 Snapshot " + new Date(st.env.built).toLocaleDateString([], {day: "numeric", month: "short"}), "open");
+      pop().innerHTML = `${mkt}<span>Your trades are from the laptop snapshot of ${when(st.env.built)}. Nothing here is live.</span><button type="button" class="ghost" id="snapLock">Lock</button>`;
       document.getElementById("snapLock").addEventListener("click", () => { store.clear(); location.reload(); });
-      return;
-    }
-    if (st.state === "locked") {
-      bar.innerHTML = `${mkt}<form id="snapForm" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span>· <b>Your trades</b> (snapshot ${when(st.env.built)}):</span>
-        <input type="password" id="snapPass" autocomplete="current-password" placeholder="snapshot passphrase" style="width:180px">
-        <label class="small"><input type="checkbox" id="snapRem"> remember on this browser</label><button type="submit">Unlock</button><span class="small" id="snapMsg"></span></form>`;
+    } else if (st.state === "locked") {
+      chip("🔒 Snapshot locked", "");
+      pop().innerHTML = `${mkt}<form id="snapForm" style="display:flex;flex-direction:column;gap:8px"><span>Your trades: snapshot from ${when(st.env.built)}.</span>
+        <input type="password" id="snapPass" autocomplete="current-password" placeholder="Snapshot passphrase">
+        <label class="small"><input type="checkbox" id="snapRem"> Remember on this browser</label><button type="submit">Unlock snapshot</button><span class="small" id="snapMsg"></span></form>`;
       document.getElementById("snapForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const msg = document.getElementById("snapMsg"); msg.textContent = "Unlocking…";
         const okk = await unlock(document.getElementById("snapPass").value, document.getElementById("snapRem").checked).catch(() => false);
         if (okk) location.reload(); else msg.innerHTML = `<span class="neg">Wrong passphrase.</span>`;
       });
-    } else bar.innerHTML = `${mkt}<span>· TWS features, trades and P&amp;L are on the laptop desk.</span>`;
+    } else { chip("Cloud copy", ""); pop().innerHTML = `${mkt}<span>TWS features, trades and P&amp;L are on the laptop desk.</span>`; }
+    const openPop = () => { pop().hidden = false; const p = document.getElementById("snapPass"); if (p) p.focus(); };
+    document.addEventListener("click", (e) => {
+      if (e.target.closest(".unlockBtn")) { e.stopPropagation(); openPop(); return; }
+      if (e.target.closest("#snapChip")) { pop().hidden = !pop().hidden; if (!pop().hidden) openPop(); return; }
+      if (!e.target.closest("#snapPop")) pop().hidden = true;
+    });
+    if (st.state === "open") return;
     const locked = st.state === "locked";
     ["loadCal", "loadSkew", "loadEvidence", "loadRec", "loadRisk", "loadPnl", "loadEm", "loadA14", "loadJournal"].forEach((f) => { window[f] = () => {}; });
     Object.entries(LAPTOP_TABS).forEach(([id, name]) => {
-      const sec = document.getElementById("tab-" + id); if (sec) sec.innerHTML = notice(name, locked);
-      const b = document.querySelector(`.tabs button[data-tab="${id}"]`); if (b) { b.style.opacity = ".45"; b.title = locked ? "unlock your snapshot" : "laptop desk only"; }
+      const sec = document.getElementById("tab-" + id); if (sec) sec.innerHTML = notice(name, locked, id);
+      const b = document.querySelector(`.tabs button[data-tab="${id}"]`); if (b) b.title = locked ? "unlock your snapshot" : "laptop desk only";
+      if (window.navBadge) window.navBadge(id, locked ? "🔒" : "laptop");
     });
     // Today's pick: keep the VIX conditions panel, the option-chain pick needs the laptop
-    const pk = document.getElementById("pkBody"); if (pk) { pk.id = "pkBody-off"; pk.innerHTML = notice("The option-chain pick (calendar vs A14 setups)", locked); }
+    const pk = document.getElementById("pkBody"); if (pk) { pk.id = "pkBody-off"; pk.innerHTML = notice("The option-chain pick (calendar vs A14 setups)", locked, "pick"); }
     const pkForm = document.getElementById("pkForm"); if (pkForm) pkForm.closest(".panel").hidden = true;
     if (!document.getElementById("pkBody")) { const h = document.createElement("div"); h.id = "pkBody"; h.hidden = true; document.body.appendChild(h); }
   });

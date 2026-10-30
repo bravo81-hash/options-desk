@@ -4,56 +4,44 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Market &amp; Options Desk</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="compact.css">
 <link rel="stylesheet" href="vixcond.css">
+<link rel="stylesheet" href="desk.css">
 <script>try { const t = localStorage.getItem("od.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
-<body>
+<body class="desk">
 <div class="wrap">
   <header class="top">
-    <div>
-      <h1>Market &amp; Options Desk</h1>
-      <div class="muted small">Market regime, breadth, sectors, accounts, SPX / RUT vol, calendars, skew and risk · TWS read-only · no orders</div>
-    </div>
-    <div id="freshBar" class="freshbar" title="date of each data source vs the latest US close"></div>
+    <button type="button" class="ghost" id="navBtn" aria-label="Open menu">☰</button>
+    <div class="brand"><span class="bdot"></span><h1>Market &amp; Options Desk</h1></div>
+    <button type="button" id="freshBar" class="datapill" title="date of every data source, and the last update">Data</button>
+    <div id="cloudSlot"></div>
     <div class="updbox"><button type="button" id="updBtn" title="Refresh every data source now: TWS positions and chains, index bars, ETFs, CBOE, calendar">Update all</button><span class="small" id="updMeta" role="button" tabindex="0" title="click for each source's result"></span></div>
-    <button type="button" class="ghost themeBtn" id="themeBtn" title="Theme: follow Windows, light, or dark">Auto</button>
-    <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="actions" aria-selected="true">Actions</button>
-      <button role="tab" data-tab="market">Market</button>
-      <button role="tab" data-tab="pick">Today's pick</button>
-      <button role="tab" data-tab="today">Term structure</button>
-      <button role="tab" data-tab="cal">Calendar scanner</button>
-      <button role="tab" data-tab="skew">Skew &amp; IV</button>
-      <button role="tab" data-tab="risk">Risk grid</button>
-      <button role="tab" data-tab="em">Expected moves</button>
-      <button role="tab" data-tab="season">Seasonality</button>
-      <button role="tab" data-tab="a14">A14 scanner</button>
-      <button role="tab" data-tab="pnl">P&amp;L &amp; Recon</button>
-      <button role="tab" data-tab="journal">Journal</button>
-      <button role="tab" data-tab="evidence">Evidence</button>
-      <button role="tab" data-tab="rec">Recorder</button>
-      <button role="tab" data-tab="guide">Guide</button>
-    </nav>
+    <button type="button" class="themeBtn" id="themeBtn" role="switch" aria-checked="false" aria-label="Dark mode"><span class="sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span><span class="moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></span></button>
   </header>
+  <aside class="side" id="sideNav"><nav class="tabs" role="tablist" aria-label="Sections">
+      <div class="ngroup"><span>Daily</span><button role="tab" data-tab="actions" aria-selected="true">Actions<span class="nbadge" id="nb-actions"></span></button><button role="tab" data-tab="pick">Today's pick<span class="nbadge" id="nb-pick"></span></button><button role="tab" data-tab="risk">Risk grid<span class="nbadge" id="nb-risk"></span></button></div>
+      <div class="ngroup"><span>Market</span><button role="tab" data-tab="market">Market<span class="nbadge" id="nb-market"></span></button><button role="tab" data-tab="today">Term structure<span class="nbadge" id="nb-today"></span></button><button role="tab" data-tab="skew">Skew &amp; IV<span class="nbadge" id="nb-skew"></span></button><button role="tab" data-tab="em">Expected moves<span class="nbadge" id="nb-em"></span></button><button role="tab" data-tab="season">Seasonality<span class="nbadge" id="nb-season"></span></button></div>
+      <div class="ngroup"><span>Scanners</span><button role="tab" data-tab="a14">A14 scanner<span class="nbadge" id="nb-a14"></span></button><button role="tab" data-tab="cal">Calendar scanner<span class="nbadge" id="nb-cal"></span></button></div>
+      <div class="ngroup"><span>Review</span><button role="tab" data-tab="pnl">P&amp;L &amp; Recon<span class="nbadge" id="nb-pnl"></span></button><button role="tab" data-tab="journal">Journal<span class="nbadge" id="nb-journal"></span></button><button role="tab" data-tab="evidence">Evidence<span class="nbadge" id="nb-evidence"></span></button><button role="tab" data-tab="rec">Recorder<span class="nbadge" id="nb-rec"></span></button><button role="tab" data-tab="guide">Guide<span class="nbadge" id="nb-guide"></span></button></div>
+  </nav></aside>
   <div class="readybar" id="readyBar"><span class="lbl">Trade readiness</span><span class="small muted">working it out…</span></div>
-  <section class="panel modalp" id="updPanel" hidden><header><h2>Update all</h2><button type="button" class="ghost mclose">Close</button></header><div id="updBody"></div></section>
-  <section class="panel modalp" id="rdPanel" hidden><header><h2>Trade readiness</h2><button type="button" class="ghost mclose">Close</button></header><div id="rdBody"></div></section>
+  <section class="panel modalp" id="updPanel" hidden><header><h2>Data and updates</h2><button type="button" class="ghost mclose">Close</button></header><div id="freshList"></div><div id="updBody"></div></section>
+  <section class="panel modalp" id="rdPanel" hidden><header><h2>Why this size</h2><button type="button" class="ghost mclose">Close</button></header><div id="rdBody"></div><h3>Size rules: term structure × trend</h3><div id="acMatrix"></div></section>
 
   <!-- MARKET (former Market Desk) -->
   <section class="tab" id="tab-actions">
-    <div class="row" id="acFilt" style="margin:0 0 8px;gap:12px"></div>
-    <div class="grid">
-      <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
+    <div class="row" id="acFilt" style="gap:12px"></div>
+    <div class="grid" data-subs id="acGrid">
+      <section class="panel c12" data-sub="Do today"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
         <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
-      <section class="panel c12"><header><h2>Market conditions</h2><span class="small muted">every signal from Market, Term structure, Skew &amp; IV, Expected moves and Seasonality: today's reading and what entries in the same conditions made since 2009, per structure (model, after costs)</span></header><div id="acCond"></div></section>
-      <section class="panel c12"><header><h2>Size rules: term structure × trend</h2><span class="small muted">what the two step rules do to each structure's size, with what each cell made since 2009 (model, after costs) · outlined = today</span></header><div id="acMatrix"></div></section>
-      <section class="panel c5"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
-      <section class="panel c7"><header><h2>Orders &amp; alerts to have in TWS</h2><span class="small muted">one GTC target close and two price alerts per open trade</span></header><div id="acOrders"></div></section>
-      <section class="panel c6"><header><h2>Coming up</h2><span class="small muted">next 3 days</span></header><div id="acComing"></div></section>
-      <section class="panel c6"><header><h2>Data check</h2><span class="small muted">anything that makes the numbers above out of date</span></header><div id="acChecks"></div></section>
+      <section class="panel c12" data-sub="Market conditions"><header><h2>Market conditions</h2><span class="small muted">every signal from Market, Term structure, Skew &amp; IV, Expected moves and Seasonality: today's reading and what entries in the same conditions made since 2009, per structure (model, after costs)</span></header><div id="acCond"></div></section>
+      <section class="panel c7" data-sub="Do today"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
+      <section class="panel c12" data-sub="Orders &amp; alerts"><header><h2>Orders &amp; alerts to have in TWS</h2><span class="small muted">one GTC target close and two price alerts per open trade</span></header><div id="acOrders"></div></section>
+      <section class="panel c5" data-sub="Do today"><header><h2>Coming up</h2><span class="small muted">next 3 days</span></header><div id="acComing"></div></section>
+      <section class="panel c12" data-sub="Data check"><header><h2>Data check</h2><span class="small muted">anything that makes the numbers above out of date</span></header><div id="acChecks"></div></section>
     </div>
   </section>
 
@@ -192,8 +180,8 @@
         <label class="small"><input type="checkbox" id="a14Usual"> your usual shapes only</label>
         <button type="submit">Scan</button><button type="button" id="a14Fetch">Fetch chain from TWS</button>
       </form>
-      <div class="small muted" id="a14Meta" style="margin-top:6px"></div>
-      <div class="small muted" id="a14DteNote">DTE defaults to 14–45: your closed A14s earned far more per day held there than at 46+ DTE (per-day numbers below, from the Journal). Widen it to compare: the per-day column uses your real holding period for each entry DTE.
+      <div class="small muted note" id="a14Meta" style="margin-top:6px"></div>
+      <div class="small muted note" id="a14DteNote">DTE defaults to 14–45: your closed A14s earned far more per day held there than at 46+ DTE (per-day numbers below, from the Journal). Widen it to compare: the per-day column uses your real holding period for each entry DTE.
         Ranked by default on <b>Since 2009 %/day</b>: each candidate's strikes, in units of today's implied move, rebuilt on every past Friday at the same DTE (in today's VIX/VIX3M band when it has 80+ entries) and managed with your Trade plan exits (+5/+7% target, −20% stop, 2 DTE, slow exit), after costs. The E/risk columns are today's one-path model odds; history is the better guide to how a shape behaves when the market moves.</div>
       <div id="a14Trend" style="margin-top:10px"></div>
     </div>
@@ -299,12 +287,14 @@
     <div class="grid" data-subs id="tab-guide-grid">
       <section class="panel c6" id="g-start" data-sub="Start here"><header><h2>1 · Getting started</h2></header>
         <ol>
+          <li><b>Each day, three steps:</b> read the size in the ribbon, work through Do today on Actions, then place any orders yourself in TWS. The desk never sends orders.</li>
           <li><b>It starts on its own.</b> The app runs in the background from login. Opening TradingView or TWS opens this page (TWS: after about 90 seconds while it logs in).</li>
           <li><b>Address:</b> <span class="mono">http://127.0.0.1:8810</span> — bookmark it. Only one copy ever runs; starting it again just opens the page.</li>
           <li><b>TWS must be running</b> for live data: positions, marks, NAV, option chains, the VIX family. Without it the desk shows the last saved data and falls back to free sources.</li>
           <li><b>Update all</b> (top of the page) refreshes every source in turn: TWS positions/NAV/fills, index bars, the A14 and expected-move chains, the option surface, then ETFs, CBOE and the calendar. It also runs on its own every 15 min while the US market is open and hourly otherwise; the open tab reloads when it finishes. Click the "Updated …" text for each source's result. Outside market hours the chains and surface keep their after-close capture (quotes are frozen).</li>
           <li><b>ONE:</b> export the Summary Report each day (Documents). The desk always reads the newest file; trade names and grouping come from it.</li>
-          <li><b>Theme:</b> the button at the top cycles Auto / Light / Dark.</li>
+          <li><b>Theme:</b> the sun and moon switch at the top sets light or dark mode. Until you use it the desk follows Windows.</li>
+          <li><b>Long notes</b> show one line with ⓘ: click to read the rest.</li>
           <li><b>Sub-tabs:</b> long tabs are split into sub-tabs (the small buttons under the controls) so each view fits on one screen; the desk remembers the last one you used.</li>
           <li><b>Red "ONE export is …h old" banner</b> on Risk grid / Reconciliation: export a fresh ONE Summary Report — differences may just be trades not yet in ONE.</li>
         </ol>
@@ -313,7 +303,7 @@
       <section class="panel c6" id="g-daily" data-sub="Start here"><header><h2>2 · Daily routine (10 minutes)</h2></header>
         <ol>
           <li><b>Actions</b> (opens first) — the short list: open trades past a line in their card, whether new entries are on today and the best A14 shapes if so, the GTC target and alert levels to have in TWS, releases and time stops in the next 3 days, and any data that is out of date. <i>Market conditions</i> puts every signal from the Market, Term structure, Skew &amp; IV, Expected moves and Seasonality tabs in one table, with what entries in the same conditions made since 2009 for each structure and which signals feed the size call. Everything else below is the detail behind it.</li>
-          <li><b>Trade readiness bar</b> (top of every tab) — the one size call for new premium selling, with a size per structure (A14 SPX/RUT, calendars SPX/RUT). Press <i>Why</i> for what set it. Check the data strip beside the title: anything red is older than the last close.</li>
+          <li><b>Trade readiness bar</b> (top of every tab) — the one size call for new premium selling, with a size per structure (A14 SPX/RUT, calendars SPX/RUT). Press <i>Why</i> for what set it and the size rules (today's row first, all 8 rows one click away). Check the data strip beside the title: anything red is older than the last close.</li>
           <li><b>Market</b> — the warnings, regime and VIX panels now show their tested odds; they are inputs to the readiness bar, not separate verdicts.</li>
           <li><b>Risk grid</b> — press <i>Refresh marks from TWS</i>. Check P&amp;L now, Delta per 1% and Worst in range. Sort Open trades by <i>Days to expiry</i> to see what needs managing.</li>
           <li><b>P&amp;L &amp; Recon</b> — both accounts should say <i>Quantities match</i>. If not, fix ONE before trusting the risk grid.</li>

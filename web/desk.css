@@ -1,0 +1,102 @@
+/* Calm layout, loaded last on the desk and the Market page. Colour has one meaning each: red = stop or warning,
+   amber = caution, teal = OK, blue = size or selection. Sentence case, one set of type sizes, quieter panels. */
+body{font-size:13.5px;line-height:1.45}
+h1,h2,h3,th,button,.lbl,.chip,.phead,a.btnlink,.demo{text-transform:none;letter-spacing:0}
+h2{font-size:15px;font-weight:600}
+h3{font-size:13.5px;font-weight:600;color:var(--ink)}
+.lbl{font-size:12px;font-weight:500}
+th{font-size:12px;font-weight:600}
+button,a.btnlink{font-size:13px;font-weight:600;border-radius:7px;padding:5px 12px}
+input,select{border-radius:6px}
+.panel{border-radius:10px;padding:13px 15px;gap:9px}
+.grid{gap:12px}
+.chip{border:0;border-radius:999px;font-size:12px;padding:1px 9px;background:var(--soft);color:var(--ink)}
+.chip.pos{background:color-mix(in srgb,var(--up) 15%,transparent);color:var(--up)}
+.chip.neg{background:color-mix(in srgb,var(--down) 14%,transparent);color:var(--down)}
+.chip.wrn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.sz{color:var(--accent)}
+.state{border-radius:8px}
+.kv>div{border-radius:8px}
+.subnav{gap:6px;margin:0}
+.subnav button{border-radius:999px;font-size:13px;font-weight:500;padding:4px 13px;color:var(--ink)}
+.subnav button[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.tab>.subnav,.grid+.subnav{margin-bottom:10px}
+
+/* long explanations: one quiet line, click to read the rest */
+.note{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;cursor:pointer;max-width:none}
+.note::before{content:"ⓘ ";color:var(--faint)}
+.note.open{display:block;cursor:default;max-width:95ch}
+.panel>header>.small.muted{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel>header>h2{flex:0 0 auto}
+
+/* ------ shell (desk only): one top bar, sticky readiness ribbon, grouped sidebar ------ */
+.desk .wrap{max-width:none;padding:0;display:grid;grid-template-columns:214px minmax(0,1fr);gap:0;align-items:start}
+.desk header.top{grid-column:1/-1;position:sticky;top:0;z-index:40;display:flex;flex-wrap:nowrap;justify-content:flex-start;align-items:center;gap:10px;
+  min-height:50px;padding:7px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;margin-right:auto;min-width:0}
+.brand h1{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bdot{width:9px;height:9px;border-radius:50%;background:var(--up);flex:none}
+#navBtn{display:none;padding:4px 9px;flex:none}
+.datapill{display:inline-flex;align-items:center;gap:6px;background:color-mix(in srgb,var(--up) 13%,transparent);color:var(--up);border:0;border-radius:999px;padding:4px 12px;
+  font-size:13px;font-weight:600;white-space:nowrap;flex:none}
+.datapill.st{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.updbox{gap:7px}
+#updMeta{color:var(--muted);font-size:12px}
+.themeBtn{min-width:0;display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--soft);border:1px solid var(--line);color:var(--muted);flex:none}
+.themeBtn span{display:grid;place-items:center;width:26px;height:24px;border-radius:999px}
+.themeBtn svg{width:15px;height:15px}
+.themeBtn[aria-checked="false"] .sun,.themeBtn[aria-checked="true"] .moon{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+
+.desk .readybar{grid-column:1/-1;position:sticky;top:50px;z-index:30;flex-wrap:nowrap;gap:9px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:7px 16px;background:var(--panel)}
+.desk .readybar>*{flex:none}
+.desk .readybar .lbl{color:var(--muted)}
+.rdsize{font-weight:700;font-size:17px;white-space:nowrap}
+.desk .rdwhy{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button.rdchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-size:12px;font-weight:500;padding:2px 8px;white-space:nowrap}
+button.rdchip:hover{border-color:var(--accent)}
+#rdOpen{white-space:nowrap}
+
+.side{grid-column:1;grid-row:3;position:sticky;top:96px;max-height:calc(100vh - 96px);overflow:auto;padding:12px 10px;border-right:1px solid var(--line);min-height:calc(100vh - 96px)}
+.side .tabs{display:flex;flex-direction:column;flex-wrap:nowrap;gap:14px;border:0;border-radius:0;overflow:visible}
+.ngroup{display:flex;flex-direction:column;gap:1px}
+.ngroup>span{font-size:12px;font-weight:600;color:var(--muted);padding:0 9px 3px}
+.side .tabs button{display:flex;justify-content:space-between;align-items:center;gap:6px;width:100%;background:transparent;color:var(--ink);border:0;border-radius:7px;
+  padding:6px 9px;font-size:13.5px;font-weight:500;text-align:left}
+.side .tabs button+button{border-left:0}
+.side .tabs button:hover{background:var(--soft)}
+.side .tabs button[aria-selected="true"]{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);font-weight:600}
+.nbadge{font-family:var(--f-mono);font-size:11px;font-weight:500;padding:0 6px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.nbadge:empty{display:none}
+.nbadge.pos{background:color-mix(in srgb,var(--up) 15%,transparent);color:var(--up)}
+.nbadge.neg{background:color-mix(in srgb,var(--down) 14%,transparent);color:var(--down)}
+.nbadge.wrn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.nbadge.sz{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent)}
+
+.desk .tab{grid-column:2;grid-row:3;padding:14px 18px 36px;min-width:0;max-width:1560px}
+#acFilt{margin:0 0 10px!important}
+.lockcard{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:30px 16px}
+.lockcard ul{margin:0;padding-left:18px;text-align:left;color:var(--muted)}
+.lockcard .ic{font-size:30px;line-height:1}
+
+/* cloud copy: snapshot chip and its pop-over */
+#cloudSlot{position:relative;flex:none}
+.snapchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:600;padding:3px 12px;white-space:nowrap}
+.snapchip.open{background:color-mix(in srgb,var(--up) 13%,transparent);color:var(--up);border-color:transparent}
+.snappop{position:absolute;right:0;top:calc(100% + 8px);z-index:70;width:min(320px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:12.5px}
+.snappop input[type=password]{width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+
+@media (max-width:1180px){.desk .rdwhy{display:none} .desk .readybar{flex-wrap:wrap}}
+@media (max-width:900px){
+  .desk .wrap{grid-template-columns:minmax(0,1fr)}
+  .desk header.top{flex-wrap:wrap;position:static;padding:7px 12px}
+  #navBtn{display:inline-block}
+  .panel>header{flex-wrap:wrap}
+  .panel>header>h2{flex:0 1 auto}
+  .brand{flex:1 1 0}
+  .desk .readybar{position:static;padding:7px 12px}
+  .side{position:fixed;left:0;top:0;bottom:0;z-index:80;width:240px;max-height:none;background:var(--panel);box-shadow:0 0 0 100vmax rgba(0,0,0,.5);transform:translateX(-110%);visibility:hidden}
+  .side.open{transform:none;visibility:visible}
+  .desk .tab{grid-column:1;grid-row:auto;padding:12px 12px 30px}
+}
+@media (max-width:560px){.brand h1,#updMeta{display:none} .brand{flex:0 0 auto;margin-right:auto}}

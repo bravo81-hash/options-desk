@@ -84,7 +84,7 @@ function sparkBars(items, cfg = {}) {
 }
 /* Size meter: four segments, quarter to full. */
 function sizeMeter(size) {
-  const k = ["Stand aside", "Quarter size", "Half size", "Three-quarter size", "Full size"].indexOf(size), col = k <= 0 ? "var(--down)" : k <= 2 ? "var(--warn)" : "var(--up)";
+  const k = ["Stand aside", "Quarter size", "Half size", "Three-quarter size", "Full size"].indexOf(size), col = k <= 0 ? "var(--down)" : k === 4 ? "var(--up)" : "var(--accent)";
   return `<svg width="76" height="10" viewBox="0 0 76 10" role="img" aria-label="${esc(size)}">${[1, 2, 3, 4].map((i) => `<rect x="${(i - 1) * 19}" y="1" width="17" height="8" rx="2" fill="${i <= k ? col : "var(--soft)"}"/>`).join("")}</svg>`;
 }
 

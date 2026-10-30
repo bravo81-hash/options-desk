@@ -7,18 +7,20 @@ const pctTxt = (p) => ok(p) ? `${fmt(p, 0)}th pct` : "";
 const errBox = (e) => `<div class="state err">${esc(e.message || e)}</div>`;
 
 /* ---------------- theme: auto (Windows setting) / light / dark, also applied to the Market iframe ---------------- */
-const THEMES = ["auto", "light", "dark"];
+const isDark = (t) => t === "auto" ? matchMedia("(prefers-color-scheme: dark)").matches : t === "dark";
 function applyTheme(t) {
   const set = (doc) => { if (!doc) return; if (t === "auto") delete doc.documentElement.dataset.theme; else doc.documentElement.dataset.theme = t; };
   set(document);
   try { set($("mdFrame") && $("mdFrame").contentDocument); } catch (e) {}
-  $("themeBtn").textContent = {auto: "Auto", light: "Light", dark: "Dark"}[t];
+  const dark = isDark(t);
+  $("themeBtn").setAttribute("aria-checked", String(dark));
+  $("themeBtn").title = dark ? "Switch to light mode" : "Switch to dark mode";
   document.querySelectorAll(".chart").forEach((c) => c._draw && c._draw());
 }
-let theme = "auto";
-try { theme = localStorage.getItem("od.theme") || "auto"; } catch (e) {}
+let theme = "auto";  // until the switch is used the desk follows Windows
+try { const t = localStorage.getItem("od.theme"); if (t === "light" || t === "dark") theme = t; } catch (e) {}
 applyTheme(theme);
-$("themeBtn").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; try { localStorage.setItem("od.theme", theme); } catch (e) {} applyTheme(theme); });
+$("themeBtn").addEventListener("click", () => { theme = isDark(theme) ? "light" : "dark"; try { localStorage.setItem("od.theme", theme); } catch (e) {} applyTheme(theme); });
 $("mdFrame").addEventListener("load", () => applyTheme(theme));
 
 /* ---------------- data freshness (header) ---------------- */
@@ -27,17 +29,25 @@ async function loadFresh() {
     const F = await api("/api/freshness");
     const day = (d) => d ? new Date(d + "T12:00:00Z").toLocaleDateString([], {day: "numeric", month: "short", timeZone: "UTC"}) : "none";
     const stale = F.sources.filter((x) => x.stale);
-    $("freshBar").innerHTML = `<span class="small muted">Last close ${day(F.last_close)}</span>` + F.sources.map((x) =>
-      `<span class="fchip ${x.stale ? "st" : ""}" title="${esc(x.what)}${x.stale ? " — older than the last close" : ""}">${esc(x.name)} <b>${x.name === "ONE export" ? (x.stale ? "stale" : "ok") : day(x.date)}</b></span>`).join("") +
-      (stale.length ? `<span class="small" style="color:var(--down)">${stale.length} stale</span>` : "");
-  } catch (e) { $("freshBar").innerHTML = ""; }
+    $("freshBar").className = "datapill" + (stale.length ? " st" : "");
+    $("freshBar").textContent = `Data: ${day(F.last_close)} ${stale.length ? `· ${stale.length} stale` : "✓"}`;
+    $("freshList").innerHTML = `<p class="small muted">Latest US close: <b>${day(F.last_close)}</b></p><div class="tbl"><table><thead><tr><th>Source</th><th class="n">Date</th><th>Used by</th></tr></thead><tbody>${F.sources.map((x) =>
+      `<tr><td>${esc(x.name)}</td><td class="n ${x.stale ? "wrn" : ""}">${x.name === "ONE export" ? (x.stale ? "stale" : "ok") : day(x.date)}</td><td class="small muted">${esc(x.what)}</td></tr>`).join("")}</tbody></table></div>`;
+  } catch (e) { $("freshBar").textContent = "Data"; }
 }
 loadFresh(); setInterval(loadFresh, 300000);
+$("freshBar").addEventListener("click", () => { $("updPanel").hidden = false; });
+
+/* live badges in the sidebar */
+window.navBadge = (tab, text, cls = "") => { const b = $("nb-" + tab); if (b) { b.textContent = text; b.className = "nbadge " + cls; } };
+$("navBtn").addEventListener("click", (e) => { e.stopPropagation(); $("sideNav").classList.toggle("open"); });
+document.addEventListener("click", (e) => { if (!e.target.closest("#sideNav")) $("sideNav").classList.remove("open"); });
 
 /* ---------------- tabs ---------------- */
 const loaded = {};
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  $("sideNav").classList.remove("open");
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + name; });
   try { sessionStorage.setItem("od.tab", name); } catch (e) {}
   if (!loaded[name]) { loaded[name] = true; ({actions: () => window.loadActions(), market: () => { if (mdStale) { mdStale = false; try { $("mdFrame").contentWindow.location.reload(); } catch (e) {} } }, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => window.loadA14(), pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }

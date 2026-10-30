@@ -11,12 +11,8 @@ function render(U) {
   const failed = S.filter((s) => s.state === "failed"), cur = S.find((s) => s.state === "running");
   $("updBtn").disabled = !!U.running;
   $("updBtn").textContent = U.running ? `Updating ${Math.min(done + 1, n)}/${n}` : "Update all";
-  const bar = n ? segBar([{n: S.filter((s) => s.state === "done").length, color: "var(--up)", label: "updated"},
-    {n: S.filter((s) => s.state === "skipped").length, color: "var(--line)", label: "already current or skipped"},
-    {n: failed.length, color: "var(--down)", label: "failed"}, {n: S.filter((s) => ["running", "waiting"].includes(s.state)).length, color: "var(--soft)", label: "to do"}], {w: 70, h: 6}) : "";
-  $("updMeta").innerHTML = U.running ? `${bar} <span>${esc(cur ? cur.label : "starting")}…</span>`
-    : `${bar} <span title="${esc(U.source === "auto" ? "automatic update" : "your update")}">Updated ${tm(U.finished)}${U.source === "auto" ? " (auto)" : ""}</span>${
-      failed.length ? ` <span class="neg">${failed.length} failed</span>` : ""}${U.next_auto ? ` <span class="muted">· next ${tm(U.next_auto)}</span>` : ""}`;
+  $("updMeta").innerHTML = U.running ? `<span>${esc(cur ? cur.label : "starting")}…</span>`
+    : `<span title="${esc(U.source === "auto" ? "automatic update" : "your update")}">${tm(U.finished)}</span>${failed.length ? ` <span class="neg">${failed.length} failed</span>` : ""}`;
   $("updBody").innerHTML = `<p class="small muted">Every source in turn, one TWS connection at a time. Automatic every ${U.every.open_min} min while the US market is open, every ${U.every.closed_min} min otherwise${
     U.every.enabled ? "" : " (switched off in config)"}. Market is <b>${U.open ? "open" : "closed"}</b>.</p>
     <div class="tbl"><table><thead><tr><th></th><th>Source</th><th>Feeds</th><th class="n">Took</th><th>Result</th></tr></thead><tbody>${

@@ -28,6 +28,10 @@ function initSubtabs(host) {
 function showSub(host, name) { if (host && host._showSub) host._showSub(name); }
 document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-subs]").forEach(initSubtabs));
 
+/* long notes show one line; a click opens the rest (links and buttons inside still work) */
+document.addEventListener("click", (e) => { const n = e.target.closest(".note"); if (n && !e.target.closest("a,button,input,select")) n.classList.toggle("open"); });
+document.addEventListener("DOMContentLoaded", () => document.querySelectorAll(".panel>header>.small.muted").forEach((s) => { if (!s.title && s.textContent) s.title = s.textContent; }));
+
 /* pop-up detail panels (.modalp): close with the Close button, Esc, or a click outside */
 document.addEventListener("click", (e) => { const b = e.target.closest(".mclose"); if (b) { const m = b.closest(".modalp"); if (m) m.hidden = true; } });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelectorAll(".modalp:not([hidden])").forEach((m) => { m.hidden = true; }); });

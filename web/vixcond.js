@@ -6,7 +6,7 @@ const okv = (v) => v != null && isFinite(v);
 const f = (v, d = 1) => okv(v) ? Number(v).toFixed(d) : "–";
 const sg = (v, d = 1) => okv(v) ? (v > 0 ? "+" : "") + Number(v).toFixed(d) : "–";
 const KIND = {sitout: ["Sit out", "var(--down)"], caution: ["Caution", "var(--warn)"], take: ["Opportunity", "var(--up)"]};
-const SIZE = {"Full size": "var(--up)", "Reduce about a quarter": "var(--accent)", "Half size": "var(--warn)", "Stand aside": "var(--down)"};
+const SIZE = {"Full size": "var(--up)", "Reduce about a quarter": "var(--accent)", "Half size": "var(--accent)", "Stand aside": "var(--down)"};
 
 function statLine(s, base) {
   if (!s) return `<span class="muted">not enough history</span>`;

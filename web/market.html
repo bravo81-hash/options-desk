@@ -4,28 +4,28 @@
 <title>Market</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script>try { const t = localStorage.getItem("od.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <style>
 /* Layout: trading-desk board. Regime strip of instruments on top, then chart panels on a
    12-col grid. Up/down colours reuse the Pine tables (teal / red); warning states reuse the
    Pine panes (white / fuchsia / red). Series slots follow the validated categorical order. */
 :root{
-  --bg:#e8ecf0; --panel:#fbfcfd; --ink:#11171f; --muted:#5a6573; --faint:#8a95a3; --line:#d6dce3; --grid:#e6eaef; --soft:#eef2f6;
-  --accent:#b85f00;
-  --up:#1b8f84; --down:#d64545; --warn:#b02a9d; --info:#2a78d6;
+  --bg:#f4f6f9; --panel:#ffffff; --ink:#1c2430; --muted:#5b6675; --faint:#8a95a3; --line:#e2e7ee; --grid:#eef1f5; --soft:#f0f3f7;
+  --accent:#2563eb;
+  --up:#0f8f83; --down:#d93838; --warn:#a16207; --info:#2563eb;
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
-  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
-  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --f-display:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0c1015; --panel:#141a21; --ink:#e6ebf1; --muted:#93a0af; --faint:#6b7684; --line:#26303b; --grid:#1e262f; --soft:#1a222b;
-  --accent:#f0a030; --up:#2fbfa9; --down:#ff6b6b; --warn:#e45fd5; --info:#3987e5;
+  --accent:#5b9bf5; --up:#2fbfa9; --down:#ff6b6b; --warn:#e0a83e; --info:#5b9bf5;
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0c1015; --panel:#141a21; --ink:#e6ebf1; --muted:#93a0af; --faint:#6b7684; --line:#26303b; --grid:#1e262f; --soft:#1a222b;
-  --accent:#f0a030; --up:#2fbfa9; --down:#ff6b6b; --warn:#e45fd5; --info:#3987e5;
+  --accent:#5b9bf5; --up:#2fbfa9; --down:#ff6b6b; --warn:#e0a83e; --info:#5b9bf5;
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; color-scheme:dark}
 .embedded .standalone{display:none}
 .embedded .wrap{padding-block:0 24px}
@@ -140,6 +140,7 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:no-preference){.loading{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{50%{opacity:.45}}}
 </style>
 <link rel="stylesheet" href="compact.css">
+<link rel="stylesheet" href="desk.css">
 <link rel="stylesheet" href="vixcond.css">
 <script src="vixcond.js"></script>
 <script src="subtabs.js"></script>

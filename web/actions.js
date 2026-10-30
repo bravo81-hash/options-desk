@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const money = (v) => ok(v) ? (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString() : "–";
 const pctS = (v, d = 1) => ok(v) ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "–";
 const cls = (v) => !ok(v) ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
-const SIZE_CLS = {"Full size": "pos", "Three-quarter size": "pos", "Half size": "wrn", "Quarter size": "wrn", "Stand aside": "neg"};
+const SIZE_CLS = {"Full size": "pos", "Three-quarter size": "sz", "Half size": "sz", "Quarter size": "sz", "Stand aside": "neg"};
 const ACT = {exit: ["neg", "Exit"], decide: ["neg", "Decide"], close: ["pos", "Close"], slow: ["wrn", "Exit at next green"]};
 const go = (tab, text, sub) => `<a href="#" class="small" data-go="${tab}"${sub ? ` data-sub="${esc(sub)}"` : ""}>${esc(text)} →</a>`;
 const order = (o) => o ? `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>` : "–";
@@ -63,9 +63,10 @@ async function load() {
 }
 
 function doToday(Rk) {
-  if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Unlock your snapshot (top bar) to see your trades." : "Open trades unavailable: is the ONE Summary Report in Documents?"}</div>`; return; }
+  if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Your trades are locked. <button type=\"button\" class=\"unlockBtn\">Unlock snapshot</button>" : "Open trades unavailable: is the ONE Summary Report in Documents?"}</div>`; return; }
   const P = Rk.trades.filter((t) => t.plan && t.plan.act !== "hold").sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   const held = Rk.trades.filter((t) => t.plan && t.plan.act === "hold").length, noCard = Rk.trades.filter((t) => !t.plan).length;
+  if (window.navBadge) { navBadge("actions", P.length ? String(P.length) : "", P.length ? "wrn" : ""); navBadge("risk", String(L.Rk.trades.length)); }
   $("acDoMeta").textContent = `${Rk.trades.length}${active() ? ` of ${L.Rk.trades.length}` : ""} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}`;
   if (!P.length) { $("acDo").innerHTML = `<div class="state">Nothing to do on ${active() ? "the filtered" : "open"} trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
   $("acDo").innerHTML = `<div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
@@ -128,8 +129,13 @@ async function matrix(Rd) {
   if (BT && !BT.matrix && !BT.error && btTries++ < 8) setTimeout(() => matrix(Rd), 20000);  // first run after an update computes in the background
 }
 
+let MX = null, mxAll = false;
+window.renderMatrix = matrix;
+document.addEventListener("click", (e) => { if (e.target.id === "acMxAll") { mxAll = !mxAll; matrixRender(MX); } });
+
 function matrixRender(Rd) {
   const size = Rd.size, cur = Rd.ivts_band.band;
+  MX = Rd;
   const trendOf = (s) => (Rd.trends[s.split(" ")[1]] || {}).short_up ? "above" : "below";
   const cell = (s, b, t) => {
     const steps = Rd.matrix[s.split(" ")[0]][b][t];
@@ -139,12 +145,13 @@ function matrixRender(Rd) {
     const r = BT && BT.matrix && BT.matrix[s] && BT.matrix[s].cells[b] && BT.matrix[s].cells[b][t];
     const now = b === cur && t === trendOf(s);
     const tint = r ? `background:color-mix(in srgb, ${r.avg >= 0 ? "var(--up)" : "var(--down)"} ${Math.round(Math.min(Math.abs(r.avg) / 5, 1) * 28)}%, transparent);` : "";
-    return `<td class="n" style="${tint}${now ? "outline:2px solid var(--accent);outline-offset:-2px" : ""}">${chip}<br><span class="small ${r ? cls(r.avg) : "muted"}">${r ? `${pctS(r.avg)} · ${Math.round(100 * r.win)}% won` : BT && BT.matrix ? "no entries" : "computing…"}</span>${r ? ` <span class="small muted">n ${r.n}</span>` : ""}</td>`;
+    return `<td class="n" style="${tint}${now ? "outline:2px solid var(--accent);outline-offset:-2px" : ""}">${chip}<br><span class="small ${r ? cls(r.avg) : "muted"}">${r ? `${pctS(r.avg)} · ${Math.round(100 * r.win)}% won` : BT && BT.matrix ? "no entries" : ""}</span>${r ? ` <span class="small muted">n ${r.n}</span>` : ""}</td>`;
   };
-  const rows = BANDS.flatMap(([b, name, rng]) => ["above", "below"].map((t, k) => `<tr${b === cur ? ` style="background:color-mix(in srgb, var(--accent) 7%, transparent)"` : ""}>${k ? "" : `<td rowspan="2"><b>${name}</b><br><span class="small muted">VIX/VIX3M ${rng}</span></td>`}
+  const rows = BANDS.filter(([b]) => mxAll || b === cur).flatMap(([b, name, rng]) => ["above", "below"].map((t, k) => `<tr${b === cur ? ` style="background:color-mix(in srgb, var(--accent) 7%, transparent)"` : ""}>${k ? "" : `<td rowspan="2"><b>${name}</b><br><span class="small muted">VIX/VIX3M ${rng}</span></td>`}
     <td class="small">${t} 20-day avg</td>${STRUCTS.map((s) => cell(s, b, t)).join("")}</tr>`)).join("");
   $("acMatrix").innerHTML = `<p class="small" style="margin:0 0 6px">Today: VIX/VIX3M <b>${fmt(Rd.ivts, 3)}</b> (${esc(Rd.ivts_band.label)}) · VIX9D/VIX <b class="${ok(Rd.front) && Rd.front >= 0.9 ? "wrn" : ""}">${fmt(Rd.front, 3)}</b> · SPX ${trendOf("A14 SPX")} and RUT ${trendOf("A14 RUT")} their 20-day averages · market size <b>${esc(size)}</b> (${esc(Rd.why)}).</p>
     <div class="tbl"><table><thead><tr><th>Term structure</th><th>Index vs</th>${STRUCTS.map((s) => `<th class="n">${s}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p><button type="button" class="ghost" id="acMxAll">${mxAll ? "Show today's rows only" : "Show all 8 rows"}</button></p>
     <p class="note">How to read it: the market size (from the drop odds in the readiness bar) is the starting point; each cell shows the steps the term-structure, trend and front-of-curve rules take off it at today's VIX9D/VIX, and the size that leaves today. A14s take one more step with VIX9D/VIX at 0.90+ in a steep or normal term structure (the cells' results are for all VIX9D/VIX readings). Other flags on top: thin RUT premium (RVX within 3 pts of VIX) steps RUT A14s down, a high-impact release within 3 days steps calendars down. Results: A14 = 45 DTE, your median shape, revised exits (target 7%, stop −20%, time and pace), % of max loss; calendars = 15/22 DTE ATM put calendar, target 5%, stop −15%, % of the debit. The model uses one fixed skew shape, so it shows the term-structure and trend effect, not that day's skew.</p>`;
 }
 
