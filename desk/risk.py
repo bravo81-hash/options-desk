@@ -14,8 +14,8 @@ import re
 import threading
 
 from . import db, load_config
-from .trades import _newest, classify
-from .volmath import implied_vol
+from .trades import CALENDAR_FAMILY, _newest, classify
+from .volmath import forward_vol, implied_vol
 
 logging.getLogger("ib_async").setLevel(logging.CRITICAL)
 _lock = threading.Lock()
@@ -411,6 +411,39 @@ def one_freshness(path):
     return {"stale": bool(n) or age > 26, "age_h": round(age, 1), "fills_since": n, "exported": mt.isoformat(timespec="minutes")}
 
 
+def calendar_checks(t, rel, rv20):
+    """Each short leg against the nearest later long on the same side: IV at those strikes, forward vol vs RV20
+    and the releases the front expiry runs past. Information only: nothing in the plan or size call reads it."""
+    from .market import releases_past
+    today, out = dt.date.today(), {}
+    for s in t["legs"]:
+        later = [l for l in t["legs"] if l["qty"] > 0 and l["right"] == s["right"] and l["expiry_iso"] > s["expiry_iso"]]
+        if s["qty"] >= 0 or not later:
+            continue
+        b = min(later, key=lambda l: (abs((l["strike"] or 0) - (s["strike"] or 0)), l["expiry_iso"]))
+        fv, bv = (s["mark"] or {}).get("iv"), (b["mark"] or {}).get("iv")
+        fd, bd = [(dt.date.fromisoformat(l["expiry_iso"][:10]) - today).days for l in (s, b)]
+        fwd = forward_vol(fv, max(fd, 0.5) / 365, bv, bd / 365) if fv and bv else None
+        out[(s["strike"], s["right"], s["expiry_iso"])] = {
+            "strike": s["strike"], "back_strike": b["strike"], "right": s["right"], "front": s["expiry_iso"][:10], "back": b["expiry_iso"][:10],
+            "fdte": fd, "bdte": bd, "front_iv": fv and round(fv * 100, 2), "back_iv": bv and round(bv * 100, 2),
+            "spread": round((bv - fv) * 100, 2) if fv and bv else None, "fwd_vol": fwd and round(fwd * 100, 2),
+            "fwd_vs_rv": round(fwd * 100 - rv20, 2) if fwd and rv20 else None, **releases_past(rel, s["expiry_iso"][:10])}
+    return {"rv20": rv20 and round(rv20, 2), "pairs": sorted(out.values(), key=lambda p: (p["front"], p["strike"]))}
+
+
+def _book(m, spots, labels):
+    """Inputs for the book what-if: vol indexes, and margin per account from the last TWS read, keyed by label."""
+    from .history import series
+    start = (dt.date.today() - dt.timedelta(days=14)).isoformat()
+    last = lambda sym: next((float(v) for v in series(sym, start).iloc[::-1]), None)
+    rate = (m.get("acct") or {}).get("usd_rate") or {}
+    margin = [{"label": labels[a], "nav": v.get("NetLiquidation"), "excess": v.get("ExcessLiquidity"), "available": v.get("AvailableFunds"),
+               "maint": v.get("MaintMarginReq"), "currency": v.get("currency"), "rate": rate.get(a)}
+              for a, v in ((m.get("account") or {}).get("summary") or {}).items() if a in labels]
+    return {"vix": last("VIX"), "rvx": last("RVX"), "spx": spots.get("SPX") or last("SPX"), "margin": sorted(margin, key=lambda x: x["label"])}
+
+
 def payload():
     trades, path = load_open_trades()
     raw = db.get_meta("risk_marks")
@@ -452,9 +485,17 @@ def payload():
             t["opened_iso"] = None
         t["last_pnl"] = last_pnl.get(t["id"])
         t["new_since_close"] = t["last_pnl"] is None and bool(last_date) and (t["opened_iso"] or "")[:10] > last_date
+    cal = [t for t in trades if t["strategy"] in CALENDAR_FAMILY]
+    if cal:
+        from .analytics import realized
+        from .market import releases
+        rel = releases()
+        for t in cal:
+            t["calendar"] = calendar_checks(t, rel, realized(t["underlying"]))
+    labels = load_config()["risk"]["account_labels"]
     return {"trades": trades, "one_file": path, "one_fresh": one_freshness(path), "marks_ts": m.get("ts"), "spots": spots, "stocks": m.get("stocks", []),
             "missing": m.get("missing", []), "recon": recon, "status": status, "detail_exported": adj_ts,
-            "labels": load_config()["risk"]["account_labels"]}
+            "labels": labels, "book": _book(m, spots, labels)}
 
 
 def recon_view():

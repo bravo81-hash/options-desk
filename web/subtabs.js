@@ -64,6 +64,28 @@ document.addEventListener("click", (e) => {
   if (item && host && host._showSub) { e.preventDefault(); host._showSub(item.dataset.sub); requestAnimationFrame(() => t.scrollIntoView({behavior: "smooth", block: "start"})); }
 });
 
+/* trade count beside a result, flagged under 20: an average of so few says little */
+const THIN_N = 20;
+function nTag(n) {
+  if (n == null) return "";
+  const thin = n < THIN_N;
+  return `<span class="nt${thin ? " thin" : ""}" title="${n} trade${n === 1 ? "" : "s"}${thin ? ": under 20, too few to lean on" : ""}">${thin ? "⚑ " : ""}n ${n}</span>`;
+}
+
+/* releases a calendar's front expiry runs past. p = {events, beyond} from the server: events is null when the dates
+   are unavailable; beyond means the front runs past the known data releases, so an empty list is not a clean window */
+const RELEASE_MAJOR = ["CPI", "FOMC", "Payrolls"];
+const relDay = (d) => new Date(d + "T12:00:00Z").toLocaleDateString([], {day: "numeric", month: "short", timeZone: "UTC"});
+const relTxt = (p) => (p.events || []).map((e) => `${e.kind} ${relDay(e.date)}`).join(", ");
+function relChip(p) {
+  if (!p.events) return `<span class="small muted" title="Release dates are unavailable or over a week old: run Update all">dates unavailable</span>`;
+  const more = p.beyond ? " +?" : "", why = p.beyond ? " · runs past the known CPI and payroll dates" : "";
+  if (!p.events.length) return `<span class="small muted" title="${p.beyond ? "FOMC dates are known; CPI and payroll dates are only known about 30 days out" : "no CPI, FOMC, payrolls, PCE or GDP before the front expiry"}">${p.beyond ? "unknown" : "none"}</span>`;
+  const major = p.events.filter((e) => RELEASE_MAJOR.includes(e.kind)), first = major[0] || p.events[0], rest = p.events.length - 1;
+  const txt = `${first.kind} ${relDay(first.date)}${rest ? ` +${rest}` : ""}${more}`;
+  return major.length ? `<span class="chip wrn" title="${esc(relTxt(p) + why)}">⚑ ${esc(txt)}</span>` : `<span class="small muted" title="${esc(relTxt(p) + why)}">${esc(txt)}</span>`;
+}
+
 /* 51 -> "51st" */
 function ordinal(v) {
   if (v == null || !isFinite(v)) return "–";

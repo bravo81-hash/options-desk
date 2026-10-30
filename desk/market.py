@@ -4,7 +4,8 @@
   yfinance for ETFs and ES futures (consolidated volume, as on TradingView). Cached in SQLite.
 * Breadth: computed here from S&P 500 / Nasdaq-100 members (Wikipedia lists + yfinance closes):
   % of members above their 20/50/200-day SMA, overall and per GICS sector.
-* Economic calendar: Forex Factory weekly JSON (US events, high/medium impact).
+* Economic calendar: Forex Factory weekly JSON (US events, high/medium impact). Release dates further out:
+  the Fed's meeting page and TradingView's calendar, cached by refresh_releases().
 * Account: TWS (read-only), every managed sub-account.
 
 Symbols arrive in the TradingView form the page already used (e.g. AMEX:SPY, INDEX:S5FI) and are
@@ -13,6 +14,7 @@ mapped to these sources.
 import datetime as dt
 import io
 import json
+import re
 import threading
 
 import numpy as np
@@ -285,3 +287,98 @@ def calendar(date_from=None, date_to=None, widen=True):
         res["note"] = "Next week's schedule appears when the free feed rolls over on Sunday (US time); showing this week's events."
         return res
     return {"result": out, "status": "ok"}
+
+
+# long-range dates for the calendar checks. Forex Factory only covers the current week, so: the Fed's own page for
+# FOMC decisions, and TradingView's calendar (undocumented, about 30 days out) for the data releases
+RELEASES = [("FOMC", ("fed interest rate decision",)), ("Payrolls", ("non farm payrolls", "nonfarm payrolls")),
+            ("CPI", ("inflation rate", "core inflation rate", "cpi")), ("PCE", ("pce price index",)), ("GDP", ("gdp growth rate",))]
+NOT_RELEASE = ("minutes", "expectations", "nowcast", "forecast")
+MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
+
+
+def _release_kind(title):
+    t = title.lower()
+    if any(w in t for w in NOT_RELEASE):
+        return None
+    return next((k for k, words in RELEASES if any(t.startswith(w) or f" {w}" in t for w in words)), None)
+
+
+def parse_releases(rows):
+    """TradingView rows to one entry per release and day: {date, kind, title}, sorted."""
+    seen, out = set(), []
+    for e in rows:
+        kind = _release_kind(e.get("title") or "")
+        day = (e.get("date") or "")[:10]
+        if kind and day and (day, kind) not in seen:
+            seen.add((day, kind))
+            out.append({"date": day, "kind": kind, "title": e["title"]})
+    return sorted(out, key=lambda r: (r["date"], r["kind"]))
+
+
+def parse_fomc(html):
+    """Decision days from the Fed's meeting calendar page: the last day of each meeting."""
+    year, out = None, []
+    pattern = r"(\d{4}) FOMC Meetings|fomc-meeting__month[^>]*>\s*<strong>([^<]+)</strong>.*?fomc-meeting__date[^>]*>([^<]+)<"
+    for y, month, days in re.findall(pattern, html, re.S):
+        if y:
+            year = int(y)
+            continue
+        m, d = MONTHS.get(re.split(r"[/-]", month.strip())[-1][:3].lower()), re.findall(r"\d+", days)
+        if year and m and d:
+            out.append(f"{year}-{m:02d}-{int(d[-1]):02d}")
+    return sorted(set(out))
+
+
+def _fetch_tv():
+    now = dt.datetime.now(dt.timezone.utc)
+    frm, to = now.strftime("%Y-%m-%dT00:00:00.000Z"), (now + dt.timedelta(days=100)).strftime("%Y-%m-%dT00:00:00.000Z")
+    r = requests.get("https://economic-calendar.tradingview.com/events", params={"from": frm, "to": to, "countries": "US"}, timeout=20,
+                     headers={**UA, "Origin": "https://www.tradingview.com", "Referer": "https://www.tradingview.com/"})
+    r.raise_for_status()
+    feed = r.json().get("result") or []
+    rows = parse_releases(feed)
+    if not rows:
+        raise ValueError("no releases in the feed")
+    db.set_meta("tv:releases", json.dumps({"rows": rows, "to": max(e["date"] for e in feed)[:10]}))
+    db.set_meta("tv:releases:ts", dt.datetime.now().isoformat(timespec="seconds"))
+
+
+def _fetch_fomc():
+    r = requests.get("https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", headers=UA, timeout=20)
+    r.raise_for_status()
+    days = parse_fomc(r.text)
+    if not days:
+        raise ValueError("no meetings on the page")
+    db.set_meta("fed:fomc", json.dumps(days))
+
+
+def refresh_releases():
+    """Both sources in turn; a failure keeps the last good list. Returns what failed."""
+    bad = []
+    for name, fetch in (("TradingView", _fetch_tv), ("Fed", _fetch_fomc)):
+        try:
+            fetch()
+        except Exception as e:
+            bad.append(f"{name}: {type(e).__name__}")
+    return bad
+
+
+def releases():
+    """Cached dates, never the network, so any request can read them. `to` is how far the data releases are known."""
+    raw, ts = db.get_meta("tv:releases"), db.get_meta("tv:releases:ts")
+    tv = json.loads(raw) if raw else {"rows": [], "to": None}
+    rows = {(r["date"], r["kind"]): r for r in tv["rows"]}
+    for d in json.loads(db.get_meta("fed:fomc") or "[]"):
+        rows[(d, "FOMC")] = {"date": d, "kind": "FOMC", "title": "FOMC decision"}
+    age = (dt.datetime.now() - dt.datetime.fromisoformat(ts)).days if ts else 99
+    return {"ok": age <= 7, "rows": sorted(rows.values(), key=lambda r: (r["date"], r["kind"])), "ts": ts, "to": tv["to"]}
+
+
+def releases_past(rel, expiry):
+    """What an expiry (ISO date) runs past from today on. `beyond`: it runs past the known data releases, so an empty
+    list is not a clean window; `events` is None when the dates are unavailable."""
+    if not rel["ok"]:
+        return {"events": None, "beyond": True}
+    today = dt.date.today().isoformat()
+    return {"events": [r for r in rel["rows"] if today <= r["date"] <= expiry], "beyond": expiry > rel["to"]}

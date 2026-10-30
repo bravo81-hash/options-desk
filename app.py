@@ -301,6 +301,9 @@ def api_freshness():
     out = [{"name": n, "date": d, "stale": (d or "") < sess.isoformat(), "what": w} for n, d, w in src]
     out.append({"name": "ONE export", "date": fr.get("exported", "")[:10] if fr.get("exported") else None, "stale": bool(fr.get("stale")),
                 "what": f"ONE Summary Report, {fr.get('age_h')}h old" + (f", {fr.get('fills_since')} fills since" if fr.get("fills_since") else "")})
+    rel = market.releases()
+    out.append({"name": "Release dates", "date": rel["ts"][:10] if rel["ts"] else None, "stale": not rel["ok"],
+                "what": "Calendar checks: FOMC from the Fed, data releases from TradingView" + (f" to {rel['to']}" if rel["to"] else "")})
     return ok({"last_close": sess.isoformat(), "sources": out, "marks_ts": pl.get("marks_ts")})
 
 

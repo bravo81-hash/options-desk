@@ -295,6 +295,61 @@ function planBullet(t, w = 140) {
 }
 window.planBullet = planBullet;
 
+/* ---------- health line: P&L against plan, days held, short strikes in σ, adjust flag ---------- */
+const ptsS = (v) => ok(v) ? `${v > 0 ? "+" : ""}${v.toFixed(1)}` : "–";
+const PAST_SHORT = 0.5;  // σ through a short before it counts as breached: right around the short is a BWB's best zone
+const sdWord = (x) => `${fmt(Math.abs(x), 1)}σ ${x < 0 ? "below" : "above"}`;
+function shortsOf(t) {  // distance from spot in standard deviations of the move to that leg's own expiry
+  const n = now();
+  return t.legs.filter((l) => l.qty < 0 && l.expMs > n && ok(l.strike) && ok(t.spot)).map((l) => {
+    const sd = t.spot * l.vol * Math.sqrt(Math.max((l.expMs - n) / (365 * DAY), 1 / 365));
+    const z = (l.strike - t.spot) / sd;
+    return {strike: l.strike, right: l.right, sd: z, past: (l.right === "P" ? z : -z) >= PAST_SHORT};
+  }).sort((a, b) => a.sd - b.sd);
+}
+function shortsBit(t) {
+  const S = shortsOf(t); if (!S.length) return "";
+  const lo = S[0], hi = S[S.length - 1];
+  const tip = S.map((s) => `${fmt(s.strike, 0)}${s.right} ${sdWord(s.sd)}${s.past ? " (spot is well through it)" : ""}`).join(" · ") + ` · ${t.underlying} ${fmt(t.spot, 0)}`;
+  const near = Math.min(Math.abs(lo.sd), Math.abs(hi.sd)), far = Math.max(Math.abs(lo.sd), Math.abs(hi.sd));
+  const txt = hi.sd - lo.sd < 0.05 ? `short ${sdWord(lo.sd)}` : lo.sd * hi.sd > 0 ? `shorts ${fmt(near, 1)}–${fmt(far, 1)}σ ${lo.sd < 0 ? "below" : "above"}` : `shorts ${sdWord(lo.sd)} to ${sdWord(hi.sd)}`;
+  return `<span class="${S.some((s) => s.past) ? "wrn" : ""}" title="${esc(tip)}">${txt}</span>`;
+}
+const dayBit = (t) => ok(t.ditNow) ? `<span class="${t.overstay ? "wrn" : ""}" title="${ok(t.usualHold) ? `days in trade, against about ${Math.round(t.usualHold)} for your closed trades with this entry DTE` : "days in trade"}">day ${t.ditNow}${ok(t.usualHold) ? ` of ~${Math.round(t.usualHold)}` : ""}</span>` : "";
+const adjBit = (t) => t.plan ? `<span class="chip ${ADJ_CLS[t.plan.adj.ok]}" title="${esc(t.plan.adj.why + (t.plan.how ? " → " + t.plan.how : ""))}">${ADJ_ICON[t.plan.adj.ok] || ""}Adjust? ${esc(t.plan.adj.ok)}</span>` : "";
+const relBit = (t) => { const P = t.calendar ? t.calendar.pairs : []; if (!P.length) return "";
+  const seen = new Map(P.flatMap((p) => (p.events || []).map((e) => [e.date + e.kind, e])));
+  return relChip({events: P.some((p) => !p.events) ? null : [...seen.values()].sort((a, b) => a.date.localeCompare(b.date)), beyond: P.some((p) => p.beyond)}); };
+function healthBits(t) { return [dayBit(t), shortsBit(t), adjBit(t), relBit(t)].filter(Boolean); }
+function healthLine(t, bare) {
+  const bits = bare ? [dayBit(t), shortsBit(t), relBit(t)].filter(Boolean) : healthBits(t);
+  return `<div class="hline">${t.plan ? planBullet(t, 110) : ""}<b class="${cls(t.totalPct)}">${pctS(t.totalPct)}</b>${!bare && t.plan && t.plan.act !== "hold" ? planChip(t) : ""}${bits.join("")}</div>`;
+}
+window.healthBits = healthBits;
+const calLine = (t) => t.calendar && t.calendar.pairs.length ? `<div class="small muted">${t.calendar.pairs.map((p) => `${fmt(p.strike, 0)}${p.right} ${p.fdte}d / ${p.bdte}d: IV ${fmt(p.front_iv, 1)} / ${fmt(p.back_iv, 1)}, spread ${ptsS(p.spread)} · forward vol ${fmt(p.fwd_vol, 1)} vs RV20 ${fmt(t.calendar.rv20, 1)} (${ptsS(p.fwd_vs_rv)})`).join("<br>")}</div>` : "";
+
+/* ---------- book what-if: σ moves with an IV shift, against what each account has left ---------- */
+const WI_IV = [[-3, "IV −3 pts"], [0, "IV unchanged"], [5, "IV +5 pts"], [10, "IV +10 pts"]], WI_SD = [-2, -1, 0, 1, 2];
+const heat = (v, full) => `background:color-mix(in srgb, var(${v >= 0 ? "--up" : "--down"}) ${Math.round(Math.min(Math.abs(v) / full, 1) * 45)}%, transparent)`;
+function whatIf(T, G) {
+  const b = R.book || {}, h = +$("rkWiDays").value, spx = b.spx;
+  if (!ok(b.vix) || !ok(spx) || !T.length) return `<div class="state">No VIX or SPX close to size the moves from, or no open trades.</div>`;
+  const sd = b.vix / 100 * Math.sqrt(h / 365), at = now() + h * DAY;
+  const chg = (tt, x, dv) => tt.reduce((s, t) => s + value(t, t.spot * (1 + x * t.beta), Math.min(at, t.firstExp), dv) - t.model0, 0);
+  const grid = (tt) => WI_IV.map(([pts]) => WI_SD.map((k) => chg(tt, k * sd, pts / 100)));
+  const all = grid(T), full = Math.max(...all.flat().map(Math.abs), 1);
+  $("rkWiMeta").textContent = `1σ = ±${(100 * sd).toFixed(1)}% SPX in ${h === 1 ? "1 day" : h + " days"}, from VIX ${fmt(b.vix, 1)}`;
+  const head = WI_SD.map((k) => `<th class="n">${k ? `${k > 0 ? "+" : "−"}${Math.abs(k)}σ` : "Flat"}<br><span class="small muted">SPX ${fmt(spx * (1 + k * sd), 0)}</span></th>`).join("");
+  const table = `<div class="tbl"><table class="wi"><thead><tr><th>Change from P&amp;L now</th>${head}</tr></thead><tbody>${all.map((row, i) => `<tr><td>${WI_IV[i][1]}</td>${row.map((v) => `<td class="n ${cls(v)}" style="${heat(v, full)}">${money(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const left = [...new Set(T.map(label))].map((a) => { const tt = T.filter((t) => label(t) === a), m = (b.margin || []).find((x) => x.label === a) || {};
+    const worst = Math.min(...grid(tt).flat()), rate = m.rate || 1, cur = m.currency || "USD", after = ok(m.excess) ? m.excess + worst * rate : null;
+    const d = tt.reduce((s, t) => s + G[T.indexOf(t)].dollarDelta1pct * t.beta, 0) / (0.01 * spx);
+    return `<tr><td>${esc(a)}</td><td class="n">${fmt(d, 1)}</td><td class="n ${cls(worst)}">${money(worst)}</td><td class="n">${ok(m.excess) ? Math.round(m.excess).toLocaleString() : "–"}</td><td class="n">${ok(m.available) ? Math.round(m.available).toLocaleString() : "–"}</td>
+      <td class="n ${ok(after) && after < 0 ? "neg" : ""}">${ok(after) ? `${hBarSvg(Math.max(after, 0), m.excess || 1, {w: 70, zeroLeft: true, color: "var(--accent)", label: "excess liquidity left after the worst cell"})} ${Math.round(after).toLocaleString()} ${esc(cur)}` : "not read yet"}</td></tr>`; }).join("");
+  return `${table}<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Account</th><th class="n" title="position delta in SPX points: delta per 1% move ÷ 1% of SPX, RUT at the beta above">SPX-weighted delta</th><th class="n">Worst cell (USD)</th><th class="n">Excess liquidity</th><th class="n">Available funds</th><th class="n">Excess left after the worst cell</th></tr></thead><tbody>${left}</tbody></table></div>
+    <p class="note">Each cell reprices every open leg on that date, so time decay is in it; a trade that expires sooner is frozen at its first expiry, as on the graph. σ is SPX's implied move over the horizon from the VIX; RUT moves ${fmt(+$("rkBeta").value, 1)} × that (set above) and stocks the same %. IV shifts every leg by the same points with each strike's IV held, so a change in skew or a move in only one expiry is not in here. Margin comes from the last TWS read, in each account's own currency, with USD results converted at its rate. <b>Excess left is a best case</b>: the requirement rises in a real move as well, and this holds it at today's level.</p>`;
+}
+
 function planView(T) {
   const P = T.filter((t) => t.plan).sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   if (!P.length) return `<div class="state">No open trade has card rules (A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal, Flyagonal).</div>`;
@@ -304,15 +359,16 @@ function planView(T) {
   return `<div class="kv mini" style="margin-bottom:10px">${[["Exit or decide today", n("exit") + n("decide"), "neg", ""], ["Close now", n("close"), "pos", mg("close") + " margin"], ["Slow: exit at next green", n("slow"), "wrn", mg("slow") + " margin"], ["Hold", n("hold"), "", ""]]
     .map(([l, v, k, sub]) => `<div><span class="lbl">${l}</span><b class="${v ? k : ""}">${v}</b><span class="small muted">${sub}</span></div>`).join("")}</div>
     <div class="tbl"><table><thead><tr><th>Action</th><th>Trade</th><th class="n">Total</th><th class="n" title="target, then the decide line (adjust today if the gates pass, or exit), then the hard stop">Target · decide · stop</th>
-      <th class="n" title="days to first expiry / time stop">DTE / stop</th><th class="n" title="underlying vs the entry session's close; the adjust gate needs ±1.5% unless the trade is red">Move</th><th title="adjustments so far (ONE Detail Report${exp ? " exported " + exp : ""}), and whether the gates allow one now">Adjust?</th>
+      <th class="n" title="days to first expiry / time stop">DTE / stop</th><th class="n" title="underlying vs the entry session's close; the adjust gate needs ±1.5% unless the trade is red">Move</th><th title="short strikes in standard deviations of the move to each leg's expiry, at that leg's IV; amber only when spot is 0.5σ or more through a short. Calendars: the releases the front runs past">Shorts</th><th title="adjustments so far (ONE Detail Report${exp ? " exported " + exp : ""}), and whether the gates allow one now">Adjust?</th>
       <th class="n" title="GTC limit on the whole combo that closes the trade at the target, after commissions; valid until the trade is adjusted">Target close</th>
       <th class="n" title="index close where the trade reaches the decide line / the hard stop if the move happened today, IVs unchanged: set price alerts there">Alerts: decide / stop</th></tr></thead><tbody>${
     P.map((t) => { const q = t.plan;
       return `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td style="white-space:normal;min-width:190px">${planChip(t)}<br><span class="small muted">${esc(q.why)}</span></td>
         <td style="white-space:normal;min-width:150px">${esc(t.name)}<br><span class="small muted">${esc(t.strategy)} · ${esc(label(t))}</span></td>
         <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b><br>${planBullet(t, 100)}</td><td class="n small">${lvl(q.tp, q.lv.tp)}<br>${lvl(q.decide, q.lv.decide)}<br>${lvl(q.stop, q.lv.stop)}</td>
-        <td class="n ${ok(q.timeDte) && q.dte <= q.timeDte ? "wrn" : ""}">${q.dte}d${ok(q.timeDte) ? ` <span class="small muted">/ ${q.timeDte}</span>` : ""}</td>
+        <td class="n ${ok(q.timeDte) && q.dte <= q.timeDte ? "wrn" : ""}">${q.dte}d${ok(q.timeDte) ? ` <span class="small muted">/ ${q.timeDte}</span>` : ""}<br><span class="small">${dayBit(t)}</span></td>
         <td class="n" title="${q.band ? esc(`entry close ${fmt(t.entry_spot, 0)} · ±1.5% = ${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}`) : ""}">${ok(q.move) ? `<span class="${Math.abs(q.move) >= 1.5 ? "wrn" : ""}">${pctS(q.move)}</span>` : "–"}</td>
+        <td class="small" style="min-width:120px;white-space:normal">${shortsBit(t) || "–"}${relBit(t) ? "<br>" + relBit(t) : ""}</td>
         <td><span class="chip ${ADJ_CLS[q.adj.ok]}" title="${esc(q.adj.why + (q.how ? " → " + q.how : ""))}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span><br><span class="small muted">${t.adjustments ?? "–"} so far</span></td>
         <td class="n small" title="${esc(q.order ? `combo ${q.order.ratio} × ${q.order.units}${ok(q.order.now) ? `, now ${q.order.now.toFixed(2)} at mid` : ""}` : "")}">${orderTxt(q.order, true)}</td>
         <td class="n small">${lvTxt(q.at.decide, t.underlying)}<br>${lvTxt(q.at.stop, t.underlying)}</td></tr>`; }).join("")}</tbody></table></div>
@@ -323,6 +379,7 @@ function planView(T) {
     A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.
     <b>Target close order</b>: a GTC limit on the whole combo (legs in the ratio shown, × units) that closes the trade at the target after about $${COMM_SIDE} a contract in commissions. It uses ONE's P&amp;L and the legs' open prices, not today's marks, so it stays right until you adjust; re-enter it after every adjustment. Sell limits are rounded up and buy limits down to ${TICK.toFixed(2)}.
     <b>Alerts</b>: the index level where the trade would reach the decide line and the hard stop if the move happened today with IVs unchanged; set TWS price alerts there. Falls usually come with higher IVs, which reach the stop sooner (the detail panel shows the stop level with IV +3 pts). Stops are best worked by hand at the alert, not left as stop orders on a combo.
+    <b>Shorts</b>: how far each short strike is from spot in standard deviations of the move to its expiry. Around a short is a BWB's best zone, so it only turns amber when spot is 0.5σ or more through one.
     Rules come from your ONE history (56 closed A14s; 365 adjustments, each compared with holding the pre-adjustment legs to the same exit), model error about ±2% of margin. Flags, not orders.
     ${exp ? `Adjustment counts: ONE Detail Report exported ${exp}; trades adjusted since then show the older count.` : "Export a ONE Detail Report to Documents for adjustment counts."}</p>`;
 }
@@ -358,10 +415,11 @@ function render() {
   const tile = (l, b, sub, k = "") => `<div><span class="lbl">${l}</span><span class="big ${k}">${b}</span><span class="small muted">${sub}</span></div>`;
   $("rkStrip").innerHTML = tile("P&L now", money(pnlNow), `${T.length} trades · ${T.filter((t) => !t.marked).length ? T.filter((t) => !t.marked).length + " not fully marked" : "all legs marked"}`, cls(pnlNow)) +
     tile(mktOpen() ? "Today's return" : "Last session's return", money(T.reduce((s, t) => s + (t.dayChg || 0), 0)), mktOpen() ? "change since the last close, USD, option trades only" : "market shut: the last session's change, USD, option trades only", cls(T.reduce((s, t) => s + (t.dayChg || 0), 0))) +
-    tile("Delta per 1% move", money(d1), "SPX-equivalent, beta-adjusted", cls(d1)) +
+    tile("Delta per 1% move", money(d1), R.book && ok(R.book.spx) ? `about ${fmt(d1 / (0.01 * R.book.spx), 1)} SPX deltas, beta-adjusted` : "SPX-equivalent, beta-adjusted", cls(d1)) +
     tile("Theta / day", money(sumG("theta")), "today, at current IVs", cls(sumG("theta"))) +
     tile("Vega / vol pt", money(sumG("vega")), "all legs +1 IV point", cls(sumG("vega"))) +
     tile("Worst in range", money(total("dated")[worstIdx]), `at ${fxp(xsPct[worstIdx], true)} on the chosen date · margin ${money(T.reduce((s, t) => s + (t.margin || 0), 0))}`, "neg");
+  $("rkWi").innerHTML = whatIf(T, G);
   $("rkTable").innerHTML = tradesTable(T);
   $("rkPlan").innerHTML = planView(T);
   $("rkCapital").innerHTML = capitalView(T);
@@ -377,8 +435,8 @@ function render() {
       ${rc ? (rc.diffs.length ? `<span class="chip neg" title="${esc(rc.diffs.slice(0, 12).map((d) => `${d.symbol}: ONE ${d.one} / IBKR ${d.ibkr}`).join("\n"))}">${rc.diffs.length} legs differ from IBKR</span>` : `<span class="chip pos">Matches IBKR positions</span>`) : `<span class="chip muted">not reconciled</span>`}</header>
       <div class="rgrid">${tt.sort((x, y) => x.firstExp - y.firstExp || x.underlying.localeCompare(y.underlying)).map((t) => { const g = greeks(t), dte = Math.max(0, Math.round((t.firstExp - now()) / DAY));
         return `<div class="rcard" tabindex="0" data-id="${esc(t.id)}"><div class="hd"><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span><span class="mono ${cls(t.pnlNow)}">${money(t.pnlNow)}</span></div>
-          <div class="greeks"><span>Total <b class="${cls(t.pnlNow)}">${pctS(t.totalPct)}</b></span><span>Today <b class="${cls(t.dayChg)}">${money(t.dayChg)} (${pctS(t.dayPct)})</b></span></div>
-          <div class="greeks"><span>Opened ${dshort(t.openedMs)}</span><span>${t.ditNow ?? "–"}d in trade</span><span>${dteTxt(t)} to expiry (${dexp(t.firstExp)})</span></div>
+          ${healthLine(t)}
+          <div class="greeks"><span>Today <b class="${cls(t.dayChg)}">${money(t.dayChg)} (${pctS(t.dayPct)})</b></span><span>Opened ${dshort(t.openedMs)}</span><span>${dteTxt(t)} to expiry (${dexp(t.firstExp)})</span></div>
           <div class="chart" id="rc-${cssId(t.id)}"></div>
           <div class="greeks"><span>${esc(t.underlying)} ${fmt(t.spot, 0)}</span><span>Δ ${fmt(g.delta, 1)}</span><span>θ ${money(g.theta)}</span><span>ν ${money(g.vega)}</span>${t.marked ? "" : `<span class="wrn">unmarked legs</span>`}</div></div>`; }).join("")}</div></section>`;
   }).join("");
@@ -405,7 +463,7 @@ function openDetail(id, quiet) {
   const be = []; for (let i = 1; i < N; i++) { const a = cv.expiry[i - 1], b = cv.expiry[i]; if ((a < 0) !== (b < 0)) be.push(xs[i - 1] + (xs[i] - xs[i - 1]) * (0 - a) / (b - a)); }
   paceOf(t); planOf(t);
   const q = t.plan;
-  $("rkDetailLegs").innerHTML = (q ? `<div class="kv mini" style="margin:8px 0">${[["Action", planChip(t), q.why], ["Target", `+${q.tp}%`, q.lv.tp], ["Decide line", ok(q.decide) ? q.decide + "%" : "–", q.lv.decide || ""], ["Hard stop", ok(q.stop) ? q.stop + "%" : "–", q.lv.stop || ""],
+  $("rkDetailLegs").innerHTML = healthLine(t, true) + calLine(t) + (q ? `<div class="kv mini" style="margin:8px 0">${[["Action", planChip(t), q.why], ["Target", `+${q.tp}%`, q.lv.tp], ["Decide line", ok(q.decide) ? q.decide + "%" : "–", q.lv.decide || ""], ["Hard stop", ok(q.stop) ? q.stop + "%" : "–", q.lv.stop || ""],
     ["Adjust?", `<span class="chip ${ADJ_CLS[q.adj.ok]}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span>`, q.adj.why + (q.how ? " → " + q.how : "")], ["Adjust band (±1.5%)", q.band ? `${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}` : "–", ok(q.move) ? `${t.underlying} ${pctS(q.move)} since entry` : ""],
     ["Target close order (GTC)", orderTxt(q.order, true), q.order ? `combo ${q.order.ratio} × ${q.order.units}${ok(q.order.now) ? ` · now ${q.order.now.toFixed(2)} at mid` : ""} · whole position worth ${money(Math.abs(q.order.total))}${q.order.nLegs > 4 ? ` · ${q.order.nLegs} legs: if TWS won't take one combo, close in pieces once the position is worth that` : ""} · re-enter after any adjustment` : ""],
     ["Stop: close price", orderTxt(q.stopPx, true), q.stopPx ? "where the combo is worth the hard stop" : ""],
@@ -441,7 +499,7 @@ async function refresh() {
   $("rkRefresh").disabled = false; await load();
 }
 ["rkDays", "rkVol"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(render._t); render._t = setTimeout(render, 60); }));
-["rkRange", "rkBeta", "rkAcct"].forEach((id) => $(id).addEventListener("change", render));
+["rkRange", "rkBeta", "rkAcct", "rkWiDays"].forEach((id) => $(id).addEventListener("change", render));
 $("rkRefresh").addEventListener("click", refresh);
 $("rkClose").addEventListener("click", () => { sel = null; $("rkDetailPanel").hidden = true; });
 window.loadRisk = load;

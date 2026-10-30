@@ -88,6 +88,7 @@
         <p class="note">Contango = back ATM IV − front ATM IV. Forward vol = the vol implied between the two expiries, √((σ²ᵦTᵦ − σ²ꜰTꜰ)/(Tᵦ − Tꜰ)); forward premium = forward vol − front IV. Z-score compares today's contango for the same front/back maturities with the last year: from CBOE's VIX9D…VIX1Y curve for SPX now, and from your own recorded surface once 20 sessions exist (RUT needs recorded history). Debit = ATM put calendar from the snapshot's mids.</p></section>
       <section class="panel modalp" id="pairPanel" hidden><header><h2>Selected pair</h2><button type="button" class="ghost mclose">Close</button></header><div id="pairBox"></div></section>
       <section class="panel c12" data-sub="Gates"><header><h2>Strategy gates</h2></header><div class="cards" id="calGates"></div></section>
+      <section class="panel c12" data-sub="Your calendars"><header><h2>Your open calendars</h2><span class="small muted">IV at your own strikes and the releases ahead · information only: the plan, gates and size call don't read it</span></header><div id="calMine"></div></section>
     </div>
   </section>
 
@@ -125,6 +126,7 @@
       <section class="panel c12" data-sub="Trade plan"><header><h2>Trade plan</h2><span class="small muted">target, decide line, hard stop, time stop and whether an adjustment is allowed, per open trade · % of ONE margin · flags, not orders</span></header><div id="rkPlan"></div></section>
       <section class="panel c12" data-sub="Capital use"><header><h2>Capital use</h2><span class="small muted">margin and days tied up by DTE at entry · return per day held, against your closed A14s</span></header><div id="rkCapital"></div></section>
       <section class="panel c12" data-sub="Book graph"><header><h2>Whole book vs market move</h2><span class="small muted" id="rkBookNote">SPX moves x%, RUT moves beta × x%, stocks move x%</span></header><div class="chart" id="rkBook"></div><div id="rkBookLegend"></div></section>
+      <section class="panel c12" data-sub="What-if"><header><h2>Book what-if</h2><span class="small muted" id="rkWiMeta"></span><label class="lbl" for="rkWiDays">Horizon</label><select id="rkWiDays"><option value="1">1 day</option><option value="7" selected>1 week</option><option value="14">2 weeks</option><option value="30">1 month</option></select></header><div id="rkWi"></div></section>
       <div class="c12" data-sub="Trade cards" id="rkGroups"></div>
       <section class="panel modalp" id="rkDetailPanel" hidden><header><h2 id="rkDetailTitle">Trade</h2><button type="button" class="ghost" id="rkClose">Close</button></header><div class="chart" id="rkDetailChart"></div><div id="rkDetailLegend"></div><div id="rkDetailLegs"></div></section>
     </div>
@@ -240,6 +242,7 @@
 
   <!-- EVIDENCE -->
   <section class="tab" id="tab-evidence" hidden>
+    <div class="panel"><form class="row" onsubmit="return false"><label class="lbl" for="evNextDay"><input type="checkbox" id="evNextDay"> Next-day entry</label><span class="small muted" id="evLagNote">conditions and backtest fills on the same close</span></form></div>
     <div class="grid" data-subs id="tab-evidence-grid">
       <section class="panel c12" data-sub="Summary"><header><h2>Your calendar-family trades vs conditions at entry</h2><span class="small muted" id="evMeta"></span></header>
         <div class="kv" id="evStrat"></div><div class="chart" id="evStratChart"></div><p class="note" id="evNote"></p></section>
@@ -255,6 +258,7 @@
       <section class="panel c5" data-sub="Since 2009"><header><h2>Worst A14 entries (no stop)</h2></header><div id="btWorst"></div></section>
       <section class="panel c7" data-sub="Since 2009"><header><h2>TimeEdge calendar by VIX/VIX3M at entry</h2><span class="small muted">card exits</span></header><div id="btCal"></div></section>
       <section class="panel c5" data-sub="Since 2009"><header><h2>Re-centring by rule vs leaving it</h2></header><div id="btManaged"></div></section>
+      <section class="panel c12" data-sub="Next-day check"><header><h2>Same-close vs next-day entry</h2><span class="small muted">the same signals, filled one session later · after costs</span></header><div id="btNext"><div class="state">Loading…</div></div></section>
     </div>
   </section>
 
@@ -353,6 +357,7 @@
           <li><b>Calendar scanner</b> — pick SPX or RUT and how to rank (contango, contango z-score, forward premium, forward vol − realised). Press <i>Scan</i>.</li>
           <li>Read the <b>heatmap</b>: rows = front expiry, columns = back expiry, green = better. Click a cell to see that pair's history. In the Top pairs table, hover the # badge for why a pair ranks there. Click a row: below its contango history is the calendar's risk graph with your 15% / 20% stops and the overnight move that hits each. The strategy gates also check VIX/VIX3M below 0.90, the index above its 20-day average and no CPI / FOMC / payrolls / PCE / GDP within 3 days, the same rules as the readiness bar.</li>
           <li>Rule of thumb from the 2009–2026 backtest: calendars below VIX/VIX3M 0.90 with the index above its 20-day average; avoid 0.90+ and downtrends. (The old "avoid ≤ 0.834" rule came from your June 2–4 2026 losses, which the backtest reproduces; over 17 years that band was otherwise the best zone.)</li>
+          <li><b>Releases</b> column — CPI, FOMC, payrolls, PCE and GDP between today and the front expiry; amber when it includes CPI, FOMC or payrolls. FOMC dates come from the Fed, the rest from TradingView about 30 days out, so "+?" or "unknown" means the front runs past what is known. Click a row for <b>IV at each strike</b>: front, back, spread and forward vol vs RV20. <b>Your calendars</b> shows the same for open calendars at their own strikes. All of this is information: gates, ranking, Today's pick and the size call don't use it.</li>
           <li><b>Skew &amp; IV</b> — ATM IV, put skew and their z-scores. |z| ≥ 2 = unusual. z-scores fill in as daily recordings accumulate (20 sessions).</li>
         </ol>
       </section>
@@ -367,6 +372,8 @@
           <li><b>Trade plan</b> — every open trade with card rules gets one action, checked in this order: hard stop → target → time stop → slow (under half your pace target after 3+ weeks, or 25% past your usual hold) → decide line → hold. A14: target +5% (entered at 21 DTE or less) or +7%, decide line −6%, hard stop −10%, out at 2 DTE; Allantis the same with +7%. Calendars follow the card (TimeEdge +5% / −15% / 1 DTE, TimeZone +5% / −5% / 7 DTE) with one adjustment, then exit. <i>Adjust?</i> applies gates from your own adjustment history: never above +3%; only when red or the underlying is ±1.5% from entry; reshape only above 21 DTE (10–21: roll out or close). The detail panel shows the levels in dollars and the ±1.5% band. Adjustment counts come from the newest ONE Detail Report in Documents or Downloads. The table's <i>Plan</i> column carries the same action.</li>
           <li><b>Capital use</b> — your pace target (what your closed 22–45 DTE A14s earned per day, about 0.41%) against the book: <i>pace now</i> (theta per day ÷ margin, what each trade earns from here) and <i>% / day so far</i>. Trades under half the target from here, or so far after 3+ weeks, are listed as <b>slow</b> with the margin they tie up and the daily gap to target; <i>past usual hold</i> marks trades held 25% longer than your closed A14s with the same entry DTE. The trade table has a <i>Pace now</i> column with fast / slow tags. The Journal's Overview shows the same pace by month closed.</li>
           <li><b>Whole book</b> chart — every trade added together against a % market move.</li>
+          <li><b>What-if</b> — the whole book at ±1σ and ±2σ with IV down 3, unchanged, or up 5 or 10 points, at a horizon you pick (σ comes from the VIX). Below it, per account: SPX-weighted delta, the worst cell, and the excess liquidity left after it. That figure is a best case, because the margin requirement also rises in a real move.</li>
+          <li><b>Health line</b> — on each trade card, in the detail panel and in Do today: total against stop and target, days in trade against your usual hold, short strikes in σ, and whether an adjustment is allowed. Short strikes turn amber only when spot is 0.5σ or more through one, since around the short is a BWB's best zone.</li>
         </ol>
         <p class="note">P&amp;L now = ONE's realised P&amp;L + open legs at TWS mid. Margin and % use ONE's margin figure.</p>
       </section>
@@ -443,6 +450,7 @@
         <ol>
           <li><b>Evidence</b> — every closed calendar-family trade against the market conditions on its entry day. Use it to test a rule before trusting it.</li>
           <li><b>Evidence → Since 2009</b> — your A14 shape and the TimeEdge calendar replayed on every entry day since late 2009 with the model that matched your ONE fills, after costs: exit rules by DTE, results by VIX/VIX3M band and trend, the worst entries, and re-centring by rule. This is where the calendar gate (VIX/VIX3M below 0.90, index above its 20-day average) and the A14 −20% stop come from. Recomputed after each new close.</li>
+          <li><b>Sample sizes</b> — every Evidence and Actions result shows its trade count; ⚑ marks under 20 trades, and bars that thin are faded. <b>Next-day entry</b>, at the top of Evidence, reads conditions one close earlier and fills the backtest one session after the signal, the entry you could really make. <b>Next-day check</b> puts the two side by side. The size call and Actions stay on the same-close run.</li>
           <li><b>Recorder</b> — records the SPX/RUT option surface every weekday at 15:40 ET (needs the app and TWS running). <i>Record now</i> does it by hand; <i>Test TWS connection</i> checks the link; the log shows what happened.</li>
           <li><b>Data held</b> lists how much history exists. Your own surface history grows by one day each session.</li>
         </ol>

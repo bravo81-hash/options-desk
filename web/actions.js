@@ -82,14 +82,14 @@ function doToday(Rk) {
   $("acDoMeta").textContent = `${Rk.trades.length}${active() ? ` of ${L.Rk.trades.length}` : ""} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}`;
   if (!P.length) { $("acDo").innerHTML = `<div class="state">Nothing to do on ${active() ? "the filtered" : "open"} trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
   const folded = (t, i) => i >= 5 && !["exit", "decide"].includes(t.plan.act);  // never fold an Exit or Decide away
-  $("acDo").innerHTML = `<div class="capped"><div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
+  $("acDo").innerHTML = `<div class="capped"><div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th title="days in trade · short strikes in σ · whether an adjustment is allowed">Health</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
     P.map((t, i) => { const q = t.plan, [k, word] = ACT[q.act] || ["", q.label];
       const use = q.act === "exit" ? `close now${q.stopPx ? ` · combo ~${q.stopPx.px.toFixed(2)}` : ""}`
         : q.act === "close" ? `close now · target order ${order(q.order)}`
         : q.act === "slow" ? `close at the next close ≥ 0%${q.order ? ` · or keep the target order ${order(q.order)}` : ""}`
         : `adjust: <span class="chip">${esc(q.adj.ok)}</span>${q.how ? ` <span class="small muted">${esc(q.how)}</span>` : ""}`;
       return `<tr${folded(t, i) ? ` class="xrow"` : ""}><td><span class="chip ${k}">${esc(word)}</span></td><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td>
-        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span><br>${window.planBullet ? window.planBullet(t) : ""}</td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
+        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span><br>${window.planBullet ? window.planBullet(t) : ""}</td><td style="min-width:150px"><div class="hline">${window.healthBits ? window.healthBits(t).join("") : ""}</div></td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
         <td><a href="#" class="small" data-trade="${esc(t.id)}">detail →</a></td></tr>`; }).join("")}</tbody></table></div>${P.some(folded) ? `<button type="button" class="ghost" data-cap="Show all ${P.length}">Show all ${P.length}</button>` : ""}</div>`;
 }
 
@@ -102,7 +102,7 @@ async function conditions() {
   const el = $("acCond"); if (!el) return;
   const C = await api("/api/conditions").catch((e) => ({error: e.message}));
   if (!C || C.running || C.error) {
-    el.innerHTML = `<div class="state">${C && C.error ? esc(C.error) : "Backtest computing (about 10 seconds after an update)…"}</div>`;
+    el.innerHTML = `<div class="state">${C && C.error ? esc(C.error) : "Backtest computing (under a minute after an update)…"}</div>`;
     if (C && C.running && condTries++ < 8) setTimeout(conditions, 15000);
     return;
   }
@@ -114,7 +114,7 @@ async function conditions() {
     const cells = S.map((s) => { const c = r.cells[s] || {}, [k, word] = EFF[c.effect] || ["muted", "–"];
       if (tally[s][c.effect] !== undefined) tally[s][c.effect]++;
       const tint = c.effect === "helps" ? "var(--up)" : c.effect === "hurts" ? "var(--down)" : null;
-      return `<td class="n" title="${esc(c.bucket ? `today's bucket ${c.bucket}` : "")}"${tint ? ` style="background:color-mix(in srgb, ${tint} 10%, transparent)"` : ""}>${c.dist && c.dist.length ? sparkBars(c.dist.map((x) => ({label: x.b, v: x.avg, n: x.n, sel: x.sel})), {label: `${s}: average by ${r.label} bucket`}) + "<br>" : ""}<span class="chip ${k}">${word}</span>${ok(c.avg) ? `<br><span class="small ${cls(c.avg)}">${pctS(c.avg)}</span><span class="small muted"> vs ${pctS(c.base)} · n ${c.n}</span>` : ""}</td>`; }).join("");
+      return `<td class="n" title="${esc(c.bucket ? `today's bucket ${c.bucket}` : "")}"${tint ? ` style="background:color-mix(in srgb, ${tint} 10%, transparent)"` : ""}>${c.dist && c.dist.length ? sparkBars(c.dist.map((x) => ({label: x.b, v: x.avg, n: x.n, sel: x.sel})), {label: `${s}: average by ${r.label} bucket`}) + "<br>" : ""}<span class="chip ${k}">${word}</span>${ok(c.avg) ? `<br><span class="small ${cls(c.avg)}">${pctS(c.avg)}</span><span class="small muted"> vs ${pctS(c.base)} · </span>${nTag(c.n)}` : ""}</td>`; }).join("");
     return `${head}<tr><td style="padding-left:14px">${esc(r.label)}</td><td class="small mono">${esc(r.reading)}</td>${cells}<td class="small muted" style="white-space:normal;min-width:180px">${esc(r.in_size)}</td></tr>`;
   }).join("");
   const sizeRow = `<tr style="border-top:2px solid var(--line)"><td><b>Size call</b> <span class="small muted">readiness bar</span></td><td class="small">market: <b>${esc(C.size)}</b></td>${S.map((s) => { const st = C.strategies[s];
@@ -158,7 +158,7 @@ function matrixRender(Rd) {
     const r = BT && BT.matrix && BT.matrix[s] && BT.matrix[s].cells[b] && BT.matrix[s].cells[b][t];
     const now = b === cur && t === trendOf(s);
     const tint = r ? `background:color-mix(in srgb, ${r.avg >= 0 ? "var(--up)" : "var(--down)"} ${Math.round(Math.min(Math.abs(r.avg) / 5, 1) * 28)}%, transparent);` : "";
-    return `<td class="n" style="${tint}${now ? "outline:2px solid var(--accent);outline-offset:-2px" : ""}">${chip}<br><span class="small ${r ? cls(r.avg) : "muted"}">${r ? `${pctS(r.avg)} · ${Math.round(100 * r.win)}% won` : BT && BT.matrix ? "no entries" : ""}</span>${r ? ` <span class="small muted">n ${r.n}</span>` : ""}</td>`;
+    return `<td class="n" style="${tint}${now ? "outline:2px solid var(--accent);outline-offset:-2px" : ""}">${chip}<br><span class="small ${r ? cls(r.avg) : "muted"}">${r ? `${pctS(r.avg)} · ${Math.round(100 * r.win)}% won` : BT && BT.matrix ? "no entries" : ""}</span>${r ? ` ${nTag(r.n)}` : ""}</td>`;
   };
   const rows = BANDS.filter(([b]) => mxAll || b === cur).flatMap(([b, name, rng]) => ["above", "below"].map((t, k) => `<tr${b === cur ? ` style="background:color-mix(in srgb, var(--accent) 7%, transparent)"` : ""}>${k ? "" : `<td rowspan="2"><b>${name}</b><br><span class="small muted">VIX/VIX3M ${rng}</span></td>`}
     <td class="small">${t} 20-day avg</td>${STRUCTS.map((s) => cell(s, b, t)).join("")}</tr>`)).join("");

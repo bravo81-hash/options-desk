@@ -30,7 +30,7 @@ from .history import series
 from .readiness import ivts_band
 
 START = "2009-10-01"
-VERSION = 7
+VERSION = 8
 SKEW = {"SPX": (0.798, -1.102, 1.584), "RUT": (0.875, -0.735, 1.174)}  # fitted on your ONE fills, Jun-Oct 2026
 GEOM = {"SPX": (0.0, 0.29, 0.38), "RUT": (0.05, 0.33, 0.44)}  # upper offset, upper wing, lower wing (sd units)
 COMM, SLIP = 1.36, {"SPX": 0.25, "RUT": 0.15}
@@ -169,12 +169,15 @@ def _span(D, i0, exp):
     return None if (exp - D["date"][j]).days > 3 or j == i0 else j
 
 
-def a14_paths(D, u, dte):
-    """Every Friday entry: daily P&L % of risk until expiry, plus entry conditions."""
+def a14_paths(D, u, dte, lag=0):
+    """Every Friday entry: daily P&L % of risk until expiry, plus entry conditions. With `lag`, the conditions
+    are still that Friday's but the fill comes that many sessions later, with the same days to expiry."""
     out = []
-    for i0, d0 in enumerate(D["date"]):
-        if d0.weekday() != 4 or i0 < 21:
+    for s0, sig in enumerate(D["date"]):
+        i0 = s0 + lag
+        if sig.weekday() != 4 or s0 < 21 or i0 >= len(D["date"]):
             continue
+        d0 = D["date"][i0]
         exp = d0 + dt.timedelta(days=dte)
         j = _span(D, i0, exp)
         if j is None:
@@ -190,7 +193,7 @@ def a14_paths(D, u, dte):
         pnl = (v - v[0]) * 100 - 2 * c
         pnl[0] += c  # day 0: only the entry cost is sunk
         out.append({"i0": i0, "ret": 100 * pnl / risk, "dleft": days[:, 0], "held": np.array([(x - d0).days for x in D["date"][idx]]),
-                    "credit": credit, "risk": risk, "cond": _cond(D, u, i0), "S": D[u][idx], "K": K})
+                    "credit": credit, "risk": risk, "cond": _cond(D, u, s0), "S": D[u][idx], "K": K})
     return out
 
 
@@ -254,12 +257,15 @@ def a14_managed(D, u, dte, tp=None, sl=None, time_dte=2, decide=-6, recenter=1.5
     return out
 
 
-def cal_paths(D, u="SPX", front=15, back=22):
-    """TimeEdge: ATM put calendar, every weekday entry, P&L % of the debit until the front expiry."""
+def cal_paths(D, u="SPX", front=15, back=22, lag=0):
+    """TimeEdge: ATM put calendar, every weekday entry, P&L % of the debit until the front expiry. `lag` as in
+    a14_paths: that day's conditions, filled that many sessions later."""
     out = []
-    for i0, d0 in enumerate(D["date"]):
-        if i0 < 21 or d0.weekday() > 4:
+    for s0, sig in enumerate(D["date"]):
+        i0 = s0 + lag
+        if s0 < 21 or sig.weekday() > 4 or i0 >= len(D["date"]):
             continue
+        d0 = D["date"][i0]
         ef, eb = d0 + dt.timedelta(days=front), d0 + dt.timedelta(days=back)
         j = i0
         while j + 1 < len(D["date"]) and D["date"][j + 1] <= ef:
@@ -277,7 +283,7 @@ def cal_paths(D, u="SPX", front=15, back=22):
         pnl = (v - v[0]) * 100 - 2 * c
         pnl[0] += c
         out.append({"i0": i0, "ret": 100 * pnl / debit, "dleft": days[:, 0], "held": np.array([(x - d0).days for x in D["date"][idx]]),
-                    "debit": debit, "cond": _cond(D, u, i0)})
+                    "debit": debit, "cond": _cond(D, u, s0)})
     return out
 
 
@@ -454,12 +460,31 @@ def _ivts_fine(paths, rule):
 def run():
     D = load()
     out = {"version": VERSION, "built": dt.datetime.now().isoformat(timespec="seconds"), "from": D["days"][0], "to": D["days"][-1],
-           "rules": {k: v[0] for k, v in RULES.items()}, "a14": {}, "odds": {}, "managed": {}, "cal": {}, "matrix": {}, "conds": {},
+           "rules": {k: v[0] for k, v in RULES.items()}, "managed": {},
            "cond_defs": {k: {"tab": t, "label": lab, "buckets": b} for k, (t, lab, _, _, b) in COND.items()}}
+    out.update(_tables(D))
+    # the same tables with the fill one session after the signal; odds, matrix and conds stay on the same-close fill
+    out["next_day"] = _tables(D, lag=1)
+    for u, dte in (("SPX", 45), ("RUT", 60)):
+        tp = _tp(dte)
+        var = {"static": ("No adjustments, stop −10%", dict(tp=tp, sl=10, decide=None, recenter=None, max_adj=0)),
+               "decide": ("Re-centre at the −6% decide line, stop −10%", dict(tp=tp, sl=10, decide=-6, recenter=None)),
+               "move": ("Re-centre on every 1.5% move, stop −20%", dict(tp=tp, sl=20, decide=-10, recenter=1.5)),
+               "move_nostop": ("Re-centre on every 1.5% move, no stop", dict(tp=tp, sl=None, decide=None, recenter=1.5))}
+        m = {}
+        for k, (label, kw) in var.items():
+            res = a14_managed(D, u, dte, pace=(21, 0.2), **kw)
+            m[k] = {"label": label, **_sum([r[:3] for r in res]), "adj": round(float(np.mean([r[3] for r in res])), 1)}
+        out["managed"][f"{u} {dte}"] = m
+    return out
+
+
+def _tables(D, lag=0):
+    out = {"a14": {}, "odds": {}, "cal": {}, "matrix": {}, "conds": {}}
     for u in ("SPX", "RUT"):
         rows, odds = [], {}
         for dte in A14_DTE:
-            paths = a14_paths(D, u, dte)
+            paths = a14_paths(D, u, dte, lag)
             row = {"dte": dte, "n": len(paths), "credit": round(float(np.median([p["credit"] for p in paths])), 2),
                    "risk": round(float(np.median([p["risk"] for p in paths]))), "tp": _tp(dte)}
             for k, (_, rule) in RULES.items():
@@ -480,22 +505,11 @@ def run():
             rows.append(row)
         out["a14"][u] = rows
         out["odds"][u] = odds
-    for u, dte in (("SPX", 45), ("RUT", 60)):
-        tp = _tp(dte)
-        var = {"static": ("No adjustments, stop −10%", dict(tp=tp, sl=10, decide=None, recenter=None, max_adj=0)),
-               "decide": ("Re-centre at the −6% decide line, stop −10%", dict(tp=tp, sl=10, decide=-6, recenter=None)),
-               "move": ("Re-centre on every 1.5% move, stop −20%", dict(tp=tp, sl=20, decide=-10, recenter=1.5)),
-               "move_nostop": ("Re-centre on every 1.5% move, no stop", dict(tp=tp, sl=None, decide=None, recenter=1.5))}
-        m = {}
-        for k, (label, kw) in var.items():
-            res = a14_managed(D, u, dte, pace=(21, 0.2), **kw)
-            m[k] = {"label": label, **_sum([r[:3] for r in res]), "adj": round(float(np.mean([r[3] for r in res])), 1)}
-        out["managed"][f"{u} {dte}"] = m
     for u in ("SPX", "RUT"):
-        cpu = cal_paths(D, u)
+        cpu = cal_paths(D, u, lag=lag)
         out["matrix"][f"Calendar {u}"] = {"rule": CAL_RULE, "cells": _matrix(cpu, CAL_RULE)}
         out["conds"][f"Calendar {u}"] = _conds(cpu, CAL_RULE)
-    cp = cal_paths(D, "SPX")
+    cp = cal_paths(D, "SPX", lag=lag)
     out["cal"] = {"rule": CAL_RULE, "n": len(cp), "debit": round(float(np.median([p["debit"] for p in cp]))),
                   "fine": _ivts_fine(cp, CAL_RULE), "trend": _by(cp, CAL_RULE, "trend"), "vix": _by(cp, CAL_RULE, "vix_band"),
                   "gates": {k: {"label": lab, **_sum([exit_at(p, **CAL_RULE) for p in q], q)}

@@ -100,6 +100,13 @@ button.rdchip:hover{border-color:var(--accent)}
   padding:12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:13px}
 .snappop input[type=password]{width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 
+/* sample sizes, health line, what-if grid */
+.nt{color:var(--muted);font-size:13px;white-space:nowrap}
+.nt.thin{color:var(--warn);font-weight:600}
+.hline{display:flex;flex-wrap:wrap;align-items:center;gap:3px 10px;font-size:13px;padding:3px 0}
+.hline>span{white-space:nowrap}
+table.wi td,table.wi th{padding-left:14px;padding-right:14px}
+
 @media (max-width:1180px){.desk .rdwhy{display:none} .desk .readybar{flex-wrap:wrap}}
 @media (max-width:900px){
   .desk .wrap{grid-template-columns:minmax(0,1fr)}

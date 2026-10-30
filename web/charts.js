@@ -79,7 +79,7 @@ function sparkBars(items, cfg = {}) {
   const w = cfg.w || 84, h = cfg.h || 26, n = items.length, m = Math.max(0.5, ...items.map((i) => Math.abs(i.v || 0))), bw = (w - 2) / Math.max(n, 1), y0 = h / 2;
   let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(cfg.label || "results by bucket")}"><line x1="0" x2="${w}" y1="${y0}" y2="${y0}" stroke="var(--line)"/>`;
   items.forEach((it, k) => { if (!ok(it.v)) return; const bh = Math.abs(it.v) / m * (h / 2 - 1), x = 1 + k * bw + bw * 0.15, col = it.v >= 0 ? "var(--up)" : "var(--down)";
-    s += `<rect x="${x.toFixed(1)}" y="${(it.v >= 0 ? y0 - bh : y0).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${Math.max(bh, 0.8).toFixed(1)}" fill="${col}" opacity="${it.sel ? 1 : 0.3}"${it.sel ? ` stroke="var(--ink)" stroke-width="1"` : ""}><title>${esc(`${it.label}: ${it.v > 0 ? "+" : ""}${it.v.toFixed(1)}%${ok(it.n) ? ` (${it.n})` : ""}${it.sel ? " ← today" : ""}`)}</title></rect>`; });
+    s += `<rect x="${x.toFixed(1)}" y="${(it.v >= 0 ? y0 - bh : y0).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${Math.max(bh, 0.8).toFixed(1)}" fill="${col}" opacity="${it.sel ? 1 : 0.3}"${it.sel ? ` stroke="var(--ink)" stroke-width="1"` : ""}><title>${esc(`${it.label}: ${it.v > 0 ? "+" : ""}${it.v.toFixed(1)}%${ok(it.n) ? ` (n ${it.n}${it.n < THIN_N ? ", under 20" : ""})` : ""}${it.sel ? " ← today" : ""}`)}</title></rect>`; });
   return s + `</svg>`;
 }
 /* Size meter: four segments, quarter to full. */
@@ -137,10 +137,10 @@ function barChart(el, cfg) {
     niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${+v.toFixed(1)}${cfg.unit ?? "%"}</text>`; });
     const every = Math.ceil(cfg.items.length / Math.max(1, Math.floor(pw / (cfg.rotate ? 18 : 42))));
     cfg.items.forEach((it, k) => { const x = mL + k * bw;
-      if (ok(it.v)) s += `<rect class="bc" data-k="${k}" x="${(x + bw * 0.14).toFixed(1)}" y="${Y(Math.max(it.v, 0)).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(Math.abs(Y(it.v) - Y(0)), 0.8).toFixed(1)}" rx="1.5" fill="${it.color || (it.v >= 0 ? "var(--up)" : "var(--down)")}" opacity="${it.dim ? 0.35 : 0.9}"${it.hi ? ` stroke="var(--ink)" stroke-width="1.5"` : ""}/>`;
+      if (ok(it.v)) s += `<rect class="bc" data-k="${k}" x="${(x + bw * 0.14).toFixed(1)}" y="${Y(Math.max(it.v, 0)).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(Math.abs(Y(it.v) - Y(0)), 0.8).toFixed(1)}" rx="1.5" fill="${it.color || (it.v >= 0 ? "var(--up)" : "var(--down)")}" opacity="${it.dim || (ok(it.n) && it.n < THIN_N) ? 0.35 : 0.9}"${it.hi ? ` stroke="var(--ink)" stroke-width="1.5"` : ""}/>`;
       if (k % every === 0) s += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - (cfg.rotate ? 18 : 8)}" text-anchor="middle">${esc(it.label)}</text>`; });
     el.innerHTML = s + `</svg>`;
-    bindTip(el, ".bc", (n) => { const it = cfg.items[+n.dataset.k]; return it.title || `${esc(it.label)}: <b>${it.v > 0 ? "+" : ""}${it.v.toFixed(2)}${cfg.unit ?? "%"}</b>${ok(it.n) ? ` · ${it.n} entries` : ""}`; });
+    bindTip(el, ".bc", (n) => { const it = cfg.items[+n.dataset.k]; return (it.title || `${esc(it.label)}: <b>${it.v > 0 ? "+" : ""}${it.v.toFixed(2)}${cfg.unit ?? "%"}</b>${ok(it.n) ? ` · ${it.n} entries` : ""}`) + (ok(it.n) && it.n < THIN_N ? `<div class="wrn">⚑ under 20 trades</div>` : ""); });
   });
 }
 

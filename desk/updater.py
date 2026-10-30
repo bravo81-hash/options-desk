@@ -28,7 +28,7 @@ STEPS = [  # key, label, what it feeds
     ("surface", "Option surface recording", "TWS · Calendar scanner, Skew & IV, gates"),
     ("etfs", "ETF bars and breadth", "yfinance · Market tab"),
     ("cboe", "CBOE vol indices", "CBOE · Term structure, backtest"),
-    ("calendar", "Economic calendar", "Forex Factory · events, Coming up"),
+    ("calendar", "Economic calendar", "Forex Factory, TradingView, Fed · events, Coming up, calendar checks"),
 ]
 
 
@@ -116,7 +116,8 @@ def _run_step(key, force):
         return {"ok": True, "detail": "already current" if r.get("skipped") else "downloaded"}
     if key == "calendar":
         market.calendar()
-        return {"ok": True}
+        bad = market.refresh_releases()
+        return {"ok": True, "detail": f"release dates not refreshed ({', '.join(bad)})" if bad else ""}
 
 
 def run(source="manual"):

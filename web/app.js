@@ -114,13 +114,15 @@ let calData = null, calSel = null, calSort = null;
 const METRIC = {contango: ["Contango", "pts"], z: ["Contango z", ""], fwd_premium: ["Forward premium", "pts"], fwd_vs_rv: ["Fwd vol − RV20", "pts"]};
 async function loadCal(ev) {
   if (ev) ev.preventDefault();
+  calMine();
   const q = new URLSearchParams({symbol: $("calSym").value, fmin: $("fmin").value, fmax: $("fmax").value, gmin: $("gmin").value, gmax: $("gmax").value});
   $("calMeta").textContent = "Scanning…";
   try {
     calData = await api("/api/calendar?" + q);
     if (calData.error) { $("heat").innerHTML = errBox(calData.error); $("calMeta").textContent = ""; return; }
     calSort = {k: $("calRank").value, dir: -1};
-    $("calMeta").textContent = `${calData.symbol} ${fmt(calData.spot, 2)} · snapshot ${calData.date} · ${calData.pairs.length} pairs · RV20 ${fmt(calData.rv20, 1)}% · ${calData.recorded_days} recorded sessions`;
+    $("calMeta").textContent = `${calData.symbol} ${fmt(calData.spot, 2)} · snapshot ${calData.date} · ${calData.pairs.length} pairs · RV20 ${fmt(calData.rv20, 1)}% · ${calData.recorded_days} recorded sessions · ${calData.releases.ok ? `release dates to ${relDay(calData.releases.to)}` : "release dates unavailable"}`;
+    calData.pairs.forEach((p) => { p.relN = p.events ? p.events.length : null; });
     renderCal();
     $("calGates").innerHTML = gateCards(calData.gates);
   } catch (e) { $("heat").innerHTML = errBox(e); }
@@ -132,6 +134,8 @@ function calWhy(p, rank, total, colLabel, s) {
   if (ok(p.fwd_premium)) (p.fwd_premium > 0 ? pros : cons).push(`forward vol ${fmt(p.fwd_vol)} is ${sgn(p.fwd_premium)} vs the front IV`);
   if (ok(p.fwd_vs_rv)) (p.fwd_vs_rv > 0 ? pros : cons).push(`forward vol ${sgn(p.fwd_vs_rv)} vs 20-day realised`);
   if (p.fdte <= 5) cons.push(`front expires in ${p.fdte}d: gamma risk`);
+  if (relTxt(p)) cons.push(`front runs past ${relTxt(p)}`);
+  if (p.beyond) cons.push("front expiry is past the known release dates");
   const li = (a) => a.map((x) => `<li>${x}</li>`).join("");
   return `<div><b>#${rank} of ${total}</b> by ${esc(colLabel)} (${s.dir < 0 ? "highest" : "lowest"} first)</div><div>${p.fdte}d / ${p.bdte}d · ATM put calendar ${fmt(p.debit)}</div>
     ${pros.length ? `<div style="margin-top:4px"><b class="pos">For</b><ul style="margin:2px 0;padding-left:16px">${li(pros)}</ul></div>` : ""}
@@ -142,18 +146,18 @@ function renderCal() {
   const fronts = [...new Map(P.map((p) => [p.front, p.fdte])).entries()].sort((a, b) => a[1] - b[1]);
   const backs = [...new Map(P.map((p) => [p.back, p.bdte])).entries()].sort((a, b) => a[1] - b[1]);
   const cells = new Map(P.map((p) => [`${p.front}|${p.back}`, {v: p[k], sel: calSel && calSel.front === p.front && calSel.back === p.back,
-    title: `<div><b>${p.fdte} / ${p.bdte} DTE</b> (${p.front} → ${p.back})</div><div>Front IV <b>${fmt(p.front_iv)}</b> · back <b>${fmt(p.back_iv)}</b></div><div>Contango <b>${sgn(p.contango)}</b> · ${zTxt(p.z)}</div><div>Fwd vol <b>${fmt(p.fwd_vol)}</b> · premium <b>${sgn(p.fwd_premium)}</b></div><div>ATM put cal <b>${fmt(p.debit)}</b></div>`}]));
+    title: `<div><b>${p.fdte} / ${p.bdte} DTE</b> (${p.front} → ${p.back})</div><div>Front IV <b>${fmt(p.front_iv)}</b> · back <b>${fmt(p.back_iv)}</b></div><div>Contango <b>${sgn(p.contango)}</b> · ${zTxt(p.z)}</div><div>Fwd vol <b>${fmt(p.fwd_vol)}</b> · premium <b>${sgn(p.fwd_premium)}</b></div><div>ATM put cal <b>${fmt(p.debit)}</b></div>${relTxt(p) ? `<div>Front runs past <b>${esc(relTxt(p))}</b></div>` : ""}`}]));
   heatmap($("heat"), {label: "pair heatmap", rows: fronts.map(([e, d]) => ({key: e, label: `${d}d ${shortDate(e.slice(0, 4) + "-" + e.slice(4, 6) + "-" + e.slice(6))}`})),
     cols: backs.map(([e, d]) => ({key: e, label: `${d}d`})), cells, onClick: (f, b) => selectPair(f, b)});
   $("heatLegend").innerHTML = legend([[`higher ${METRIC[k][0].toLowerCase()}`, "var(--up)", 1], [`lower / negative`, "var(--down)", 1], ["no data", "var(--soft)", 1]]);
-  const cols = [["fdte", "Front"], ["bdte", "Back"], ["front_iv", "Front IV"], ["back_iv", "Back IV"], ["contango", "Contango"], ["z", "Contango z"], ["fwd_vol", "Fwd vol"], ["fwd_premium", "Fwd prem."], ["fwd_vs_rv", "Fwd − RV20"], ["debit", "ATM put cal"]];
+  const cols = [["fdte", "Front"], ["bdte", "Back"], ["front_iv", "Front IV"], ["back_iv", "Back IV"], ["contango", "Contango"], ["z", "Contango z"], ["fwd_vol", "Fwd vol"], ["fwd_premium", "Fwd prem."], ["fwd_vs_rv", "Fwd − RV20"], ["debit", "ATM put cal"], ["relN", "Releases"]];
   const s = calSort, sorted = [...P].sort((a, b) => { const x = a[s.k], y = b[s.k]; if (!ok(x) && !ok(y)) return 0; if (!ok(x)) return 1; if (!ok(y)) return -1; return s.dir < 0 ? y - x : x - y; });
   const rows = sorted.slice(0, 40), colName = Object.fromEntries(cols);
   $("pairTable").innerHTML = `<div class="tbl"><table><thead><tr><th class="n" title="rank by the sorted column · hover a badge for why">#</th>${cols.map(([c, l]) => `<th class="sort n" tabindex="0" data-k="${c}" ${s.k === c ? `aria-sort="${s.dir < 0 ? "descending" : "ascending"}"` : ""}>${l}${s.k === c ? (s.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>${
     rows.map((p, i) => `<tr class="click ${calSel && calSel.front === p.front && calSel.back === p.back ? "sel" : ""}" tabindex="0" data-f="${p.front}" data-b="${p.back}">
       <td class="n"><span class="rank" data-i="${i}">${i + 1}</span></td><td class="n">${p.fdte}d</td><td class="n">${p.bdte}d</td><td class="n">${fmt(p.front_iv)}</td><td class="n">${fmt(p.back_iv)}</td>
       <td class="n ${p.contango < 0 ? "neg" : ""}">${sgn(p.contango)}</td><td class="n ${zcls(p.z)}" title="${esc(p.zsrc || "")}">${ok(p.z) ? sgn(p.z) : "–"}</td>
-      <td class="n">${fmt(p.fwd_vol)}</td><td class="n">${sgn(p.fwd_premium)}</td><td class="n">${sgn(p.fwd_vs_rv)}</td><td class="n">${fmt(p.debit)}</td></tr>`).join("")}</tbody></table></div>`;
+      <td class="n">${fmt(p.fwd_vol)}</td><td class="n">${sgn(p.fwd_premium)}</td><td class="n">${sgn(p.fwd_vs_rv)}</td><td class="n">${fmt(p.debit)}</td><td class="n">${relChip(p)}</td></tr>`).join("")}</tbody></table></div>`;
   const ci = cols.findIndex(([c]) => c === s.k), vals = rows.map((p) => p[s.k]).filter(ok), mx = Math.max(...vals.map(Math.abs), 1e-9), signed = vals.some((v) => v < 0);
   if (ci >= 0) $("pairTable").querySelectorAll("tbody tr").forEach((tr, i) => { const td = tr.children[ci + 1], v = rows[i][s.k];
     if (td && ok(v)) td.insertAdjacentHTML("afterbegin", hBarSvg(v, mx, {w: 44, zeroLeft: !signed, color: signed ? null : "var(--accent)", label: `${colName[s.k]} vs the largest in the list`}) + " "); });
@@ -183,6 +187,34 @@ async function pairRisk(front, back, strike) {
       ...c.stops.map((s) => ({name: `stop ${Math.round(100 * s.pct)}%`, ys: flat(s.level), color: "var(--warn)", width: 1.2, dash: "2 3"}))],
     bands: [[c.spot - c.em_day, c.spot + c.em_day]]});
 }
+/* IV by strike for the selected pair: recorded smiles, so the spread at the strike you'd use, not just at the money */
+function strikeBox(d, p) {
+  if (!d.strikes || !d.strikes.length) return "";
+  return `<h3 style="margin:12px 0 6px">IV at each strike · ${p.fdte}d / ${p.bdte}d</h3><div class="chart" id="pairStrikes"></div>${legend([["front IV", "var(--s2)"], ["back IV", "var(--s1)"], ["forward vol", "var(--s3)"], ["RV20", "var(--faint)", 1]])}
+    <div class="tbl"><table><thead><tr><th class="n">Strike</th><th class="n">Front IV</th><th class="n">Back IV</th><th class="n" title="back IV − front IV at this strike">Spread</th><th class="n">Forward vol</th><th class="n">Fwd − RV20</th></tr></thead><tbody>${
+      d.strikes.map((r) => `<tr class="${r.strike === d.strike ? "sel" : ""}"><td class="n mono">${fmt(r.strike, 0)}${r.strike === d.strike ? " <span class=\"small muted\">this pair</span>" : ""}</td><td class="n">${fmt(r.front)}</td><td class="n">${fmt(r.back)}</td><td class="n ${r.spread < 0 ? "neg" : ""}">${sgn(r.spread)}</td><td class="n">${fmt(r.fwd)}</td><td class="n">${ok(r.fwd) && ok(d.rv20) ? sgn(r.fwd - d.rv20) : "–"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="note">From the last recording: each expiry's smile is interpolated onto these strikes, since the recording keeps a spread of strikes per expiry rather than the same ones. RV20 ${fmt(d.rv20, 1)}%.</p>`;
+}
+function strikeChart(d) {
+  const el = $("pairStrikes"); if (!el) return;
+  const pts = (k) => d.strikes.map((r) => [r.strike, r[k], `strike ${fmt(r.strike, 0)}`]);
+  const series = [{name: "Front IV", color: "var(--s2)", pts: pts("front")}, {name: "Back IV", color: "var(--s1)", pts: pts("back")}, {name: "Forward vol", color: "var(--s3)", pts: pts("fwd")}];
+  if (ok(d.rv20)) series.push({name: "RV20", color: "var(--faint)", dash: "4 3", pts: d.strikes.map((r) => [r.strike, d.rv20, "20-day realised"])});
+  xyChart(el, {label: "front and back IV by strike", h: 180, series});
+}
+/* your open calendars, from the last TWS marks */
+async function calMine() {
+  const el = $("calMine"); if (!el) return;
+  const R = window.riskActions ? await window.riskActions().catch(() => null) : null;
+  if (!R) { el.innerHTML = `<div class="state">Open trades unavailable${window.DESK_CLOUD ? ": unlock the snapshot" : ""}.</div>`; return; }
+  const T = R.trades.filter((t) => t.calendar && t.calendar.pairs.length);
+  if (!T.length) { el.innerHTML = `<div class="state">No open calendars right now. TimeEdge, TimeZone, Triple Cal and Flyagonal trades appear here with the IV at their own strikes.</div>`; return; }
+  const P = T.flatMap((t) => t.calendar.pairs.map((p) => ({t, p}))), mx = Math.max(...P.map(({p}) => Math.abs(p.spread || 0)), 1e-9);
+  el.innerHTML = `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">Strike</th><th class="n">Front / back</th><th class="n">Front IV</th><th class="n">Back IV</th><th class="n" title="back IV − front IV at your strikes">Spread</th><th class="n">Forward vol</th><th class="n" title="forward vol − 20-day realised">Fwd − RV20</th><th class="n">Front runs past</th></tr></thead><tbody>${
+    P.map(({t, p}) => `<tr><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td><td class="n mono">${fmt(p.strike, 0)}${p.right}${p.back_strike !== p.strike ? ` / ${fmt(p.back_strike, 0)}` : ""}</td><td class="n">${p.fdte}d / ${p.bdte}d</td><td class="n">${fmt(p.front_iv)}</td><td class="n">${fmt(p.back_iv)}</td>
+      <td class="n ${ok(p.spread) && p.spread < 0 ? "neg" : ""}">${hBarSvg(p.spread, mx, {w: 50, label: "spread vs the widest here"})} ${sgn(p.spread)}</td><td class="n">${fmt(p.fwd_vol)}</td><td class="n">${sgn(p.fwd_vs_rv)}</td><td class="n">${relChip(p)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="note">Each short leg is paired with the nearest later long on the same side. IVs are the legs' own TWS marks. Forward vol is what the back month implies for the days after the front expires, against 20-day realised. Releases are CPI, FOMC, payrolls, PCE and GDP from today to the front expiry; "+?" or "unknown" means the front runs past the dates known so far.</p>`;
+}
 async function selectPair(front, back) {
   calSel = {front, back}; renderCal();
   const p = calData.pairs.find((x) => x.front === front && x.back === back);
@@ -201,8 +233,9 @@ async function selectPair(front, back) {
       <div><span class="lbl">Forward vol</span><b>${fmt(p.fwd_vol)}</b><span class="small muted">premium ${sgn(p.fwd_premium)} · vs RV ${sgn(p.fwd_vs_rv)}</span></div>
       <div><span class="lbl">ATM put calendar</span><b>${fmt(p.debit)}</b><span class="small muted">strike ${fmt(p.strike, 0)}</span></div></div>
       <div class="chart" id="pairChart"></div>${legend(series.map((s) => [s.name, s.color]))}
-      <p class="note">Maturity-matched = today's ${p.fdte}d and ${p.bdte}d maturities re-measured on every past day, so it is comparable through time. The exact-pair line follows these two expiries as they age, from your recorded snapshots.${d.matched_src ? " Source: " + esc(d.matched_src) + "." : ""}</p>`;
+      <p class="note">Maturity-matched = today's ${p.fdte}d and ${p.bdte}d maturities re-measured on every past day, so it is comparable through time. The exact-pair line follows these two expiries as they age, from your recorded snapshots.${d.matched_src ? " Source: " + esc(d.matched_src) + "." : ""}</p>${strikeBox(d, p)}`;
     lineChart($("pairChart"), {label: "pair contango history", h: 220, mR: 112, series, refs: [{y: 0, color: "var(--line)"}], ft: (v) => sgn(v) + " pts"});
+    strikeChart(d);
     pairRisk(front, back, p.strike);
   } catch (e) { $("pairBox").innerHTML = errBox(e); }
 }
@@ -242,43 +275,54 @@ $("skewForm").addEventListener("submit", loadSkew);
 $("skHistSel").addEventListener("change", drawSkHist);
 
 /* ---------------- evidence ---------------- */
-let evData = null;
+let evData = null, evLag = 0;
+const evView = () => evLag && evData.next_day ? {...evData, ...evData.next_day} : evData;
 async function loadEvidence() {
   if (window.loadBacktest) window.loadBacktest();
   try {
     evData = await api("/api/evidence");
     if (evData.error) { $("evStrat").innerHTML = errBox(evData.error); return; }
     $("evMeta").textContent = `${evData.n} closed trades · ONE: ${(evData.files.one || "none").split(/[\\/]/).pop()} · OptionStrat: ${(evData.files.optionstrat || "none").split(/[\\/]/).pop()}`;
-    $("evStrat").innerHTML = evData.by_strategy.map((s) => `<div><span class="lbl">${esc(s.strategy)}</span><b class="${s.pnl >= 0 ? "pos" : "neg"}">${s.pnl >= 0 ? "+" : "−"}$${Math.abs(s.pnl).toLocaleString(undefined, {maximumFractionDigits: 0})}</b><span class="small muted">${s.n} trades · ${Math.round(100 * s.wins / s.n)}% winners</span></div>`).join("");
-    barChart($("evStratChart"), {label: "P&L by strategy ($k)", h: 130, unit: "k", items: evData.by_strategy.map((s) => ({label: s.strategy, v: s.pnl / 1000, n: s.n,
-      title: `<b>${esc(s.strategy)}</b>: ${s.pnl >= 0 ? "+" : "−"}$${Math.abs(s.pnl).toLocaleString(undefined, {maximumFractionDigits: 0})} · ${s.n} trades · ${Math.round(100 * s.wins / s.n)}% winners`}))});
-    $("evNote").textContent = evData.note;
-    $("evFeat").innerHTML = evData.features.map((f) => `<option value="${f.key}">${esc(f.label)}</option>`).join("");
-    $("evFeat").value = "vix_vix3m";
-    $("evFeatTable").innerHTML = `<div class="tbl"><table><thead><tr><th>Condition at entry</th><th class="n">Winners (median)</th><th class="n">Losers (median)</th><th>Every trade · medians</th><th>Best skip rule in hindsight</th></tr></thead><tbody>${
-      evData.features.map((f) => { const b = f.best_rule, xs = evData.trades.map((t) => t[f.key]).filter(ok);
-        const strip = xs.length ? bulletSvg(null, {w: 130, lo: Math.min(...xs), hi: Math.max(...xs), label: `${f.label}: each tick a trade (teal winner, red loser); thick = medians, dashed = skip line`,
-          marks: [...evData.trades.filter((t) => ok(t[f.key])).map((t) => ({v: t[f.key], width: 1, color: `color-mix(in srgb, ${t.win ? "var(--up)" : "var(--down)"} 45%, transparent)`})),
-            {v: f.win_median, color: "var(--up)", width: 3}, {v: f.loss_median, color: "var(--down)", width: 3}, ...(b ? [{v: b.threshold, color: "var(--ink)", width: 1.5, dash: 1}] : [])]}) : "";
-        return `<tr class="click" data-k="${f.key}"><td title="${esc(f.hint)}">${esc(f.label)}</td><td class="n">${fmt(f.win_median, 3)}</td><td class="n">${fmt(f.loss_median, 3)}</td><td>${strip}</td>
-        <td class="small">${b ? `skip ${b.side} <b class="mono">${b.threshold}</b>: ${b.skipped} trades (${b.skipped_losers} losers, ${b.skipped_winners} winners), P&amp;L skipped <span class="${b.pnl_skipped < 0 ? "pos" : "neg"}">${b.pnl_skipped < 0 ? "−" : "+"}$${Math.abs(b.pnl_skipped).toLocaleString()}</span>` : "–"}</td></tr>`; }).join("")}</tbody></table></div>
-      <p class="note">A rule that skips more losing P&amp;L than winning P&amp;L shows the skipped amount in teal. These are fitted to past trades, so treat them as things to watch, not filters to trust.</p>`;
-    $("evFeatTable").querySelectorAll("tr.click").forEach((tr) => tr.addEventListener("click", () => { $("evFeat").value = tr.dataset.k; drawEv(); }));
-    const T = [...evData.trades].sort((a, b) => a.pnl - b.pnl), tmx = Math.max(...T.map((t) => Math.abs(t.pnl)), 1);
-    $("evTrades").innerHTML = `<div class="tbl"><table><thead><tr><th>Entered</th><th>Strategy</th><th>Trade</th><th class="n">P&amp;L</th><th class="n">Return</th><th class="n">VIX/VIX3M</th><th class="n">VIX9D/VIX</th><th class="n">Slope 15→22</th><th class="n">VIX 5d chg</th><th class="n">SPX 5d %</th><th>Source</th></tr></thead><tbody>${
-      T.map((t) => `<tr><td class="mono small">${t.date}</td><td>${esc(t.strategy)}</td><td class="small">${esc(t.name)}</td><td class="n ${t.pnl >= 0 ? "pos" : "neg"}">${hBarSvg(t.pnl, tmx, {w: 60, label: "P&L vs the largest trade"})} ${Math.round(t.pnl).toLocaleString()}</td><td class="n">${fmt(t.ret_pct, 1)}%</td>
-        <td class="n ${t.vix_vix3m >= 0.90 ? "wrn" : ""}">${fmt(t.vix_vix3m, 3)}</td><td class="n">${fmt(t.vix9d_vix, 3)}</td><td class="n">${fmt(t.slope_15_22, 2)}</td><td class="n">${sgn(t.vix_chg5)}</td><td class="n">${sgn(t.spx_ret5)}</td><td class="small muted">${esc(t.source)}</td></tr>`).join("")}</tbody></table></div>`;
-    drawEv();
+    drawEvidence();
   } catch (e) { $("evStrat").innerHTML = errBox(e); }
 }
+function drawEvidence() {
+  const E = evView(), keep = $("evFeat").value || "vix_vix3m";
+  $("evStrat").innerHTML = E.by_strategy.map((s) => `<div><span class="lbl">${esc(s.strategy)}</span><b class="${s.pnl >= 0 ? "pos" : "neg"}">${s.pnl >= 0 ? "+" : "−"}$${Math.abs(s.pnl).toLocaleString(undefined, {maximumFractionDigits: 0})}</b><span class="small muted">${nTag(s.n)} · ${Math.round(100 * s.wins / s.n)}% winners</span></div>`).join("");
+  barChart($("evStratChart"), {label: "P&L by strategy ($k)", h: 130, unit: "k", items: E.by_strategy.map((s) => ({label: s.strategy, v: s.pnl / 1000, n: s.n,
+    title: `<b>${esc(s.strategy)}</b>: ${s.pnl >= 0 ? "+" : "−"}$${Math.abs(s.pnl).toLocaleString(undefined, {maximumFractionDigits: 0})} · ${s.n} trades · ${Math.round(100 * s.wins / s.n)}% winners`}))});
+  $("evNote").textContent = (evLag ? "Next-day entry is on: conditions come from the close before each entry, which is what you knew when you placed it; P&L stays your real fill. " : "") + E.note;
+  $("evFeat").innerHTML = E.features.map((f) => `<option value="${f.key}">${esc(f.label)}</option>`).join("");
+  $("evFeat").value = keep;
+  $("evFeatTable").innerHTML = `<div class="tbl"><table><thead><tr><th>Condition at entry</th><th class="n">Winners (median)</th><th class="n">Losers (median)</th><th>Every trade · medians</th><th>Best skip rule in hindsight</th></tr></thead><tbody>${
+    E.features.map((f) => { const b = f.best_rule, xs = E.trades.map((t) => t[f.key]).filter(ok);
+      const strip = xs.length ? bulletSvg(null, {w: 130, lo: Math.min(...xs), hi: Math.max(...xs), label: `${f.label}: each tick a trade (teal winner, red loser); thick = medians, dashed = skip line`,
+        marks: [...E.trades.filter((t) => ok(t[f.key])).map((t) => ({v: t[f.key], width: 1, color: `color-mix(in srgb, ${t.win ? "var(--up)" : "var(--down)"} 45%, transparent)`})),
+          {v: f.win_median, color: "var(--up)", width: 3}, {v: f.loss_median, color: "var(--down)", width: 3}, ...(b ? [{v: b.threshold, color: "var(--ink)", width: 1.5, dash: 1}] : [])]}) : "";
+      return `<tr class="click" data-k="${f.key}"><td title="${esc(f.hint)}">${esc(f.label)}</td><td class="n">${fmt(f.win_median, 3)} ${nTag(f.win_n)}</td><td class="n">${fmt(f.loss_median, 3)} ${nTag(f.loss_n)}</td><td>${strip}</td>
+      <td class="small">${b ? `skip ${b.side} <b class="mono">${b.threshold}</b>: ${nTag(b.skipped)} (${b.skipped_losers} losers, ${b.skipped_winners} winners), P&amp;L skipped <span class="${b.pnl_skipped < 0 ? "pos" : "neg"}">${b.pnl_skipped < 0 ? "−" : "+"}$${Math.abs(b.pnl_skipped).toLocaleString()}</span>` : "–"}</td></tr>`; }).join("")}</tbody></table></div>
+    <p class="note">A rule that skips more losing P&amp;L than winning P&amp;L shows the skipped amount in teal. These are fitted to past trades, so treat them as things to watch, not filters to trust.</p>`;
+  $("evFeatTable").querySelectorAll("tr.click").forEach((tr) => tr.addEventListener("click", () => { $("evFeat").value = tr.dataset.k; drawEv(); }));
+  const T = [...E.trades].sort((a, b) => a.pnl - b.pnl), tmx = Math.max(...T.map((t) => Math.abs(t.pnl)), 1);
+  $("evTrades").innerHTML = `<div class="tbl"><table><thead><tr><th>Entered</th><th>Strategy</th><th>Trade</th><th class="n">P&amp;L</th><th class="n">Return</th><th class="n">VIX/VIX3M</th><th class="n">VIX9D/VIX</th><th class="n">Slope 15→22</th><th class="n">VIX 5d chg</th><th class="n">SPX 5d %</th><th>Source</th></tr></thead><tbody>${
+    T.map((t) => `<tr><td class="mono small">${t.date}</td><td>${esc(t.strategy)}</td><td class="small">${esc(t.name)}</td><td class="n ${t.pnl >= 0 ? "pos" : "neg"}">${hBarSvg(t.pnl, tmx, {w: 60, label: "P&L vs the largest trade"})} ${Math.round(t.pnl).toLocaleString()}</td><td class="n">${fmt(t.ret_pct, 1)}%</td>
+      <td class="n ${t.vix_vix3m >= 0.90 ? "wrn" : ""}">${fmt(t.vix_vix3m, 3)}</td><td class="n">${fmt(t.vix9d_vix, 3)}</td><td class="n">${fmt(t.slope_15_22, 2)}</td><td class="n">${sgn(t.vix_chg5)}</td><td class="n">${sgn(t.spx_ret5)}</td><td class="small muted">${esc(t.source)}</td></tr>`).join("")}</tbody></table></div>`;
+  drawEv();
+}
 function drawEv() {
-  const k = $("evFeat").value, f = evData.features.find((x) => x.key === k);
-  const mx = Math.max(...evData.trades.map((t) => Math.abs(t.pnl)), 1);
+  const E = evView(), k = $("evFeat").value, f = E.features.find((x) => x.key === k);
+  const mx = Math.max(...E.trades.map((t) => Math.abs(t.pnl)), 1);
   scatter($("evScatter"), {label: f.label, xLabel: f.label, vline: f.best_rule ? f.best_rule.threshold : null,
-    points: evData.trades.map((t) => ({x: t[k], y: t.pnl, color: t.win ? "var(--up)" : "var(--down)", r: 3.5 + 7 * Math.sqrt(Math.abs(t.pnl) / mx),
+    points: E.trades.map((t) => ({x: t[k], y: t.pnl, color: t.win ? "var(--up)" : "var(--down)", r: 3.5 + 7 * Math.sqrt(Math.abs(t.pnl) / mx),
       title: `<div><b>${esc(t.strategy)}</b> ${esc(t.date)}</div><div>${esc(t.name)}</div><div>P&L <b>${Math.round(t.pnl).toLocaleString()}</b> · ${esc(f.label)} <b>${fmt(t[k], 3)}</b></div>`}))});
 }
 $("evFeat").addEventListener("change", drawEv);
+$("evNextDay").addEventListener("change", (e) => {
+  evLag = e.target.checked ? 1 : 0;
+  $("evLagNote").textContent = evLag ? "conditions from the close before entry · backtest fills one session after the signal" : "conditions and backtest fills on the same close";
+  if (evData && !evData.error) drawEvidence();
+  if (window.backtestLag) window.backtestLag(evLag);
+});
 
 /* ---------------- recorder ---------------- */
 async function loadRec() {

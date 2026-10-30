@@ -150,12 +150,36 @@ def realized(symbol, n=20):
     return float(lr.iloc[-n:].std() * math.sqrt(252) * 100)
 
 
+def strike_ivs(snap_id, front, back, spot, strike=None):
+    """Front and back IV across strikes near the money, with forward vol. The recording keeps a delta-spaced set of
+    strikes per expiry, so each smile is interpolated onto one grid; nothing is extrapolated past its quotes."""
+    def smile(expiry):
+        q = db.query("""SELECT strike, AVG(iv) iv, MAX(dte) dte FROM quotes WHERE snap_id=? AND expiry=? AND iv IS NOT NULL
+                        GROUP BY strike ORDER BY strike""", (snap_id, expiry))
+        return [r["strike"] for r in q], [r["iv"] for r in q], q[0]["dte"] if q else None
+    fk, fv, fd = smile(front)
+    bk, bv, bd = smile(back)
+    if len(fk) < 2 or len(bk) < 2:
+        return []
+    step = max(round(spot * 0.01 / 5) * 5, 5)  # about 1% in round strikes
+    mid = strike or round(spot / 5) * 5
+    keep = [k for k in (mid + i * step for i in range(-6, 5)) if max(fk[0], bk[0]) <= k <= min(fk[-1], bk[-1])]
+    out = []
+    for k, f, b in zip(keep, np.interp(keep, fk, fv), np.interp(keep, bk, bv)):
+        fwd = forward_vol(float(f), fd / 365, float(b), bd / 365)
+        out.append({"strike": k, "front": round(float(f) * 100, 2), "back": round(float(b) * 100, 2), "spread": round(float(b - f) * 100, 2),
+                    "fwd": None if fwd is None else round(fwd * 100, 2)})
+    return out
+
+
 def calendar_scan(symbol="SPX", front_min=3, front_max=45, gap_min=5, gap_max=60):
+    from . import market
     snap, es = latest_snapshot(symbol)
     if not snap:
         return {"error": f"No {symbol} snapshot recorded yet. Press 'Record now' on the Recorder tab while TWS is running."}
     rv20 = realized(symbol, 20)
     rec_days = db.query("SELECT COUNT(DISTINCT date) n FROM tenor_daily WHERE symbol=?", (symbol,))[0]["n"]
+    rel = market.releases()
     pairs = []
     for i, f in enumerate(es):
         if not (front_min <= f["dte"] <= front_max):
@@ -185,9 +209,11 @@ def calendar_scan(symbol="SPX", front_min=3, front_max=45, gap_min=5, gap_max=60
                           "fwd_vol": None if fwd is None else round(fwd * 100, 2),
                           "fwd_premium": None if fwd is None else round(fwd * 100 - fv * 100, 2),
                           "fwd_vs_rv": None if fwd is None or not rv20 else round(fwd * 100 - rv20, 2),
-                          "strike": k, "debit": debit})
+                          "strike": k, "debit": debit,
+                          **market.releases_past(rel, _iso(f["expiry"]))})
     return {"symbol": symbol, "date": snap["date"], "ts": snap["ts"], "spot": snap["spot"], "rv20": rv20,
-            "recorded_days": rec_days, "pairs": pairs, "gates": strategy_gates(symbol, es, pairs)}
+            "recorded_days": rec_days, "pairs": pairs, "gates": strategy_gates(symbol, es, pairs),
+            "releases": {"ok": rel["ok"], "ts": rel["ts"], "to": rel["to"]}}
 
 
 def _nearest_pair(pairs, fd, bd):
@@ -279,13 +305,20 @@ def strategy_gates(symbol, es, pairs):
     return gates
 
 
+def _iso(yyyymmdd):
+    return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}"
+
+
 def pair_detail(symbol, front, back):
     snap, es = latest_snapshot(symbol)
     f = next((e for e in es if e["expiry"] == front), None)
     b = next((e for e in es if e["expiry"] == back), None)
     if not f or not b:
         return {"error": "That expiry pair is not in the latest snapshot."}
-    out = {"symbol": symbol, "front": front, "back": back, "fdte": int(f["dte"]), "bdte": int(b["dte"])}
+    out = {"symbol": symbol, "front": front, "back": back, "fdte": int(f["dte"]), "bdte": int(b["dte"]),
+           "spot": snap["spot"], "rv20": realized(symbol, 20)}
+    k = _put_calendar_debit(snap["id"], front, back, snap["spot"])[0]
+    out.update(strike=k, strikes=strike_ivs(snap["id"], front, back, snap["spot"], k))
     if symbol == "SPX":
         h = cboe_pair_contango(f["dte"], b["dte"])
         out["matched"] = _hist(h, 504)
@@ -446,60 +479,73 @@ def evidence():
         s2 = s.loc[:d].dropna()
         return float(s2.iloc[-1]) if len(s2) else None
 
-    rows = []
-    for t in trades:
-        if t["strategy"] not in CALENDAR_FAMILY or t["status"] != "Closed" or t["pnl"] is None or not t["opened"]:
-            continue
-        d = t["opened"].isoformat()
-        idx = [x for x in dates if x <= d]
-        if len(idx) < 6:
-            continue
-        r0 = df.loc[idx[-1]]
-        r5 = df.loc[idx[-6]]
-        feat = {
-            "vix_vix3m": r0["VIX"] / r0["VIX3M"], "vix9d_vix": r0["VIX9D"] / r0["VIX"],
-            "cont_z": asof(czz, d), "vix": r0["VIX"], "vix_chg5": r0["VIX"] - r5["VIX"],
-            "vvix": asof(vvix, d), "spx_ret5": None, "vrp": None, "slope_15_22": asof(slope, d),
-        }
-        s_now, s_5 = asof(spx, d), asof(spx, idx[-6])
-        if s_now and s_5:
-            feat["spx_ret5"] = (s_now / s_5 - 1) * 100
-        rv = asof(rv10, d)
-        if rv:
-            feat["vrp"] = r0["VIX"] - rv
-        rows.append({**{k: (round(v, 4) if isinstance(v, float) else v) for k, v in feat.items()},
-                     "date": d, "closed": t["closed"].isoformat() if t["closed"] else None, "strategy": t["strategy"],
-                     "name": t["name"], "pnl": t["pnl"], "ret_pct": t["ret_pct"], "source": t["source"], "win": t["pnl"] > 0})
+    def build(lag):
+        rows = []
+        for t in trades:
+            if t["strategy"] not in CALENDAR_FAMILY or t["status"] != "Closed" or t["pnl"] is None or not t["opened"]:
+                continue
+            d = t["opened"].isoformat()
+            idx = [x for x in dates if x <= d]
+            if lag:
+                idx = idx[:-lag]
+            if len(idx) < 6:
+                continue
+            at = idx[-1]
+            r0 = df.loc[at]
+            r5 = df.loc[idx[-6]]
+            feat = {
+                "vix_vix3m": r0["VIX"] / r0["VIX3M"], "vix9d_vix": r0["VIX9D"] / r0["VIX"],
+                "cont_z": asof(czz, at), "vix": r0["VIX"], "vix_chg5": r0["VIX"] - r5["VIX"],
+                "vvix": asof(vvix, at), "spx_ret5": None, "vrp": None, "slope_15_22": asof(slope, at),
+            }
+            s_now, s_5 = asof(spx, at), asof(spx, idx[-6])
+            if s_now and s_5:
+                feat["spx_ret5"] = (s_now / s_5 - 1) * 100
+            rv = asof(rv10, at)
+            if rv:
+                feat["vrp"] = r0["VIX"] - rv
+            rows.append({**{k: (round(v, 4) if isinstance(v, float) else v) for k, v in feat.items()},
+                         "date": d, "closed": t["closed"].isoformat() if t["closed"] else None, "strategy": t["strategy"],
+                         "name": t["name"], "pnl": t["pnl"], "ret_pct": t["ret_pct"], "source": t["source"], "win": t["pnl"] > 0})
+        return rows
+
+    def features(ev):
+        feats = []
+        for key, label, hint in FEATURES:
+            x = ev.dropna(subset=[key])
+            if len(x) < 8:
+                continue
+            w, l = x[x.win], x[~x.win]
+            best = None
+            for side in ("above", "below"):
+                for q in np.linspace(0.1, 0.9, 17):
+                    thr = float(x[key].quantile(q))
+                    skip = x[key] > thr if side == "above" else x[key] < thr
+                    kept, skipped = x[~skip], x[skip]
+                    if len(skipped) < 3 or len(kept) < 5:
+                        continue
+                    gain = -skipped.pnl.sum()  # P&L improvement from skipping those trades
+                    cand = {"side": side, "threshold": round(thr, 3), "skipped": int(len(skipped)),
+                            "skipped_losers": int((~skipped.win).sum()), "skipped_winners": int(skipped.win.sum()),
+                            "pnl_skipped": round(float(skipped.pnl.sum()), 0), "pnl_kept": round(float(kept.pnl.sum()), 0)}
+                    if best is None or gain > -best["pnl_skipped"]:
+                        best = cand
+            feats.append({"key": key, "label": label, "hint": hint, "n": int(len(x)), "win_n": int(len(w)), "loss_n": int(len(l)),
+                          "win_median": None if not len(w) else round(float(w[key].median()), 3),
+                          "loss_median": None if not len(l) else round(float(l[key].median()), 3),
+                          "best_rule": best})
+        return feats
+
+    rows = build(0)
     if not rows:
         return {"error": "No closed calendar-family trades found in the journal files.", "files": files}
     ev = pd.DataFrame(rows)
-    feats = []
-    for key, label, hint in FEATURES:
-        x = ev.dropna(subset=[key])
-        if len(x) < 8:
-            continue
-        w, l = x[x.win], x[~x.win]
-        best = None
-        for side in ("above", "below"):
-            for q in np.linspace(0.1, 0.9, 17):
-                thr = float(x[key].quantile(q))
-                skip = x[key] > thr if side == "above" else x[key] < thr
-                kept, skipped = x[~skip], x[skip]
-                if len(skipped) < 3 or len(kept) < 5:
-                    continue
-                gain = -skipped.pnl.sum()  # P&L improvement from skipping those trades
-                cand = {"side": side, "threshold": round(thr, 3), "skipped": int(len(skipped)),
-                        "skipped_losers": int((~skipped.win).sum()), "skipped_winners": int(skipped.win.sum()),
-                        "pnl_skipped": round(float(skipped.pnl.sum()), 0), "pnl_kept": round(float(kept.pnl.sum()), 0)}
-                if best is None or gain > -best["pnl_skipped"]:
-                    best = cand
-        feats.append({"key": key, "label": label, "hint": hint, "n": int(len(x)),
-                      "win_median": None if not len(w) else round(float(w[key].median()), 3),
-                      "loss_median": None if not len(l) else round(float(l[key].median()), 3),
-                      "best_rule": best})
+    prior = build(1)
+    nd = pd.DataFrame(prior)
     by = ev.groupby("strategy").agg(n=("pnl", "size"), wins=("win", "sum"), pnl=("pnl", "sum")).reset_index()
     return {"files": files, "n": len(ev), "trades": ev.sort_values("date").to_dict("records"),
-            "features": feats, "by_strategy": by.to_dict("records"),
+            "features": features(ev), "by_strategy": by.to_dict("records"),
+            "next_day": {"n": len(nd), "trades": nd.sort_values("date").to_dict("records"), "features": features(nd)} if prior else None,
             "note": "Entry-day values use the close of the session the trade was opened in (entries are within the last hour). "
                     "Small sample: treat any rule as a hypothesis to watch, not a proven filter. "
                     "This tab counts OptionStrat trades before ONE took over as well as ONE trades; the Journal lists ONE trades only, so its totals differ."}
