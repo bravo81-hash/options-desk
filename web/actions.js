@@ -72,6 +72,8 @@ function headline(Rd) {
   $("acHead").innerHTML = `<b class="${SIZE_CLS[Rd.size] || ""}">${esc(Rd.size)}</b><span>for new trades today${rest ? ` · ${esc(rest)}` : ""}</span> <a href="#" class="small" data-ready="1">why →</a>`;
 }
 
+const subBtn = (n) => [...$("acMore").previousElementSibling.children].find((b) => b.dataset.n === n);
+
 function doToday(Rk) {
   if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Your trades are locked. <button type=\"button\" class=\"unlockBtn\">Unlock snapshot</button>" : "Open trades unavailable: is the ONE Summary Report in Documents?"}</div>`; return; }
   const P = Rk.trades.filter((t) => t.plan && t.plan.act !== "hold").sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
@@ -197,7 +199,7 @@ function ideasRender() {
 }
 
 function orders(Rk) {
-  $("acFoldOrders").hidden = !Rk;
+  subBtn("Orders & alerts").hidden = !Rk;
   if (!Rk) { $("acOrders").innerHTML = ""; return; }
   const P = Rk.trades.filter((t) => t.plan && (t.plan.order || t.plan.at));
   $("acOrdMeta").textContent = `one GTC target close and two price alerts for each of ${P.length} trades`;
@@ -233,7 +235,8 @@ function checks(Rk, Fr, Sn) {
   if (Sn && !Sn.key_set) bad.push(`<b>Cloud snapshot passphrase not set</b>: your trades aren't on the GitHub copy yet ${go("rec", "Recorder")}`);
   if (Sn && Sn.error) bad.push(`<b>Cloud snapshot</b>: ${esc(Sn.error)}`);
   $("acChkMeta").textContent = bad.length ? `${bad.length} to look at` : "all current";
-  if (bad.length) $("acFoldChecks").open = true;
+  subBtn("Data check").textContent = bad.length ? `Data check (${bad.length})` : "Data check";
+  if (bad.length && !$("acMore")._cur) showSub($("acMore"), "Data check");
   $("acChecks").innerHTML = bad.length ? `<ul class="small" style="margin:0;padding-left:18px">${bad.map((b) => `<li>${b}</li>`).join("")}</ul>` : `<div class="state">All data current.</div>`;
 }
 

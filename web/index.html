@@ -40,9 +40,11 @@
         <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
       <section class="panel c7"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
       <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 days</span></header><div id="acComing"></div></section>
-      <details class="panel c12 fold" id="acFoldCond"><summary><h2>Market conditions</h2><span class="small muted">every signal today, and what entries in the same conditions made since 2009</span></summary><div id="acCond"></div></details>
-      <details class="panel c12 fold" id="acFoldOrders"><summary><h2>Orders &amp; alerts to have in TWS</h2><span class="small muted" id="acOrdMeta">one GTC target close and two price alerts per open trade</span></summary><div id="acOrders"></div></details>
-      <details class="panel c12 fold" id="acFoldChecks"><summary><h2>Data check</h2><span class="small muted" id="acChkMeta"></span></summary><div id="acChecks"></div></details>
+      <div class="c12"><div class="grid" data-subs data-closed id="acMore">
+        <section class="panel c12" data-sub="Market conditions"><header><h2>Market conditions</h2><span class="small muted">every signal today, and what entries in the same conditions made since 2009</span></header><div id="acCond"></div></section>
+        <section class="panel c12" data-sub="Orders &amp; alerts"><header><h2>Orders &amp; alerts to have in TWS</h2><span class="small muted" id="acOrdMeta">one GTC target close and two price alerts per open trade</span></header><div id="acOrders"></div></section>
+        <section class="panel c12" data-sub="Data check"><header><h2>Data check</h2><span class="small muted" id="acChkMeta"></span></header><div id="acChecks"></div></section>
+      </div></div>
     </div>
   </section>
 
@@ -296,7 +298,7 @@
           <li><b>TWS must be running</b> for live data. Without it the desk shows the last saved data and falls back to free sources.</li>
           <li><b>Update all</b> refreshes every source in turn. It also runs by itself every 15 minutes while the US market is open and hourly otherwise. The Data pill shows each source's date and last result.</li>
           <li><b>ONE:</b> export the Summary Report each day to Documents. The desk reads the newest file.</li>
-          <li><b>Finding your way:</b> the sidebar badges show what's live, ⓘ notes open on a click, and folded sections open from their title. The sun and moon switch sets light or dark mode.</li>
+          <li><b>Finding your way:</b> the sidebar badges show what's live and ⓘ notes open on a click. The sun and moon switch sets light or dark mode.</li>
           <li><b>Cloud copy:</b> market views are public. Your trades stay locked until you press the snapshot chip at the top and enter your passphrase. They are as of the snapshot, and Update all, TWS refreshes and the Recorder are laptop only.</li>
         </ol>
       </section>
@@ -304,7 +306,7 @@
       <section class="panel c6" id="g-daily" data-sub="Start here"><header><h2>Daily routine (10 minutes)</h2></header>
         <ol>
           <li><b>Ribbon</b>: read the size for each structure. If the Data pill is amber, something is older than the last close.</li>
-          <li><b>Actions</b>: work down <i>Do today</i>, <i>New trades</i> and <i>Coming up</i>. Below them, <i>Market conditions</i>, <i>Orders &amp; alerts</i> and <i>Data check</i> open from their titles. Data check opens by itself when something is out of date.</li>
+          <li><b>Actions</b>: work down <i>Do today</i>, <i>New trades</i> and <i>Coming up</i>. Under them, the <i>Market conditions</i>, <i>Orders &amp; alerts</i> and <i>Data check</i> tabs open on a click, and a second click closes them. Data check opens by itself when something is out of date.</li>
           <li><b>P&amp;L &amp; Recon</b>: <i>Reconciliation</i> should say <i>Quantities match</i> for both accounts. If not, fix ONE before trusting the Risk grid.</li>
           <li><b>Risk grid</b>: check P&amp;L now, Delta per 1% and Worst in range. <b>Expected moves</b> shows where your short strikes sit from spot.</li>
           <li><b>Opening something new?</b> Start at <b>Today's pick</b>, then use the Calendar or A14 scanner for alternatives.</li>

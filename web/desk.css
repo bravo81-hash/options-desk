@@ -22,17 +22,8 @@ input,select{border-radius:6px}
 .subnav{gap:6px;margin:12px 0}
 .subnav button{border-radius:999px;font-size:13px;font-weight:500;padding:4px 13px;color:var(--ink)}
 .subnav button[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
-.tab>.subnav:first-child{margin-top:0}
+.tab>.subnav:first-child,.c12>.subnav:first-child{margin-top:0}
 
-/* folded sections: the title row opens them */
-details.fold{display:block;padding:0}
-details.fold>summary{display:flex;align-items:center;gap:10px;padding:11px 15px;cursor:pointer;list-style:none}
-details.fold>summary::-webkit-details-marker{display:none}
-details.fold>summary::before{content:"›";color:var(--muted);font-size:17px;line-height:1;transition:transform .12s}
-details.fold[open]>summary::before{transform:rotate(90deg)}
-details.fold>summary>h2{flex:none}
-details.fold>summary>.small{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-details.fold>div{padding:0 15px 13px}
 .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:9px 0 11px}
 .steps>div{display:grid;grid-template-columns:auto 1fr;column-gap:10px;padding:11px 13px;background:var(--soft);border-radius:8px}
 .steps b{grid-row:span 2;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--panel)}
