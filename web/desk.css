@@ -1,26 +1,44 @@
-/* Calm layout, loaded last on the desk and the Market page. Colour has one meaning each: red = stop or warning,
-   amber = caution, teal = OK, blue = size or selection. Sentence case, one set of type sizes, quieter panels. */
-body{font-size:13.5px;line-height:1.45}
+/* Calm layout, loaded last on the desk and the Market page. Red and green numbers = direction (up or down). Outlined chips
+   = a warning or caution, so one never reads as a down day. Filled teal = OK, blue = size or selection. Sentence case,
+   nothing under 13px except chart axes and sidebar badges. */
+body{font-size:14px;line-height:1.45}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 h1,h2,h3,th,button,.lbl,.chip,.phead,a.btnlink,.demo{text-transform:none;letter-spacing:0}
 h2{font-size:15px;font-weight:600}
-h3{font-size:13.5px;font-weight:600;color:var(--ink)}
-.lbl{font-size:12px;font-weight:500}
-th{font-size:12px;font-weight:600}
+h3{font-size:14px;font-weight:600;color:var(--ink)}
+.lbl{font-size:13px;font-weight:500}
+th{font-size:13px;font-weight:600}
 button,a.btnlink{font-size:13px;font-weight:600;border-radius:7px;padding:5px 12px}
 input,select{border-radius:6px}
 .panel{border-radius:10px;padding:13px 15px;gap:9px}
 .grid{gap:12px}
-.chip{border:0;border-radius:999px;font-size:12px;padding:1px 9px;background:var(--soft);color:var(--ink)}
+.chip{border:0;border-radius:999px;font-size:13px;padding:1px 9px;background:var(--soft);color:var(--ink)}
 .chip.pos{background:color-mix(in srgb,var(--up) 15%,transparent);color:var(--up)}
-.chip.neg{background:color-mix(in srgb,var(--down) 14%,transparent);color:var(--down)}
-.chip.wrn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.chip.neg{background:transparent;box-shadow:inset 0 0 0 1.5px var(--down);color:var(--down)}
+.chip.wrn{background:transparent;box-shadow:inset 0 0 0 1.5px var(--warn);color:var(--warn)}
 .sz{color:var(--accent)}
 .state{border-radius:8px}
 .kv>div{border-radius:8px}
-.subnav{gap:6px;margin:0}
+.subnav{gap:6px;margin:12px 0}
 .subnav button{border-radius:999px;font-size:13px;font-weight:500;padding:4px 13px;color:var(--ink)}
 .subnav button[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
-.tab>.subnav,.grid+.subnav{margin-bottom:10px}
+.tab>.subnav:first-child{margin-top:0}
+
+/* folded sections: the title row opens them */
+details.fold{display:block;padding:0}
+details.fold>summary{display:flex;align-items:center;gap:10px;padding:11px 15px;cursor:pointer;list-style:none}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"›";color:var(--muted);font-size:17px;line-height:1;transition:transform .12s}
+details.fold[open]>summary::before{transform:rotate(90deg)}
+details.fold>summary>h2{flex:none}
+details.fold>summary>.small{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details.fold>div{padding:0 15px 13px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:9px 0 11px}
+.steps>div{display:grid;grid-template-columns:auto 1fr;column-gap:10px;padding:11px 13px;background:var(--soft);border-radius:8px}
+.steps b{grid-row:span 2;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--panel)}
+.steps h3{align-self:center}
+.steps p{margin:3px 0 0}
+.rsx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* long explanations: one quiet line, click to read the rest */
 .note{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;cursor:pointer;max-width:none}
@@ -41,7 +59,7 @@ input,select{border-radius:6px}
   font-size:13px;font-weight:600;white-space:nowrap;flex:none}
 .datapill.st{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
 .updbox{gap:7px}
-#updMeta{color:var(--muted);font-size:12px}
+#updMeta{color:var(--muted);font-size:13px}
 .themeBtn{min-width:0;display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--soft);border:1px solid var(--line);color:var(--muted);flex:none}
 .themeBtn span{display:grid;place-items:center;width:26px;height:24px;border-radius:999px}
 .themeBtn svg{width:15px;height:15px}
@@ -52,24 +70,24 @@ input,select{border-radius:6px}
 .desk .readybar .lbl{color:var(--muted)}
 .rdsize{font-weight:700;font-size:17px;white-space:nowrap}
 .desk .rdwhy{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-button.rdchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-size:12px;font-weight:500;padding:2px 8px;white-space:nowrap}
+button.rdchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-size:13px;font-weight:500;padding:2px 8px;white-space:nowrap}
 button.rdchip:hover{border-color:var(--accent)}
 #rdOpen{white-space:nowrap}
 
 .side{grid-column:1;grid-row:3;position:sticky;top:96px;max-height:calc(100vh - 96px);overflow:auto;padding:12px 10px;border-right:1px solid var(--line);min-height:calc(100vh - 96px)}
 .side .tabs{display:flex;flex-direction:column;flex-wrap:nowrap;gap:14px;border:0;border-radius:0;overflow:visible}
 .ngroup{display:flex;flex-direction:column;gap:1px}
-.ngroup>span{font-size:12px;font-weight:600;color:var(--muted);padding:0 9px 3px}
+.ngroup>span{font-size:13px;font-weight:600;color:var(--muted);padding:0 9px 3px}
 .side .tabs button{display:flex;justify-content:space-between;align-items:center;gap:6px;width:100%;background:transparent;color:var(--ink);border:0;border-radius:7px;
-  padding:6px 9px;font-size:13.5px;font-weight:500;text-align:left}
+  padding:6px 9px;font-size:14px;font-weight:500;text-align:left}
 .side .tabs button+button{border-left:0}
 .side .tabs button:hover{background:var(--soft)}
 .side .tabs button[aria-selected="true"]{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);font-weight:600}
-.nbadge{font-family:var(--f-mono);font-size:11px;font-weight:500;padding:0 6px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.nbadge{font-family:var(--f-mono);font-size:12px;font-weight:500;padding:0 6px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
 .nbadge:empty{display:none}
 .nbadge.pos{background:color-mix(in srgb,var(--up) 15%,transparent);color:var(--up)}
-.nbadge.neg{background:color-mix(in srgb,var(--down) 14%,transparent);color:var(--down)}
-.nbadge.wrn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.nbadge.neg{background:transparent;box-shadow:inset 0 0 0 1.5px var(--down);color:var(--down)}
+.nbadge.wrn{background:transparent;box-shadow:inset 0 0 0 1.5px var(--warn);color:var(--warn)}
 .nbadge.sz{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent)}
 
 .desk .tab{grid-column:2;grid-row:3;padding:14px 18px 36px;min-width:0;max-width:1560px}
@@ -83,7 +101,7 @@ button.rdchip:hover{border-color:var(--accent)}
 .snapchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:600;padding:3px 12px;white-space:nowrap}
 .snapchip.open{background:color-mix(in srgb,var(--up) 13%,transparent);color:var(--up);border-color:transparent}
 .snappop{position:absolute;right:0;top:calc(100% + 8px);z-index:70;width:min(320px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--line);border-radius:10px;
-  padding:12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:12.5px}
+  padding:12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:13px}
 .snappop input[type=password]{width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 
 @media (max-width:1180px){.desk .rdwhy{display:none} .desk .readybar{flex-wrap:wrap}}

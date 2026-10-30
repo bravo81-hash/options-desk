@@ -69,7 +69,7 @@ window.deskReload = function () {
 
 /* ---------------- today ---------------- */
 function gateCards(gates) {
-  if (!gates.length) return `<div class="state">${window.DESK_CLOUD ? "Strategy gates use the daily option recording: only on the laptop desk." : "No recorded snapshot yet. Use the Recorder tab."}</div>`;
+  if (!gates.length) return `<div class="state">${window.DESK_CLOUD ? `🔒 Strategy gates use the daily option recording in your snapshot. <button type="button" class="unlockBtn">Unlock snapshot</button>` : "No recorded snapshot yet. Use the Recorder tab."}</div>`;
   return gates.map((g) => `<div class="card ${g.pass ? "pass" : "fail"}"><div class="row" style="justify-content:space-between"><h2>${esc(g.name)}</h2><span class="chip ${g.pass ? "pos" : "neg"}">${g.pass ? "Rules pass" : "Rule fails"}</span></div>
     <span class="small muted">${esc(g.rule)}</span>
     <span class="small">${segBar([{n: g.checks.filter((c) => c[1]).length, color: "var(--up)", label: "checks pass"}, {n: g.checks.filter((c) => !c[1]).length, color: "var(--down)", label: "checks fail"}], {w: 160})} ${g.checks.filter((c) => c[1]).length} of ${g.checks.length} checks pass</span>
@@ -86,9 +86,9 @@ async function loadToday() {
     $("todayStrip").innerHTML =
       tile("VIX / VIX3M", fmt(t.ratio.now, 3), `${ivtsBand(t.ratio.now).label} · ${ivtsBand(t.ratio.now).a14} · ${ivtsBand(t.ratio.now).cal} · ${zTxt(t.ratio.z)}`, ivtsBand(t.ratio.now).cls) +
       tile("30d − 9d vol", sgn(sp.now) + " pts", `${zTxt(sp.z)} · ${pctTxt(sp.pct)}`, zcls(sp.z)) +
-      tile("SPX IV30", iv ? fmt(iv.now, 1) + "%" : "–", iv ? `${zTxt(iv.z)} · ${pctTxt(iv.pct)}` : (window.DESK_CLOUD ? "laptop desk only (IBKR)" : "run Recorder"), iv ? zcls(iv.z) : "") +
+      tile("SPX IV30", iv ? fmt(iv.now, 1) + "%" : "–", iv ? `${zTxt(iv.z)} · ${pctTxt(iv.pct)}` : (window.DESK_CLOUD ? "🔒 in your snapshot" : "run Recorder"), iv ? zcls(iv.z) : "") +
       tile("SPX realized 20d", rv ? fmt(rv.now, 1) + "%" : "–", iv && rv ? `IV − RV ${sgn(iv.now - rv.now, 1)} pts` : "") +
-      tile("Data as of", shortDate(t.date), spx.date ? `snapshot ${shortDate(spx.date)}` : (window.DESK_CLOUD ? "CBOE curve (option recording on the laptop desk)" : "no snapshot yet"));
+      tile("Data as of", shortDate(t.date), spx.date ? `snapshot ${shortDate(spx.date)}` : (window.DESK_CLOUD ? "CBOE curve (option recording in your snapshot)" : "no snapshot yet"));
     const cols = ["var(--s1)", "var(--s2)", "var(--s3)"];
     xyChart($("termCurve"), {label: "VIX term structure", xUnit: "d", xMin: 0, series: t.curves.map((c, k) => ({name: c.label, color: cols[k], dash: k ? "5 3" : null, pts: c.points.map((p) => [p.tenor, p.v, `${p.name} (${p.tenor}d)`])}))});
     $("termLegend").innerHTML = legend(t.curves.map((c, k) => [`${c.label} (${shortDate(c.date)})`, cols[k]]));

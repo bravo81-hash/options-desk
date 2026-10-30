@@ -9,6 +9,7 @@ window.DESK_CLOUD = true;
   const SNAP_RAW = "https://raw.githubusercontent.com/bravo81-hash/options-desk/snapshot/snapshot.json";
   const real = window.fetch.bind(window);
   const LAPTOP = "Only on the laptop desk: this needs TWS live.";
+  const LOCKED = "🔒 Part of your snapshot: unlock it to see this.";
   const san = (s) => String(s || "").replace(/[^A-Za-z0-9._-]/g, "_");
   const json = (o) => new Response(JSON.stringify(o), {status: 200, headers: {"Content-Type": "application/json"}});
   const STATIC = {vixcond: "vixcond.json", readiness: "readiness.json", freshness: "freshness.json", term: "term.json", cloud: "cloud.json"};
@@ -109,7 +110,7 @@ window.DESK_CLOUD = true;
       m = local(m.p, q);
     }
     if (m.stub) return json(m.stub);
-    if (m.laptop) return json({error: LAPTOP, success: false});
+    if (m.laptop) return json({error: (await snapReady).state === "locked" ? LOCKED : LAPTOP, success: false});
     return serveFile(m);
   };
 
@@ -120,8 +121,9 @@ window.DESK_CLOUD = true;
                    risk: ["Every open trade against its stop, target and decide lines", "Greeks, capital use and the book graph"], em: ["Expected move per index for each expiry"],
                    a14: ["A14 candidates ranked on history", "Suggested shapes and gates"], pnl: ["Weekly and monthly P&L", "ONE vs IBKR reconciliation and fills"],
                    journal: ["Every closed trade with its notes"], evidence: ["Your trades against conditions at entry"], rec: ["The daily option recording"]};
+  const LIVE = {a14: "A14", cal: "Calendar"};  // structures whose size call is public market data
   const notice = (what, locked, id) => locked
-    ? `<div class="panel lockcard"><div class="ic">🔒</div><h2>${what}</h2><p class="small muted">Comes from your encrypted laptop snapshot. Once unlocked you'll see:</p><ul>${(PREVIEW[id] || []).map((x) => `<li>${x}</li>`).join("")}</ul><button type="button" class="unlockBtn">Unlock snapshot</button></div>`
+    ? `${LIVE[id] ? `<div class="kv mini" data-live="${LIVE[id]}" style="margin-bottom:10px"></div>` : ""}<div class="panel lockcard"><div class="ic">🔒</div><h2>${what}</h2><p class="small muted">Comes from your encrypted laptop snapshot. Once unlocked you'll see:</p><ul>${(PREVIEW[id] || []).map((x) => `<li>${x}</li>`).join("")}</ul><button type="button" class="unlockBtn">Unlock snapshot</button></div>`
     : `<div class="panel"><div class="state"><b>${what}</b> is only on the laptop desk: it needs TWS (live option chains, positions, marks) or your private trade data. Set a snapshot passphrase on the laptop (Recorder tab) to bring it here.</div></div>`;
   const when = (iso) => new Date(iso).toLocaleString([], {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
   document.addEventListener("DOMContentLoaded", async () => {
@@ -170,6 +172,9 @@ window.DESK_CLOUD = true;
     });
     // Today's pick: keep the VIX conditions panel, the option-chain pick needs the laptop
     const pk = document.getElementById("pkBody"); if (pk) { pk.id = "pkBody-off"; pk.innerHTML = notice("The option-chain pick (calendar vs A14 setups)", locked, "pick"); }
+    const live = () => document.querySelectorAll("[data-live]").forEach((el) => { el.innerHTML = window.READY.strategies.filter((s) => s.name.startsWith(el.dataset.live)).map((s) =>
+      `<div><span class="lbl">${esc(s.name)} today</span><b>${esc(s.size)}</b><span class="small muted">${esc(s.notes[0] || "")}</span></div>`).join(""); });
+    window.addEventListener("readiness", live); if (window.READY) live();
     const pkForm = document.getElementById("pkForm"); if (pkForm) pkForm.closest(".panel").hidden = true;
     if (!document.getElementById("pkBody")) { const h = document.createElement("div"); h.id = "pkBody"; h.hidden = true; document.body.appendChild(h); }
   });

@@ -13,11 +13,19 @@ function statLine(s, base) {
   const worse = base && s.dd5 > base.dd5 * 1.3, better = base && s.dd5 < base.dd5 * 0.8;
   return `next 21 days: SPX <b>${sg(s.ret21, 1)}%</b>, up ${Math.round(s.up21)}% · a 5% drop followed <b style="color:${worse ? "var(--down)" : better ? "var(--up)" : "inherit"}">${Math.round(s.dd5)}%</b> of the time (normally ${Math.round(base ? base.dd5 : 0)}%) · VIX ${sg(s.vix10, 1)} pts in 10 days${okv(s.rut21) ? ` · RUT ${sg(s.rut21, 1)}%` : ""} · <span class="muted">${s.n} cases since ${s.since.slice(0, 4)}</span>`;
 }
+/* Market page: which conditions are on, in one line; the card itself lives on Today's pick */
+function line(el, V) {
+  const K = {sitout: "neg", caution: "wrn", take: "pos"}, on = V.conditions.filter((c) => c.active);
+  const up = window.parent !== window && window.parent.showTab;
+  el.innerHTML = `<div class="row" style="justify-content:space-between;gap:10px"><span class="row" style="gap:6px"><b>VIX conditions</b> ${on.length ? on.map((c) => `<span class="chip ${K[c.kind]}">${e(c.label)}</span>`).join("") : `<span class="muted">none active</span>`}</span>${up ? `<a href="#" class="small" id="vcMore">Full detail on Today's pick →</a>` : ""}</div>`;
+  if (up) el.querySelector("#vcMore").addEventListener("click", (ev) => { ev.preventDefault(); window.parent.showTab("pick"); });
+}
 function render(el, V, compact) {
+  if (compact) return line(el, V);
   const R = V.readings, base = V.base;
   const chip = (lab, val, warn) => `<span class="vcr ${warn ? "w" : ""}"><span>${lab}</span><b>${val}</b></span>`;
   const readings = [
-    chip("VIX", f(R.vix, 2), R.vix >= 25), chip("VIX/VIX3M · " + (window.ivtsBand ? ivtsBand(R.ivts).label : ""), f(R.ivts, 3), R.ivts >= 0.9), chip("VIX − RV20", sg(R.vrp, 1), R.vrp < 0),
+    chip("VIX", f(R.vix, 2), R.vix >= 25), chip("VIX − RV20", sg(R.vrp, 1), R.vrp < 0),
     chip("VVIX", f(R.vvix, 0), R.vvix >= 110), chip("VIX9D/VIX", f(R.r9, 2), R.r9 >= 1), chip("RVX − VIX", sg(R.rvx_spread, 1), R.rvx_spread <= 3),
     chip("Long-term trend (200d)", sg(R.vs200, 1) + "%", R.vs200 < 0), chip("SPX today", sg(R.spx_r, 2) + "%", R.spx_r <= -1), chip("HYG today", sg(R.hyg_r, 2) + "%", R.hyg_r <= -1),
   ].join("");
@@ -37,7 +45,7 @@ function render(el, V, compact) {
   const pts = [V.bucket.stats && V.bucket.stats.dd5].concat(active.map((c) => c.stats && c.stats.dd5)).filter(okv), worst = pts.length ? Math.max(...pts) : null;
   el.innerHTML = `<div class="vchead"><div><span class="lbl">VIX inputs on their own</span><span class="vcsize">${okv(worst) ? Math.round(worst) + "%" : "–"}</span><span class="small muted">chance of a 5% drop within 21 sessions (normally ${Math.round(base.dd5)}%) · the size call is the Trade readiness bar at the top · data ${e(R.date)}</span></div><div class="vcrs">${readings}</div></div>
     <div class="vclist">${active.length ? active.map(card).join("") : `<div class="vcc" style="border-left-color:var(--up)"><b>No special VIX condition is active.</b> <span class="muted">Normal behaviour for this VIX level applies.</span></div>`}${bucket}</div>
-    ${prefer}${timing}${compact ? "" : all}`;
+    ${prefer}${timing}${all}`;
 }
 async function loadVixCond(el, compact) {
   if (!el) return;

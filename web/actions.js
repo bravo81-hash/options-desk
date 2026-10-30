@@ -186,8 +186,10 @@ function ideasRender() {
 }
 
 function orders(Rk) {
+  $("acFoldOrders").hidden = !Rk;
   if (!Rk) { $("acOrders").innerHTML = ""; return; }
   const P = Rk.trades.filter((t) => t.plan && (t.plan.order || t.plan.at));
+  $("acOrdMeta").textContent = `one GTC target close and two price alerts for each of ${P.length} trades`;
   if (!P.length) { $("acOrders").innerHTML = `<div class="state">No carded trades${active() ? " in the filter" : ""}.</div>`; return; }
   $("acOrders").innerHTML = `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">GTC target close</th><th class="n">Alert: decide</th><th class="n">Alert: stop</th><th title="dot = index now; orange = decide alert, red = stop alert; scale −10% to +6% from spot">How far</th></tr></thead><tbody>${
     P.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.firstExp - b.firstExp).map((t) => { const q = t.plan;
@@ -219,6 +221,8 @@ function checks(Rk, Fr, Sn) {
   if (Rk && !Rk.detail_exported) bad.push("<b>No ONE Detail Report</b>: adjustment counts (used by the adjustment gates) are unknown");
   if (Sn && !Sn.key_set) bad.push(`<b>Cloud snapshot passphrase not set</b>: your trades aren't on the GitHub copy yet ${go("rec", "Recorder")}`);
   if (Sn && Sn.error) bad.push(`<b>Cloud snapshot</b>: ${esc(Sn.error)}`);
+  $("acChkMeta").textContent = bad.length ? `${bad.length} to look at` : "all current";
+  if (bad.length) $("acFoldChecks").open = true;
   $("acChecks").innerHTML = bad.length ? `<ul class="small" style="margin:0;padding-left:18px">${bad.map((b) => `<li>${b}</li>`).join("")}</ul>` : `<div class="state">All data current.</div>`;
 }
 
