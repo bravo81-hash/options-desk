@@ -159,7 +159,7 @@ window.DESK_CLOUD = true;
       chip("🔒 Snapshot locked", "");
       pop().innerHTML = `${mkt}<form id="snapForm" style="display:flex;flex-direction:column;gap:8px"><span>Your trades: snapshot from ${when(st.env.built)}.</span>
         <input type="password" id="snapPass" autocomplete="current-password" placeholder="Snapshot passphrase">
-        <label class="small"><input type="checkbox" id="snapRem"> Remember on this browser for 7 days</label><button type="submit">Unlock snapshot</button><span class="small" id="snapMsg"></span></form>`;
+        <label class="small"><input type="checkbox" id="snapRem"> Remember on this browser for 7 days (otherwise 12 hours)</label><button type="submit">Unlock snapshot</button><span class="small" id="snapMsg"></span></form>`;
       document.getElementById("snapForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const msg = document.getElementById("snapMsg"); msg.textContent = "Unlocking…";
