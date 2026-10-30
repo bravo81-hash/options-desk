@@ -287,7 +287,7 @@ def api_freshness():
     pl = risk.payload() if db.get_meta("risk_marks") else {}
     fr = (pl.get("one_fresh") or {}) if pl else {}
     src = [
-        ("Index prices", q("SELECT MAX(date) d FROM index_daily WHERE symbol='SPX'"), "SPX/RUT/VIX family daily closes (IBKR, CBOE fallback)"),
+        ("Index prices", q("SELECT MAX(date) d FROM index_daily WHERE symbol='SPX'"), "SPX/RUT/VIX family daily closes (official CBOE, IBKR until CBOE publishes)"),
         ("ETF prices", q("SELECT MAX(date) d FROM bars_daily WHERE symbol='SPY'"), "Market tab ETFs and sectors (yfinance)"),
         ("Surface", q("SELECT MAX(date) d FROM snaps"), "daily SPX/RUT option recording: Calendar scanner, Skew, gates"),
         ("Chain", d_of(meta_ts("a14_chain")), "A14 scanner and Today's pick option chain"),

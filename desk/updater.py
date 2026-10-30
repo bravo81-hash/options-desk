@@ -129,6 +129,8 @@ def run(source="manual"):
         status.update(running=True, source=source, started=now.isoformat(timespec="seconds"), finished=None,
                       steps=[{"key": k, "label": lab, "feeds": f, "state": "waiting"} for k, lab, f in STEPS])
         tws_down = not tws_up()
+        if tws_down:
+            ibdata.drop_unfinished()
         for s in status["steps"]:
             status["step"] = s["key"]
             why = _skip_reason(s["key"], dt.datetime.now(dt.timezone.utc), auto)

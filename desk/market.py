@@ -30,7 +30,7 @@ SECTOR_CODES = {"SKFI": "Information Technology", "SFFI": "Financials", "SLFI": 
 BREADTH = {"S5TW": "BR.SPX.20", "S5FI": "BR.SPX.50", "S5TH": "BR.SPX.200", "NDFI": "BR.NDX.50", "NDTW": "BR.NDX.20", "NDTH": "BR.NDX.200"}
 for code, sec in SECTOR_CODES.items():
     BREADTH[code] = f"BR.SPX.{sec}.50"
-CBOE_SYMS = {"VIX", "VIX9D", "VIX3M", "VIX6M", "VIX1Y", "SKEW", "VVIX", "RVX", "VXN", "SPX", "RUT", "NDX"}  # index_daily: IBKR, CBOE fallback
+CBOE_SYMS = {"VIX", "VIX9D", "VIX3M", "VIX6M", "VIX1Y", "SKEW", "VVIX", "RVX", "VXN", "SPX", "RUT", "NDX"}  # index_daily: official CBOE closes, IBKR for newer days
 _lock = threading.Lock()
 # yfinance keeps downloads in shared module state: two downloads running at once (scheduler thread + page
 # requests) swap each other's rows (seen: ES prices stored under XLK, EEM's under ES). One at a time.

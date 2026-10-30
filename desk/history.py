@@ -13,9 +13,31 @@ URL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/{}_History.csv"
 CBOE_TENORS = [("VIX9D", 9), ("VIX", 30), ("VIX3M", 93), ("VIX6M", 183), ("VIX1Y", 365)]
 
 
+def last_session(now=None):
+    """Latest US session that has finished: CBOE strikes its index closes at 16:15 ET."""
+    from .accounts import ET, US_HOLIDAYS
+    now = (now or dt.datetime.now(ET)).astimezone(ET)
+    d = now.date() if now.time() >= dt.time(16, 15) else now.date() - dt.timedelta(days=1)
+    while d.weekday() >= 5 or d.isoformat() in US_HOLIDAYS:
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def official_through(sym):
+    """Latest date CBOE's own file covers for sym (None for symbols it doesn't publish here)."""
+    return db.get_meta(f"cboe_through:{sym}")
+
+
+def _recheck_after():
+    """8 hours once the files cover the last session; while one is missing, sooner, because that day's rows are
+    TWS's provisional closes (the files update about 17:30 ET)."""
+    behind = any((official_through(s) or "") < last_session().isoformat() for s in CBOE)
+    return dt.timedelta(minutes=30) if behind else dt.timedelta(hours=8)
+
+
 def refresh_cboe(force=False):
     last = db.get_meta("cboe_refreshed")
-    if not force and last and dt.datetime.fromisoformat(last) > dt.datetime.now() - dt.timedelta(hours=8):
+    if not force and last and dt.datetime.fromisoformat(last) > dt.datetime.now() - _recheck_after():
         return {"skipped": True, "last": last}
     done = {}
     for sym in CBOE:
@@ -26,6 +48,7 @@ def refresh_cboe(force=False):
         df["d"] = pd.to_datetime(df["DATE"], format="%m/%d/%Y").dt.strftime("%Y-%m-%d")
         rows = [(sym, d, float(c)) for d, c in zip(df["d"], df[col]) if pd.notna(c)]
         db.write("INSERT OR REPLACE INTO index_daily (symbol, date, close) VALUES (?,?,?)", rows, many=True)
+        db.set_meta(f"cboe_through:{sym}", max(r[1] for r in rows))  # ibdata writes only after this date
         done[sym] = len(rows)
     db.set_meta("cboe_refreshed", dt.datetime.now().isoformat(timespec="seconds"))
     return done

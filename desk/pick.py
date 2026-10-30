@@ -24,8 +24,8 @@ CAL_MAX_IVTS = 0.90  # calendar gate from the backtest
 
 
 def _ivts():
-    v, v3 = series("VIX").dropna(), series("VIX3M").dropna()
-    return float(v.iloc[-1] / v3.iloc[-1]) if len(v) and len(v3) else None
+    r = (series("VIX") / series("VIX3M")).dropna()  # same date only: VIX prints before VIX3M on a live day
+    return float(r.iloc[-1]) if len(r) else None
 
 
 def calendars(sym, exit_days=14, vol_basis="rv20", top=10):

@@ -53,9 +53,12 @@ swapping rows between symbols).
 ## Data
 
 * **IBKR first** (your subscriptions, when TWS is running): VIX, VIX9D, VIX3M, VIX6M, VIX1Y, VVIX,
-  SKEW, RVX, VXN, SPX, RUT and NDX daily bars including today's live bar (every 10 min in US hours,
-  hourly otherwise; client id 45), option chains for the recorder, risk grid, expected moves and
-  A14 scanner, positions, NAV, fills. CBOE CSVs and yfinance are the fallback and the long history.
+  SKEW, RVX, VXN, SPX, RUT and NDX daily bars including today's live bar from the US open (every
+  15 min in US hours, hourly otherwise; client id 45), option chains for the recorder, risk grid,
+  expected moves and A14 scanner, positions, NAV, fills. CBOE CSVs and yfinance are the fallback and
+  the long history. For every symbol in CBOE's files the official close wins: IBKR only fills days
+  after CBOE's newest date, because its VIX9D and VIX1Y daily bars end on the 16:00 tick, not the
+  16:15 close. CBOE's files update about 17:30 ET; until then that day's close is provisional.
 * **Market tab** — yfinance daily bars for ETFs, SPY and ES futures (consolidated volume, which is what
   TradingView and the Pine scripts use; IBKR's SMART volume runs ~35% lower and would skew OBV and
   Force Index); breadth computed from the
