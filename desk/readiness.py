@@ -124,7 +124,7 @@ def now():
     b = V["bucket"]["stats"] or {}
     inputs.append({"name": f"VIX level {V['bucket']['range']}", "reading": f"VIX {V['readings']['vix']:.2f}", "dd5": b.get("dd5"), "n": b.get("n"), "since": b.get("since"), "kind": "level"})
     ts = W["total_stats"] or {}
-    inputs.append({"name": f"Market warnings {W['total5']} of 5 tested", "reading": ", ".join(c["label"] for c in W["components"] if c["on"]) or "none on",
+    inputs.append({"name": f"Market warnings {W['total6']} of 6", "reading": ", ".join(c["label"] for c in W["components"] if c["on"]) or "none on",
                    "dd5": ts.get("dd5"), "n": ts.get("n"), "since": ts.get("since"), "kind": "warnings"})
     R = W["rotation"]
     rs = R["stats"] or {}

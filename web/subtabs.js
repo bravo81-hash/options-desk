@@ -1,7 +1,7 @@
 /* Sub-tabs: inside a container marked data-subs, children marked data-sub="Name" are grouped into
    sub-tabs so a view fits on one screen. Children without data-sub are always shown. The choice is
-   remembered per container, unless it has data-first (then it always opens on its first sub-tab). Call initSubtabs(container)
-   again after adding children dynamically. */
+   kept while you stay on the tab: coming back to a tab starts on its first sub-tab (app.js). Call initSubtabs(container) again
+   after adding children dynamically. */
 "use strict";
 function initSubtabs(host) {
   const items = [...host.children].filter((e) => e.dataset && e.dataset.sub);
@@ -9,15 +9,13 @@ function initSubtabs(host) {
   let nav = host.previousElementSibling && host.previousElementSibling.classList.contains("subnav") ? host.previousElementSibling : null;
   if (names.length < 2) { if (nav) nav.remove(); items.forEach((e) => { e.hidden = false; }); return; }
   if (!nav) { nav = document.createElement("div"); nav.className = "subnav"; nav.setAttribute("role", "tablist"); nav.setAttribute("aria-label", "Views in this tab"); host.before(nav); }
-  const key = "od.sub." + (host.id || (host.closest("[id]") || {}).id || "x"), keep = !host.hasAttribute("data-first");
-  let cur = null;
-  try { if (keep) cur = localStorage.getItem(key); } catch (e) {}
+  const key = "sub-" + (host.id || (host.closest("[id]") || {}).id || "x");
+  let cur = host._cur;
   if (!names.includes(cur)) cur = names[0];
   items.forEach((e, i) => { e.id = e.id || `${key}-${i}`; e.setAttribute("role", "tabpanel"); });
   nav.innerHTML = names.map((n) => `<button type="button" role="tab" data-n="${n.replace(/"/g, "&quot;")}" aria-controls="${items.filter((e) => e.dataset.sub === n).map((e) => e.id).join(" ")}">${n}</button>`).join("");
   const show = (n) => {
-    cur = n;
-    try { if (keep) localStorage.setItem(key, n); } catch (e) {}
+    cur = host._cur = n;
     items.forEach((e) => { e.hidden = e.dataset.sub !== n; });
     nav.querySelectorAll("button").forEach((b) => { b.setAttribute("aria-selected", String(b.dataset.n === n)); b.tabIndex = b.dataset.n === n ? 0 : -1; });
     requestAnimationFrame(() => host.querySelectorAll(".chart").forEach((c) => c._draw && c._draw()));
@@ -30,22 +28,26 @@ function initSubtabs(host) {
     e.preventDefault(); const b = bs[(i + d + bs.length) % bs.length]; b.focus(); b.click();
   }); }
   host._showSub = show;
+  host._first = () => show(names[0]);
   show(cur);
 }
 function showSub(host, name) { if (host && host._showSub) host._showSub(name); }
+function firstSubs(root) { if (root) root.querySelectorAll("[data-subs]").forEach((h) => h._first && h._first()); }
 document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-subs]").forEach(initSubtabs));
 
 /* long notes show one line; a click opens the rest (links and buttons inside still work) */
 document.addEventListener("click", (e) => { const n = e.target.closest(".note"); if (n && !e.target.closest("a,button,input,select")) n.classList.toggle("open"); });
 document.addEventListener("DOMContentLoaded", () => document.querySelectorAll(".panel>header>.small.muted").forEach((s) => { if (!s.title && s.textContent) s.title = s.textContent; }));
 
-/* folded sections (details.fold) remember being open; charts inside draw when they open */
-document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("details.fold").forEach((d) => { try { if (localStorage.getItem("od.fold." + d.id) === "1") d.open = true; } catch (e) {} }));
+/* charts inside folded sections draw when they open */
 document.addEventListener("toggle", (e) => {
-  const d = e.target; if (!d.matches || !d.matches("details")) return;
-  if (d.matches(".fold")) try { localStorage.setItem("od.fold." + d.id, d.open ? "1" : "0"); } catch (err) {}
-  if (d.open) d.querySelectorAll(".chart").forEach((c) => c._draw && c._draw());
+  const d = e.target; if (d.open && d.matches && d.matches("details")) d.querySelectorAll(".chart").forEach((c) => c._draw && c._draw());
 }, true);
+/* long tables: rows marked .xrow stay folded until the data-cap button inside .capped is pressed */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-cap]"); if (!b) return;
+  b.textContent = b.closest(".capped").classList.toggle("all") ? "Show fewer" : b.dataset.cap;
+});
 
 /* pop-up detail panels (.modalp): close with the Close button, Esc, or a click outside */
 document.addEventListener("click", (e) => { const b = e.target.closest(".mclose"); if (b) { const m = b.closest(".modalp"); if (m) m.hidden = true; } });

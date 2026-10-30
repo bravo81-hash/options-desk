@@ -6,7 +6,8 @@ const money = (v) => ok(v) ? (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).to
 const pctS = (v, d = 1) => ok(v) ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "–";
 const cls = (v) => !ok(v) ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
 const SIZE_CLS = {"Full size": "pos", "Three-quarter size": "sz", "Half size": "sz", "Quarter size": "sz", "Stand aside": "neg"};
-const ACT = {exit: ["neg", "Exit"], decide: ["neg", "Decide"], close: ["pos", "Close"], slow: ["wrn", "Exit at next green"]};
+const ACT = {exit: ["neg", "⚠ Exit"], decide: ["wrn", "⚠ Decide"], close: ["pos", "✓ Close"], slow: ["wrn", "◔ Exit at next green"]};
+const WORD = {"Full size": "full size", "Three-quarter size": "three-quarter size", "Half size": "half size", "Quarter size": "quarter size", "Stand aside": "stand aside"};
 const go = (tab, text, sub) => `<a href="#" class="small" data-go="${tab}"${sub ? ` data-sub="${esc(sub)}"` : ""}>${esc(text)} →</a>`;
 const order = (o) => o ? `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>` : "–";
 const dist = (t) => { const q = t.plan, a = q && q.at, pc = (x) => ok(x) && ok(t.spot) ? 100 * (x / t.spot - 1) : null;
@@ -58,8 +59,17 @@ async function load() {
     api("/api/readiness").catch(() => null), api("/api/freshness").catch(() => null),
     window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null)]);
   L = {Rk, Rd}; SCAN = null;
-  render(); entries(Rd); checks(Rk, Fr, Sn); conditions(); matrix(Rd);
+  headline(Rd); render(); entries(Rd); checks(Rk, Fr, Sn); conditions(); matrix(Rd);
   ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
+}
+
+/* the size call as one sentence; structures that differ from it are named, since they can sit a step below */
+function headline(Rd) {
+  if (!Rd || Rd.error) { $("acHead").innerHTML = ""; return; }
+  const diff = {};
+  Rd.strategies.filter((s) => s.size !== Rd.size).forEach((s) => { (diff[s.size] = diff[s.size] || []).push(s.name); });
+  const rest = Object.entries(diff).map(([z, n]) => `${n.join(", ")}: ${WORD[z]}`).join(" · ");
+  $("acHead").innerHTML = `<b class="${SIZE_CLS[Rd.size] || ""}">${esc(Rd.size)}</b><span>for new trades today${rest ? ` · ${esc(rest)}` : ""}</span> <a href="#" class="small" data-ready="1">why →</a>`;
 }
 
 function doToday(Rk) {
@@ -69,15 +79,16 @@ function doToday(Rk) {
   if (window.navBadge) { navBadge("actions", P.length ? String(P.length) : "", P.length ? "wrn" : ""); navBadge("risk", String(L.Rk.trades.length)); }
   $("acDoMeta").textContent = `${Rk.trades.length}${active() ? ` of ${L.Rk.trades.length}` : ""} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}`;
   if (!P.length) { $("acDo").innerHTML = `<div class="state">Nothing to do on ${active() ? "the filtered" : "open"} trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
-  $("acDo").innerHTML = `<div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
-    P.map((t) => { const q = t.plan, [k, word] = ACT[q.act] || ["", q.label];
+  const folded = (t, i) => i >= 5 && !["exit", "decide"].includes(t.plan.act);  // never fold an Exit or Decide away
+  $("acDo").innerHTML = `<div class="capped"><div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
+    P.map((t, i) => { const q = t.plan, [k, word] = ACT[q.act] || ["", q.label];
       const use = q.act === "exit" ? `close now${q.stopPx ? ` · combo ~${q.stopPx.px.toFixed(2)}` : ""}`
         : q.act === "close" ? `close now · target order ${order(q.order)}`
         : q.act === "slow" ? `close at the next close ≥ 0%${q.order ? ` · or keep the target order ${order(q.order)}` : ""}`
         : `adjust: <span class="chip">${esc(q.adj.ok)}</span>${q.how ? ` <span class="small muted">${esc(q.how)}</span>` : ""}`;
-      return `<tr><td><span class="chip ${k}">${esc(word)}</span></td><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td>
+      return `<tr${folded(t, i) ? ` class="xrow"` : ""}><td><span class="chip ${k}">${esc(word)}</span></td><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td>
         <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span><br>${window.planBullet ? window.planBullet(t) : ""}</td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
-        <td><a href="#" class="small" data-trade="${esc(t.id)}">detail →</a></td></tr>`; }).join("")}</tbody></table></div>`;
+        <td><a href="#" class="small" data-trade="${esc(t.id)}">detail →</a></td></tr>`; }).join("")}</tbody></table></div>${P.some(folded) ? `<button type="button" class="ghost" data-cap="Show all ${P.length}">Show all ${P.length}</button>` : ""}</div>`;
 }
 
 /* ---------- market conditions: one row per signal from the other tabs (desk/conditions.py) ---------- */

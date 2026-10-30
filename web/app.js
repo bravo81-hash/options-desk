@@ -45,7 +45,12 @@ document.addEventListener("click", (e) => { if (!e.target.closest("#sideNav")) $
 
 /* ---------------- tabs ---------------- */
 const loaded = {};
+let curTab = null;
 function showTab(name) {
+  if (name !== curTab) {  // coming to a tab starts on its first sub-tab
+    curTab = name; firstSubs($("tab-" + name));
+    if (name === "market") try { firstSubs($("mdFrame").contentDocument); } catch (e) {}
+  }
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $("sideNav").classList.remove("open");
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + name; });
@@ -70,7 +75,7 @@ window.deskReload = function () {
 /* ---------------- today ---------------- */
 function gateCards(gates) {
   if (!gates.length) return `<div class="state">${window.DESK_CLOUD ? `🔒 Strategy gates use the daily option recording in your snapshot. <button type="button" class="unlockBtn">Unlock snapshot</button>` : "No recorded snapshot yet. Use the Recorder tab."}</div>`;
-  return gates.map((g) => `<div class="card ${g.pass ? "pass" : "fail"}"><div class="row" style="justify-content:space-between"><h2>${esc(g.name)}</h2><span class="chip ${g.pass ? "pos" : "neg"}">${g.pass ? "Rules pass" : "Rule fails"}</span></div>
+  return gates.map((g) => `<div class="card ${g.pass ? "pass" : "fail"}"><div class="row" style="justify-content:space-between"><h2>${esc(g.name)}</h2><span class="chip ${g.pass ? "pos" : "neg"}">${g.pass ? "✓ Rules pass" : "✕ Rule fails"}</span></div>
     <span class="small muted">${esc(g.rule)}</span>
     <span class="small">${segBar([{n: g.checks.filter((c) => c[1]).length, color: "var(--up)", label: "checks pass"}, {n: g.checks.filter((c) => !c[1]).length, color: "var(--down)", label: "checks fail"}], {w: 160})} ${g.checks.filter((c) => c[1]).length} of ${g.checks.length} checks pass</span>
     <span class="small">Nearest pair: <b class="mono">${g.pair.fdte} / ${g.pair.bdte} DTE</b> · contango <b class="mono">${sgn(g.pair.contango)}</b> pts${ok(g.pair.z) ? ` · <span class="${zcls(g.pair.z)}">${zTxt(g.pair.z)}</span>` : ""}${ok(g.pair.debit) ? ` · ATM put cal ${fmt(g.pair.debit)}` : ""}</span>

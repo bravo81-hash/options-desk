@@ -17,7 +17,7 @@ const oddsBar = (v, base) => bulletSvg(v, {w: 160, lo: 0, hi: 45, color: v >= 30
 window.oddsBar = oddsBar;
 
 function detail(R) {
-  const rows = R.inputs.map((i) => `<tr class="${i.dd5 === R.risk ? "held" : ""}"><td>${i.kind === "warnings" ? `Market warnings: ${R.warnings.total6} of 6` : esc(i.name)}</td><td class="small">${esc(i.reading)}</td>
+  const rows = R.inputs.map((i) => `<tr class="${i.dd5 === R.risk ? "held" : ""}"><td>${esc(i.name)}</td><td class="small">${esc(i.reading)}</td>
     <td class="n"><b style="color:${i.dd5 >= 30 ? "var(--down)" : i.dd5 >= 23 ? "var(--warn)" : i.dd5 >= 17 ? "var(--accent)" : "var(--up)"}">${pc(i.dd5)}</b></td><td>${ok(i.dd5) ? oddsBar(i.dd5, R.base) : ""}</td><td class="n small muted">${i.n ?? "–"} since ${esc((i.since || "").slice(0, 4))}</td></tr>`).join("");
   const strat = R.strategies.map((s) => `<tr><td><b>${esc(s.name)}</b></td><td><b style="color:${COL[s.size]}">${esc(s.size)}</b><br>${sizeMeter(s.size)}</td><td class="small">${s.notes.map(esc).join("<br>")}</td></tr>`).join("");
   const T = R.trends, B = R.ivts_band;

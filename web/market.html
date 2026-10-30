@@ -43,7 +43,6 @@ button{font:inherit;font-family:var(--f-display);font-weight:600;letter-spacing:
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);padding:4px 10px;font-size:13px}
 button:focus-visible,input:focus-visible,th:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button:disabled{opacity:.5;cursor:default}
-.demo{background:var(--accent);color:var(--panel);font-family:var(--f-display);font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:6px 12px;border-radius:4px}
 
 /* regime strip */
 .strip{display:grid;grid-template-columns:minmax(0,1.3fr) repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
@@ -152,7 +151,6 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div class="muted small">VIX family and indexes from IBKR (CBOE when TWS is off) · ETFs from yfinance · breadth computed from index members · account from TWS · read-only</div>
     </div>
     <div class="topmeta">
-      <span id="demoFlag" hidden class="demo">Demo data, not market prices</span>
       <span class="muted small" id="updated">Loading…</span>
       <label class="muted small" for="autoSel">Auto-refresh</label>
       <select id="autoSel"><option value="0">Off</option><option value="5">Every 5 min</option><option value="10">Every 10 min</option><option value="15">Every 15 min</option><option value="30">Every 30 min</option></select>
@@ -168,7 +166,7 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <div><span class="lbl">VIX / VIX3M (IVTS)</span><div class="tilerow"><div class="sub"><span class="big" id="ivtsBig">–</span><span class="small muted" id="ivtsSub"></span></div></div><div class="chart" id="ivtsSpark"></div></div>
   </section>
 
-  <div class="grid" data-subs data-first id="mdGrid">
+  <div class="grid" data-subs id="mdGrid">
     <section class="panel c12" id="pVixc" data-sub="Overview"><div id="vcBody"></div></section>
     <section class="panel c7" id="pWarn" data-sub="Overview">
       <header><h2>SPY and market warnings</h2><span class="small muted">same rules as Market Warnings v2</span></header>
@@ -238,7 +236,7 @@ const shortDate = (d) => { const [, m, dd] = d.split("-"); return `${MON[+m - 1]
 
 /* ================================================================== */
 /* Connector access: queue (2 at a time), cache, transient retries     */
-let mcp = null, DEMO = false;
+let mcp = null;
 const MAX_CONC = 2; let running = 0; const waiting = [];
 const slot = () => new Promise((res) => { if (running < MAX_CONC) { running++; res(); } else waiting.push(res); });
 const release = () => { running--; const n = waiting.shift(); if (n) { running++; n(); } };
@@ -306,7 +304,6 @@ function bars(symbol, interval = "1D", count, adj = false) {
   const n = count || NEED[symbol] || 90, key = symbol + "|" + interval + (adj ? "|adj" : "");
   if (memo.has(key)) return memo.get(key);
   const p = (async () => {
-    if (DEMO) return demoBars(symbol, n, interval);
     const {payload, storedAt} = await call(TV, "mcp-tv-get-ohlcv", {symbol, count: n, interval, format: "columns", adj});
     stamp(storedAt);
     const b = payload && payload.bars;
@@ -320,22 +317,6 @@ function bars(symbol, interval = "1D", count, adj = false) {
 const idxAt = (s, d) => { let lo = 0, hi = s.d.length - 1, ix = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (s.d[m] <= d) { ix = m; lo = m + 1; } else hi = m - 1; } return ix; };
 const at = (s, vals, d) => { if (!s) return null; const i = idxAt(s, d); return i < 0 ? null : vals[i]; };
 
-/* Demo bars (only with #demo and no connectors): deterministic random walks, clearly flagged. */
-function demoBars(symbol, n, interval) {
-  let seed = [...symbol].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const isBreadth = symbol.startsWith("INDEX:"), isVix = symbol.startsWith("CBOE:");
-  const step = interval === "1W" ? 7 * 86400 : 86400, t0 = Math.floor(Date.now() / 1000 / 86400) * 86400 + 13.5 * 3600 - n * step;
-  const t = [], o = [], h = [], l = [], c = [], v = []; let x = isBreadth ? 55 : isVix ? 16 + (symbol.length % 4) : 50 + rnd() * 400;
-  for (let i = 0; i < n; i++) {
-    const prev = x;
-    if (isBreadth) x = Math.max(3, Math.min(97, x + (rnd() - 0.5) * 9 + (55 - x) * 0.04));
-    else if (isVix) x = Math.max(9, x + (rnd() - 0.5) * 1.6 + (17 - x) * 0.06);
-    else x = x * (1 + (rnd() - 0.48) * 0.022);
-    t.push(t0 + i * step); o.push(prev); c.push(x); h.push(Math.max(prev, x) * (1 + rnd() * 0.006)); l.push(Math.min(prev, x) * (1 - rnd() * 0.006)); v.push(isBreadth || isVix ? 0 : 1e6 * (20 + rnd() * 30));
-  }
-  return {sym: symbol, t, o, h, l, c, v, d: t.map(dateKey)};
-}
 
 /* ================================================================== */
 /* Pine-equivalent maths                                               */
@@ -711,13 +692,13 @@ function oddsLines() {
 }
 function renderRegime() {
   const br = S.s5fi, sct = S.sect || {};
-  let label = "Mixed", tone = "var(--faint)"; const why = [];
-  if (ok(sct.b20) && sct.b20 > 0 && ok(br) && br <= 40) { label = "Narrow: index up on few stocks"; tone = "var(--accent)"; }
-  else if (ok(br) && br >= 60 && ok(sct.offDef) && sct.offDef >= 0) { label = "Broad risk-on"; tone = "var(--up)"; }
-  else if (ok(sct.offDef) && sct.offDef <= -1) { label = "Defensive rotation"; tone = "var(--down)"; }
+  let label = "Mixed"; const why = [];
+  if (ok(sct.b20) && sct.b20 > 0 && ok(br) && br <= 40) { label = "Narrow: index up on few stocks"; }
+  else if (ok(br) && br >= 60 && ok(sct.offDef) && sct.offDef >= 0) { label = "Broad risk-on"; }
+  else if (ok(sct.offDef) && sct.offDef <= -1) { label = "Defensive rotation"; }
   if (ok(br)) why.push(`S5FI ${fmt(br, 0)}%`); if (ok(sct.b20)) why.push(`SPY 20D ${sgn(sct.b20)}%`); if (ok(sct.offDef)) why.push(`offense − defense ${sgn(sct.offDef)}%`);
   if (ODDS && ODDS.rotation && ODDS.rotation.stats) why.push(`${ODDS.rotation.state} rotation: a 5% drop followed ${Math.round(ODDS.rotation.stats.dd5)}% of the time (normally ${Math.round(ODDS.base)}%)`);
-  $("regime").textContent = label; $("regimeBox").style.borderLeftColor = tone; $("regimeWhy").textContent = why.join(" · ") || "waiting for breadth and sectors";
+  $("regime").textContent = label; $("regimeWhy").textContent = why.join(" · ") || "waiting for breadth and sectors";
 }
 
 /* ============================ Cross-asset ========================== */
@@ -757,7 +738,6 @@ document.querySelectorAll("#calToggle button").forEach((b) => b.addEventListener
 }));
 syncCalToggle();
 async function loadCalendar() {
-  if (DEMO) { $("calBody").innerHTML = `<div class="state">The calendar needs the TradingView connector.</div>`; return; }
   const now = new Date(), to = new Date(now.getTime() + 7 * 864e5);
   // fetch medium + high once; the toggle filters locally without another request
   const {payload, storedAt} = await call(TV, "mcp-tv-get-economic-calendar", {countries: "US", min_importance: 0, date_from: now.toISOString().slice(0, 10), date_to: to.toISOString().slice(0, 10)}, 900000);
@@ -964,7 +944,7 @@ async function refreshAll(fresh) {
   renderRegime();
   const failed = results.filter((x) => !x).length;
   const t = oldestStamp ? new Date(oldestStamp) : new Date();
-  $("updated").textContent = `${DEMO ? "Demo" : "Fetched"} ${t.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}${S.spy && S.spy.d ? ` · prices to the ${shortDate(last(S.spy.d))} close` : ""}${failed ? ` · ${failed} section${failed > 1 ? "s" : ""} need a retry` : ""}`;
+  $("updated").textContent = `Fetched ${t.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}${S.spy && S.spy.d ? ` · prices to the ${shortDate(last(S.spy.d))} close` : ""}${failed ? ` · ${failed} section${failed > 1 ? "s" : ""} need a retry` : ""}`;
   forceFresh = false; busy = false; $("refresh").disabled = false;
   scheduleNext();
 }

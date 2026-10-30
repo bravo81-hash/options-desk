@@ -33,6 +33,7 @@
 
   <!-- MARKET (former Market Desk) -->
   <section class="tab" id="tab-actions">
+    <div class="achead" id="acHead"></div>
     <div class="row" id="acFilt" style="gap:12px"></div>
     <div class="grid" id="acGrid">
       <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
@@ -159,8 +160,8 @@
     <div class="grid" data-subs id="tab-season-grid">
       <section class="panel c8" data-sub="Path &amp; ahead"><header><h2>Seasonal path vs this year</h2><span class="small muted">% from the prior year's close, by trading day · hover for the date</span></header><div class="chart" id="sePath"></div><div id="sePathLegend"></div></section>
       <section class="panel c4" data-sub="Path &amp; ahead"><header><h2>From today's date</h2><span class="small muted" id="seFwdNote"></span></header><div id="seFwd"></div></section>
-      <section class="panel c5" data-sub="Months"><header><h2>Average month</h2><span class="small muted">mean return · % of years up · realised vol · VIX change</span></header><div id="seMonths"></div></section>
-      <section class="panel c7" data-sub="Months"><header><h2>Every year, every month</h2><span class="small muted">monthly return % · this year on top</span></header><div class="tbl" id="seTable"></div></section>
+      <section class="panel c6" data-sub="Months"><header><h2>Average month</h2><span class="small muted">mean return · % of years up · realised vol · VIX change</span></header><div id="seMonths"></div></section>
+      <section class="panel c6" data-sub="Months"><header><h2>Every year, every month</h2><span class="small muted">monthly return % · this year on top</span></header><div class="tbl" id="seTable"></div></section>
       <section class="panel c6" data-sub="Days &amp; cycle"><header><h2>Turn of the month</h2><span class="small muted">average daily return on the last 5 and first 5 trading days</span></header><div id="seTom"></div></section>
       <section class="panel c6" data-sub="Days &amp; cycle"><header><h2>Weekday · presidential cycle</h2></header><div id="seWd"></div><div id="seCyc" style="margin-top:8px"></div></section>
     </div>
@@ -329,7 +330,7 @@
           <li><b>Edge / day</b> = expected P&amp;L at exit as % of risk, per day held — so structures held for different times compare fairly.</li>
           <li>Your own rules are checked: calendars need VIX/VIX3M below 0.90, the index above its 20-day average and the TimeEdge / Triple / TimeZone gates; A14 wants the index above its 20-day average. ✓ / ✕ shows each.</li>
           <li>The <b>pick</b> = the best edge among setups passing all your rules. If none pass, it says so — size down or wait.</li>
-          <li><i>Update all</i> refreshes the chain; <i>Fetch chain from TWS</i> refreshes only this one. It also runs by itself after the close. Open <i>Next best</i> for alternatives.</li>
+          <li><i>Update all</i> refreshes the chain, and it also runs by itself after the close. Open <i>Next best</i> for alternatives.</li>
         </ol>
       </section>
       <section class="panel c6" id="g-market" data-sub="Tabs"><header><h2>Market tab</h2></header>
@@ -389,7 +390,7 @@
       <section class="panel c12" id="g-a14" data-sub="A14 scanner"><header><h2>A14 scanner (put BWBs on SPX and RUT)</h2></header>
         <div class="two">
           <ol>
-            <li><b>Fresh chain:</b> <i>Update all</i> refreshes it, or press <i>Fetch chain from TWS</i> for this one (about a minute; it also runs by itself after the close). Outside market hours it uses Friday's / yesterday's closing quotes.</li>
+            <li><b>Fresh chain:</b> <i>Update all</i> refreshes it, and it also runs by itself after the close. Outside market hours it uses Friday's / yesterday's closing quotes.</li>
             <li><b>Check the trend panel first.</b> Your own A14s entered above the 20-day average made more than those entered below it, but both made money. In the 2009–2026 model, below the average with VIX/VIX3M between 0.834 and 0.90 was the best A14 cell, so the readiness bar doesn't step down for it there; in steep contango (rare) or a flat term structure it still does. See the size rules in the ribbon's <i>Why</i> pop-up.</li>
             <li><b>Set the filters:</b> Underlying, DTE window (default 14–45, where your A14s earned the most per day held), <i>Exit after</i> (leave blank to use your typical hold for each entry DTE, from your closed A14s), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
             <li><b>Read the heatmap</b> ("Where the edge is"): rows = expiries, columns = short strike % below spot, greener = better expected return. Click a cell to filter the table to it.</li>
@@ -470,7 +471,7 @@
           <tr><td>A week's P&amp;L looks too big</td><td>Check for a deposit — add it under <span class="mono">risk.cash_flows</span> in config.json.</td></tr>
           <tr><td>A14 scanner / Expected moves look stale</td><td>Press Update all. The time of the data is shown next to each tab's button.</td></tr>
           <tr><td>Market charts show "no data"</td><td>Press Refresh on the Market tab. Breadth builds in the background after start-up (a few minutes).</td></tr>
-          <tr><td>Anything else</td><td>Recorder tab → Log, or <span class="mono">options-desk\data\desk.log</span>.</td></tr>
+          <tr><td>Anything else</td><td>Look in <span class="mono">options-desk\data\desk.log</span> on the laptop.</td></tr>
         </tbody></table></div>
       </section>
     </div>

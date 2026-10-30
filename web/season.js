@@ -41,9 +41,9 @@ function pathChart(el) {
 function bars(rows, key, full, label, extra) {
   const mx = Math.max(full, ...rows.map((r) => Math.abs(r[key] || 0)));
   return rows.map((r) => { const v = r[key], w = ok(v) ? 50 * Math.abs(v) / mx : 0;
-    return `<div class="rsrow" style="grid-template-columns:3em minmax(48px,1fr) minmax(0,28ch)"><span>${esc(r[label])}</span>
+    return `<div class="rsrow" style="grid-template-columns:3em minmax(48px,1fr) 34ch"><span>${esc(r[label])}</span>
       <span class="rstrack"><i style="${v >= 0 ? `left:50%;width:${w}%` : `left:${50 - w}%;width:${w}%`};background:${v >= 0 ? "var(--up)" : "var(--down)"}"></i><em></em></span>
-      <span class="mono small rsx" title="${esc(extra(r))}">${extra(r)}</span></div>`; }).join("");
+      <span class="small rsx" title="${esc(extra(r))}">${extra(r)}</span></div>`; }).join("");
 }
 function render() {
   const R = D.rest || {};
