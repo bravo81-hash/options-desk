@@ -121,7 +121,7 @@ async function loadCal(ev) {
     calData = await api("/api/calendar?" + q);
     if (calData.error) { $("heat").innerHTML = errBox(calData.error); $("calMeta").textContent = ""; return; }
     calSort = {k: $("calRank").value, dir: -1};
-    $("calMeta").textContent = `${calData.symbol} ${fmt(calData.spot, 2)} · snapshot ${calData.date} · ${calData.pairs.length} pairs · RV20 ${fmt(calData.rv20, 1)}% · ${calData.recorded_days} recorded sessions · ${calData.releases.ok ? `release dates to ${relDay(calData.releases.to)}` : "release dates unavailable"}`;
+    $("calMeta").textContent = `${calData.symbol} ${fmt(calData.spot, 2)} · snapshot ${calData.date} · ${calData.pairs.length} pairs · RV20 ${fmt(calData.rv20, 1)}% · ${calData.recorded_days} recorded sessions · ${calData.releases && calData.releases.ok ? `release dates to ${relDay(calData.releases.to)}` : "release dates unavailable"}`;
     calData.pairs.forEach((p) => { p.relN = p.events ? p.events.length : null; });
     renderCal();
     $("calGates").innerHTML = gateCards(calData.gates);
