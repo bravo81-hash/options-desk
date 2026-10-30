@@ -3,6 +3,9 @@ name: Publish cloud copy
 # Market-data-only copy of the desk on GitHub Pages. No TWS, no account data.
 # If the data fails validation the job fails and the previous site stays up.
 on:
+  push:                             # page changes go live straight away
+    branches: [main]
+    paths: ["web/**", "cloud/**", ".github/workflows/publish.yml"]
   schedule:
     - cron: "*/30 13-21 * * 1-5"   # every 30 min across US market hours (UTC)
     - cron: "40 22 * * *"           # once after the close, and at weekends
