@@ -33,8 +33,7 @@ function prep(t) { // per-leg IV fallback: same-expiry average, then 20%
   t.unreal = t.legs.reduce((s, l) => s + (l.mid == null ? 0 : l.qty * MULT * (l.mid - l.open_price)), 0);
   t.pnlNow = (t.one_pnl || 0) + t.unreal;
   t.marked = t.legs.every((l) => l.mid != null);
-  const closes = t.legs.every((l) => l.mid != null && l.mark && ok(l.mark.close));
-  t.dayChg = closes ? t.legs.reduce((s, l) => s + l.qty * MULT * (l.mid - l.mark.close), 0) : null;
+  t.dayChg = !t.marked ? null : ok(t.last_pnl) ? t.pnlNow - t.last_pnl : t.new_since_close ? t.pnlNow : null;  // against the desk's own closing marks
   t.totalPct = t.margin ? 100 * t.pnlNow / t.margin : null;
   t.dayPct = t.margin && ok(t.dayChg) ? 100 * t.dayChg / t.margin : null;
   t.openedMs = t.opened_iso ? Date.parse(t.opened_iso) : null;
@@ -110,6 +109,7 @@ let tSort = {k: "firstExp", dir: 1};
 const mktOpen = () => { const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "numeric", hour12: false}).formatToParts(new Date());
   const g = (t) => (p.find((x) => x.type === t) || {}).value, h = +g("hour"), m = +g("minute"), wd = g("weekday");
   return !["Sat", "Sun"].includes(wd) && (h * 60 + m) >= 570 && (h * 60 + m) < 960; };
+window.mktOpen = mktOpen;  // the data pill shows how old the marks are while it is open
 function tradesTable(T) {
   const cols = [["name", "Trade"], ["acct", "Account"], ["pnlNow", "Total return", 1], ["totalPct", "Total %", 1], ["perDay", "% / day", 1], ["paceNow", "Pace now", 1], ["planPri", "Plan", 1], ["dollarDay", "$ / day", 1], ["dayChg", "Today's return", 1], ["dayPct", "Today %", 1],
     ["openedMs", "Opened", 1], ["ditNow", "Days in trade", 1], ["firstExp", "Days to expiry", 1], ["margin", "Margin", 1]];
@@ -176,7 +176,7 @@ function capitalView(T) {
   const slow = T.filter((t) => t.speed === "slow" && t.margin).sort((a, b) => (b.gapDay || 0) - (a.gapDay || 0)).slice(0, 10);
   return head + `<div class="tbl"><table><thead><tr><th>Entry DTE</th><th class="n">Trades</th><th class="n">Margin</th><th>Share of margin</th><th class="n">P&amp;L now</th><th class="n">Return</th><th class="n">Avg days held</th>
     <th class="n" title="so far: $ per day held ÷ margin">Return / day so far</th><th class="n" title="from here: theta $/day at today's IVs ÷ margin">Pace now</th><th class="n" title="your closed A14 trades in ONE with the same entry DTE">Closed A14s / day</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <h3 style="margin:14px 0 6px">Slow capital: under ${fmt(sp.slow, 2)}% a day from here, or so far after 3+ weeks <span class="small muted">(largest gap to your ${fmt(sp.target, 2)}%/day target first)</span></h3>
+    <h3 style="margin:14px 0 6px">Slow capital: under ${fmt(sp.slow, 2)}% a day from here, or so far after 3+ weeks <span class="small muted">(${slow.length < slowT.length ? `top ${slow.length} of ${slowT.length}, ` : ""}largest gap to your ${fmt(sp.target, 2)}%/day target first)</span></h3>
     ${slow.length ? `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">Entry DTE</th><th class="n">Margin</th><th class="n">Days held</th><th class="n">Total</th><th class="n">% / day so far</th><th class="n">Pace now</th><th class="n">Theta / day</th><th class="n" title="margin × target − theta">Gap to target / day</th><th class="n">Days to expiry</th></tr></thead><tbody>${
     slow.map((t) => `<tr class="click" data-id="${esc(t.id)}"><td>${esc(t.name)}${t.overstay ? ` <span class="chip wrn" title="held ${t.ditNow}d vs ${Math.round(t.usualHold)}d for your closed A14s with this entry DTE">past usual hold</span>` : ""}</td><td class="n">${t.entryDte ?? "–"}</td><td class="n">${money(t.margin)}</td>
       <td class="n">${t.ditNow ?? "–"}${ok(t.usualHold) ? ` <span class="small muted">/ ${Math.round(t.usualHold)}</span>` : ""}</td><td class="n ${cls(t.totalPct)}">${pctS(t.totalPct)}</td><td class="n ${t.slowSoFar ? "neg" : cls(t.perDay)}">${fmt(t.perDay, 2)}%</td>
@@ -357,7 +357,7 @@ function render() {
   const worstIdx = total("dated").reduce((m, v, i, a) => (v < a[m] ? i : m), 0);
   const tile = (l, b, sub, k = "") => `<div><span class="lbl">${l}</span><span class="big ${k}">${b}</span><span class="small muted">${sub}</span></div>`;
   $("rkStrip").innerHTML = tile("P&L now", money(pnlNow), `${T.length} trades · ${T.filter((t) => !t.marked).length ? T.filter((t) => !t.marked).length + " not fully marked" : "all legs marked"}`, cls(pnlNow)) +
-    tile(mktOpen() ? "Today's return" : "Last session's return", money(T.reduce((s, t) => s + (t.dayChg || 0), 0)), mktOpen() ? "change since the prior close, all trades" : "market shut: the last session's change, all trades", cls(T.reduce((s, t) => s + (t.dayChg || 0), 0))) +
+    tile(mktOpen() ? "Today's return" : "Last session's return", money(T.reduce((s, t) => s + (t.dayChg || 0), 0)), mktOpen() ? "change since the last close, USD, option trades only" : "market shut: the last session's change, USD, option trades only", cls(T.reduce((s, t) => s + (t.dayChg || 0), 0))) +
     tile("Delta per 1% move", money(d1), "SPX-equivalent, beta-adjusted", cls(d1)) +
     tile("Theta / day", money(sumG("theta")), "today, at current IVs", cls(sumG("theta"))) +
     tile("Vega / vol pt", money(sumG("vega")), "all legs +1 IV point", cls(sumG("vega"))) +

@@ -316,7 +316,7 @@ def _cond(D, u, i):
     return {**b, "raw": raw, "date": D["days"][i], "year": D["days"][i][:4], "ivts": round(float(ivts), 3),
             "ivts_band": ivts_band(float(ivts))["band"], "vix": round(float(vix), 1),
             "trend": "above" if D[u][i] > D[u + "_sma20"][i] else "below",
-            "vrp": None if np.isnan(rv) else round(float(vix - 100 * rv), 1)}
+            "vrp": None if np.isnan(rv) else round(float(iv - 100 * rv), 1)}
 
 
 # ------------------------------------------------------------------ exits
@@ -512,9 +512,9 @@ _data_lock = threading.Lock()
 
 
 def data():
-    """load(), kept until the next SPX close."""
+    """load(), kept until any series it needs has a newer close."""
     with _data_lock:
-        k = _last_close()
+        k = _data_key()
         if _DATA["key"] != k or _DATA["D"] is None:
             D = load()
             D["ord"] = np.array([d.toordinal() for d in D["date"]])
@@ -597,6 +597,13 @@ def shape_score(D, u, dte, x, rule=None):
 
 def _last_close():
     return (db.query("SELECT MAX(date) d FROM bars_daily WHERE symbol='^GSPC'") or [{}])[0].get("d")
+
+
+def _data_key():
+    """Newest close of every series load() joins: it stops at the last day they all have, so a late RVX must reload it."""
+    bars = db.query("SELECT symbol, MAX(date) d FROM bars_daily WHERE symbol IN ('^GSPC','^RUT') GROUP BY symbol")
+    vols = db.query("SELECT symbol, MAX(date) d FROM index_daily WHERE symbol IN ('VIX9D','VIX','VIX3M','VIX6M','VIX1Y','RVX') GROUP BY symbol")
+    return tuple(sorted((r["symbol"], r["d"]) for r in bars + vols))
 
 
 def cached():

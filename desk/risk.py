@@ -285,6 +285,18 @@ def refresh_marks():
 
 
 # ------------------------------------------------------------------ payload for the grid
+def _last_session_pnl():
+    """(date, {trade key: marked P&L}) at the close of the session before this one, from the desk's own daily marks.
+    IBKR's close tick is not used: it is often stale on the far-OTM legs, which put the grid's day $11k off NAV."""
+    from .recorder import session_date
+    sess = session_date().isoformat()
+    try:
+        rows = db.query("SELECT date, trade_key, pnl FROM trade_pnl WHERE date=(SELECT MAX(date) FROM trade_pnl WHERE date<?)", (sess,))
+    except Exception:
+        return None, {}
+    return (rows[0]["date"], {r["trade_key"]: r["pnl"] for r in rows}) if rows else (None, {})
+
+
 def _surface_iv(underlying, expiry, strike):
     """IV at a strike from the latest recorded surface (OTM quotes only), same or nearest expiry."""
     snap = db.query("SELECT id FROM snaps WHERE symbol=? ORDER BY date DESC, id DESC LIMIT 1", (underlying,))
@@ -428,6 +440,7 @@ def payload():
                     mk["iv_src"] = "from mid" if mk["iv"] else None
     recon = reconcile(trades, m.get("positions", [])) if m.get("positions") else []
     adj, adj_ts = adjustment_counts()
+    last_date, last_pnl = _last_session_pnl()
     for t in trades:
         t["prev_spot"] = m.get("prev_close", {}).get(t["underlying"])
         t["strategy"] = classify(t["group"], t["name"])
@@ -437,6 +450,8 @@ def payload():
             t["opened_iso"] = _local_dt(t["opened"]).isoformat()
         except Exception:
             t["opened_iso"] = None
+        t["last_pnl"] = last_pnl.get(t["id"])
+        t["new_since_close"] = t["last_pnl"] is None and bool(last_date) and (t["opened_iso"] or "")[:10] > last_date
     return {"trades": trades, "one_file": path, "one_fresh": one_freshness(path), "marks_ts": m.get("ts"), "spots": spots, "stocks": m.get("stocks", []),
             "missing": m.get("missing", []), "recon": recon, "status": status, "detail_exported": adj_ts,
             "labels": load_config()["risk"]["account_labels"]}

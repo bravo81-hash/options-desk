@@ -206,7 +206,7 @@ def save_note(key, note):
 
 def snapshot_open():
     """Record every open trade's marked P&L for the current session (called after each TWS refresh)."""
-    from .recorder import session_date
+    from .recorder import close_capture, session_date
     from .risk import payload
     init()
     pl = payload()
@@ -215,9 +215,10 @@ def snapshot_open():
     sess = session_date().isoformat()
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     rows = []
+    kept = {r["trade_key"] for r in db.query("SELECT trade_key FROM trade_pnl WHERE date=? AND updated>=?", (sess, close_capture(sess)))}
     for t in pl["trades"]:
         legs = t["legs"]
-        if not legs or any(not (lg.get("mark") or {}).get("mid") is not None for lg in legs):
+        if t["id"] in kept or not legs or any(not (lg.get("mark") or {}).get("mid") is not None for lg in legs):
             continue  # only fully marked trades: a missing leg would distort the path
         unreal = sum((lg["mark"]["mid"] - (lg["open_price"] or 0)) * lg["qty"] * 100 for lg in legs)
         rows.append((sess, t["id"], t["name"], t.get("ib_account"), t["underlying"], round((t.get("one_pnl") or 0) + unreal, 2), t.get("margin"), now))

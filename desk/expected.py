@@ -10,7 +10,7 @@ import math
 import threading
 
 from . import db
-from .chain import LOCK, connect, dte, option_params, snapshot, underlying
+from .chain import ET, LOCK, connect, dte, option_params, snapshot, underlying
 
 status = {"running": False, "log": [], "last": None}
 
@@ -38,9 +38,15 @@ def holdings():
     return out
 
 
+def _live(expiry):
+    """Still to settle: an expiry drops out at that day's close."""
+    n = dte(expiry)
+    return n > 0 or (n == 0 and dt.datetime.now(ET).hour < 16)
+
+
 def _pick(params, held, max_dte=120):
     """Next expiry, the next two Fridays, monthlies to max_dte, and every expiry you hold."""
-    exps = sorted(e for e in params if dte(e) >= 0)
+    exps = sorted(e for e in params if _live(e))
     pick = set(exps[:1])
     fridays = [e for e in exps if dt.datetime.strptime(e, "%Y%m%d").weekday() == 4]
     pick |= set(fridays[:2])
@@ -137,6 +143,21 @@ def refresh_async():
     return True
 
 
+def _age(v):
+    """Count the saved chain from today: settled expiries go, and each move shrinks with the days left."""
+    rows = [e for e in v["expiries"] if _live(e["expiry"])]
+    for e in rows:
+        e["dte"] = max(dte(e["expiry"]), 0)
+        if e.get("iv"):
+            e["sd"] = v["spot"] * e["iv"] * math.sqrt(max(e["dte"], 0.5) / 365)
+    day = next((e for e in rows if e["dte"] >= 1 and e.get("iv")), None)  # a 0 DTE IV says nothing about tomorrow
+    v.update(expiries=rows, day_sd=v["spot"] * day["iv"] / math.sqrt(365) if day else None)
+
+
 def payload():
     raw = db.get_meta("em_cache")
-    return {**(json.loads(raw) if raw else {"symbols": {}}), "running": status["running"], "log": status["log"]}
+    out = json.loads(raw) if raw else {"symbols": {}}
+    for v in out["symbols"].values():
+        if v.get("expiries"):
+            _age(v)
+    return {**out, "running": status["running"], "log": status["log"]}

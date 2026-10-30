@@ -31,7 +31,7 @@ def _z(s, n=LOOKBACK):
         return None, None
     window = s.iloc[-n - 1:-1]
     v = float(s.iloc[-1])
-    return zscore(window.tolist(), v), percentile(s.iloc[-3 * n:].tolist(), v)
+    return zscore(window.tolist(), v), percentile(s.iloc[-n:].tolist(), v)
 
 
 # ------------------------------------------------------------------ term structure
@@ -501,7 +501,8 @@ def evidence():
     return {"files": files, "n": len(ev), "trades": ev.sort_values("date").to_dict("records"),
             "features": feats, "by_strategy": by.to_dict("records"),
             "note": "Entry-day values use the close of the session the trade was opened in (entries are within the last hour). "
-                    "Small sample: treat any rule as a hypothesis to watch, not a proven filter."}
+                    "Small sample: treat any rule as a hypothesis to watch, not a proven filter. "
+                    "This tab counts OptionStrat trades before ONE took over as well as ONE trades; the Journal lists ONE trades only, so its totals differ."}
 
 
 def inventory():

@@ -218,7 +218,7 @@ function coming(Rk, Rd) {
   if (Rk) Rk.trades.forEach((t) => { const q = t.plan; if (!q || !ok(q.dte)) return;
     const left = ok(q.timeDte) ? q.dte - q.timeDte : null;
     if (ok(left) && left >= 0 && left <= 3) items.push({when: new Date(Date.now() + left * 864e5).toISOString(), txt: `${esc(t.name)} <span class="small muted">reaches its ${q.timeDte} DTE time stop ${left === 0 ? "today" : `in ${left} day${left > 1 ? "s" : ""}`}</span>`});
-    else if (q.dte <= 7) items.push({when: new Date(Date.now() + q.dte * 864e5).toISOString(), txt: `${esc(t.name)} <span class="small muted">first expiry in ${q.dte} days</span>`}); });
+    else if (q.dte <= 3) items.push({when: new Date(Date.now() + q.dte * 864e5).toISOString(), txt: `${esc(t.name)} <span class="small muted">first expiry in ${q.dte} days</span>`}); });
   items.sort((a, b) => String(a.when).localeCompare(String(b.when)));
   $("acComing").innerHTML = items.length ? `<ul class="small" style="margin:0;padding-left:18px">${items.map((i) => `<li><span class="mono muted">${esc(new Date(i.when).toLocaleDateString([], {weekday: "short", day: "numeric", month: "short"}))}</span> ${i.txt}</li>`).join("")}</ul>`
     : `<div class="state">No high-impact releases or time stops in the next 3 days.</div>`;

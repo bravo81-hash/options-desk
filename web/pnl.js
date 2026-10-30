@@ -116,7 +116,7 @@ function recon() {
   const df = new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
   $("rcFills").innerHTML = R.fills.length ? `<div class="chart" id="rcFillChart"></div><div class="capped"><div class="tbl"><table><thead><tr><th>Time (yours)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
     R.fills.map((f, i) => `<tr${i >= 30 ? ` class="xrow"` : ""}><td class="mono small">${f.time_utc ? df.format(new Date(f.time_utc)) : "–"}</td><td>${esc(f.label)}</td><td class="mono small">${esc(f.local_symbol || f.symbol)}</td><td>${f.side === "BOT" ? "Buy" : "Sell"}</td>
-      <td class="n">${f.qty}</td><td class="n">${fmt(f.price)}</td><td class="n">${fmt(f.commission)}</td>
+      <td class="n">${f.qty}</td><td class="n">${fmt(f.price)}</td><td class="n">${f.commission ? fmt(f.commission) : "–"}</td>
       <td><span class="chip ${f.status === "in ONE" ? "pos" : f.status === "not in ONE" ? "neg" : "muted"}">${esc(f.status)}</span></td><td class="small">${esc(f.one_trades.join(", ") || "–")}</td></tr>`).join("")}</tbody></table></div>${R.fills.length > 30 ? `<button type="button" class="ghost" data-cap="Show all ${R.fills.length}">Show all ${R.fills.length}</button>` : ""}</div>`
     : `<div class="state">No fills recorded in the last 7 days yet. Fills are captured whenever the app refreshes from TWS (TWS itself only returns today's).</div>`;
   if (R.fills.length) {

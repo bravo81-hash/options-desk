@@ -294,10 +294,14 @@ def api_freshness():
         ("Expected moves", d_of(meta_ts("em_cache")), "Expected moves tab"),
         ("Marks", d_of(meta_ts("risk_marks")), "Risk grid marks, positions, NAV"),
     ]
+    try:
+        src.append(("Market conditions", backtest.data()["days"][-1], "Actions: Market conditions, Evidence: Since 2009"))
+    except Exception:
+        src.append(("Market conditions", None, "Actions: Market conditions, Evidence: Since 2009"))
     out = [{"name": n, "date": d, "stale": (d or "") < sess.isoformat(), "what": w} for n, d, w in src]
     out.append({"name": "ONE export", "date": fr.get("exported", "")[:10] if fr.get("exported") else None, "stale": bool(fr.get("stale")),
                 "what": f"ONE Summary Report, {fr.get('age_h')}h old" + (f", {fr.get('fills_since')} fills since" if fr.get("fills_since") else "")})
-    return ok({"last_close": sess.isoformat(), "sources": out})
+    return ok({"last_close": sess.isoformat(), "sources": out, "marks_ts": pl.get("marks_ts")})
 
 
 @app.get("/api/vixcond")

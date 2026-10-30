@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const api = async (path, opts) => { const r = await fetch(path, opts); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return r.json(); };
 const zcls = (z) => !ok(z) ? "muted" : Math.abs(z) >= 2 ? "neg" : Math.abs(z) >= 1 ? "wrn" : "";
 const zTxt = (z) => ok(z) ? `z ${sgn(z, 2)}` : "z –";
-const pctTxt = (p) => ok(p) ? `${fmt(p, 0)}th pct` : "";
+const pctTxt = (p) => ok(p) ? `${ordinal(p)} pct (1y)` : "";
 const errBox = (e) => `<div class="state err">${esc(e.message || e)}</div>`;
 
 /* ---------------- theme: auto (Windows setting) / light / dark, also applied to the Market iframe ---------------- */
@@ -29,9 +29,11 @@ async function loadFresh() {
     const F = await api("/api/freshness");
     const day = (d) => d ? new Date(d + "T12:00:00Z").toLocaleDateString([], {day: "numeric", month: "short", timeZone: "UTC"}) : "none";
     const stale = F.sources.filter((x) => x.stale);
-    $("freshBar").className = "datapill" + (stale.length ? " st" : "");
-    $("freshBar").textContent = `Data: ${day(F.last_close)} ${stale.length ? `· ${stale.length} stale` : "✓"}`;
-    $("freshList").innerHTML = `<p class="small muted">Latest US close: <b>${day(F.last_close)}</b></p><div class="tbl"><table><thead><tr><th>Source</th><th class="n">Date</th><th>Used by</th></tr></thead><tbody>${F.sources.map((x) =>
+    const mins = F.marks_ts ? Math.round((Date.now() - Date.parse(F.marks_ts)) / 6e4) : null, ago = !ok(mins) ? "" : mins < 90 ? `${mins} min` : `${Math.round(mins / 60)} h`;
+    const live = ok(mins) && window.mktOpen && window.mktOpen(), late = live && mins > 45;  // marks lag the market once it is open
+    $("freshBar").className = "datapill" + (stale.length || late ? " st" : "");
+    $("freshBar").textContent = `Data: ${day(F.last_close)} ${stale.length ? `· ${stale.length} stale` : "✓"}${live ? ` · marks ${ago}` : ""}`;
+    $("freshList").innerHTML = `<p class="small muted">Latest US close: <b>${day(F.last_close)}</b>${ago ? ` · marks updated ${ago} ago${late ? ` <span class="wrn">(over 45 min while the market is open)</span>` : ""}` : ""}</p><div class="tbl"><table><thead><tr><th>Source</th><th class="n">Date</th><th>Used by</th></tr></thead><tbody>${F.sources.map((x) =>
       `<tr><td>${esc(x.name)}</td><td class="n ${x.stale ? "wrn" : ""}">${x.name === "ONE export" ? (x.stale ? "stale" : "ok") : day(x.date)}</td><td class="small muted">${esc(x.what)}</td></tr>`).join("")}</tbody></table></div>`;
   } catch (e) { $("freshBar").textContent = "Data"; }
 }
@@ -98,7 +100,7 @@ async function loadToday() {
     xyChart($("termCurve"), {label: "VIX term structure", xUnit: "d", xMin: 0, series: t.curves.map((c, k) => ({name: c.label, color: cols[k], dash: k ? "5 3" : null, pts: c.points.map((p) => [p.tenor, p.v, `${p.name} (${p.tenor}d)`])}))});
     $("termLegend").innerHTML = legend(t.curves.map((c, k) => [`${c.label} (${shortDate(c.date)})`, cols[k]]));
     lineChart($("ratioChart"), {label: "VIX/VIX3M", h: 190, series: [{name: "VIX / VIX3M", short: "", data: t.ratio.hist, color: "var(--ink)", width: 1.4}],
-      refs: [{y: 1, label: "1.00", color: "var(--down)"}, {y: 0.83, label: "0.83", color: "var(--warn)"}], fy: (v) => v.toFixed(2), ft: (v) => v.toFixed(3)});
+      refs: [{y: 1, label: "1.00", color: "var(--down)"}, {y: 0.9, label: "0.90", color: "var(--warn)"}, {y: 0.834, label: "0.834", color: "var(--info)"}], fy: (v) => v.toFixed(2), ft: (v) => v.toFixed(3)});
     $("ratioNote").textContent = "Above 1.00 = backwardation (TimeEdge hard skip). Since 2009 (model backtest, Evidence → Since 2009): calendars entered below 0.90 with SPX above its 20-day average averaged about +4% of the debit; at 0.90+ they lost on average. Your June 2–4 calendar losses (0.80–0.81) were one shock that the backtest reproduces; steep contango was otherwise the best calendar zone.";
     $("gates").innerHTML = gateCards([...(spx.gates || []), ...(rut.gates || [])]);
     const vc = {VIX9D: "var(--s2)", VIX: "var(--ink)", VIX3M: "var(--s1)"};

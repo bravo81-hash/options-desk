@@ -115,11 +115,12 @@ def collect(ib, positions_raw, marks=None):
         ib.cancelPnL(a)
     # executions -> journal
     fills = ib.reqExecutions()
+    ib.sleep(1)  # commission reports arrive just after the executions and update these fills in place
     rows = []
     for f in fills:
         e, c = f.execution, f.contract
         cr = f.commissionReport
-        comm = cr.commission if cr and cr.commission is not None and cr.commission < 1e8 else None
+        comm = cr.commission if cr and cr.commission and cr.commission < 1e8 else None  # 0.0 = no report yet
         rows.append((e.execId, e.acctNumber, e.time.astimezone(dt.timezone.utc).isoformat() if e.time else None,
                      c.localSymbol, c.secType, c.symbol, c.tradingClass, c.lastTradeDateOrContractMonth,
                      _num(c.strike), c.right, e.side, _num(e.shares), _num(e.price), _num(c.multiplier) or 1.0,
@@ -140,7 +141,7 @@ def collect(ib, positions_raw, marks=None):
     cash, fill_qty = {}, {}
     for f in fills:
         k = (f.execution.acctNumber, f.contract.conId)
-        if k[0] not in accounts or not f.execution.time:
+        if k[0] not in accounts or not f.execution.time or f.contract.secType == "BAG":  # a combo's own row repeats its legs
             continue
         if session_date(f.execution.time).isoformat() != sdate:
             continue
@@ -174,8 +175,9 @@ def collect(ib, positions_raw, marks=None):
     now_s = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     db.write("""CREATE TABLE IF NOT EXISTS contract_values (date TEXT, account TEXT, con_id INTEGER, local_symbol TEXT,
                 symbol TEXT, value REAL, updated TEXT, PRIMARY KEY (date, account, con_id))""")
-    db.write("DELETE FROM contract_values WHERE date=?", (sdate,))
-    db.write("INSERT INTO contract_values VALUES (?,?,?,?,?,?,?)",
+    from .recorder import close_capture
+    db.write("DELETE FROM contract_values WHERE date=? AND updated<?", (sdate, close_capture(sdate)))
+    db.write("INSERT OR IGNORE INTO contract_values VALUES (?,?,?,?,?,?,?)",
              [(sdate, k[0], k[1], con[k]["local"], con[k]["symbol"], v, now_s) for k, v in values.items() if v is not None and con[k]["open"]], many=True)
     prev_date = db.query("SELECT MAX(date) d FROM contract_values WHERE date<?", (sdate,))[0]["d"]
     prev = {(r["account"], r["con_id"]): r for r in db.query("SELECT * FROM contract_values WHERE date=?", (prev_date,))} if prev_date else {}
@@ -367,4 +369,5 @@ def one_import_csv(account, date_local=None):
 def fills(days=7):
     init()
     since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
-    return db.query("SELECT * FROM executions WHERE time_utc>=? ORDER BY time_utc DESC", (since,))
+    # one row per fill: leave out each combo's own row and the FA master's copy of the sub-account fills
+    return db.query("SELECT * FROM executions WHERE time_utc>=? AND sec_type<>'BAG' AND account NOT LIKE 'F%' ORDER BY time_utc DESC", (since,))

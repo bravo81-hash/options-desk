@@ -22,9 +22,14 @@ IN_SIZE = {
     "vrp_b": "at the extremes: under 0 is a caution condition, 8+ an opportunity",
     "season": "no",
 }
-FMT = {"vix": "VIX {:.1f}", "spx200_pct": "{:+.1f}% vs 200-day", "front_r": "{:.3f}", "vix_pct": "{:.0f}th percentile",
+FMT = {"vix": "VIX {:.1f}", "spx200_pct": "{:+.1f}% vs 200-day", "front_r": "{:.3f}", "vix_pct": "{} percentile",
        "skew": "SKEW {:.0f}", "vvix": "VVIX {:.0f}", "rvx_spread": "{:+.1f} pts", "vrp": "{:+.1f} pts", "season_up": "{:.0f}% of years up"}
 FIELD = {k: f for k, (_, _, f, _, _) in backtest.COND.items()}
+
+
+def _ordinal(v):
+    n = round(v)
+    return f"{n}{'th' if 11 <= n % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
 def _effect(cell, base):
@@ -44,7 +49,7 @@ def _reading(k, T):
         if k == "ivts_band":
             return f"{c['ivts']:.3f} ({c['ivts_band']})"
         v = c["raw"].get(f)
-        return "–" if v is None else FMT[f].format(v)
+        return "–" if v is None else FMT[f].format(_ordinal(v) if f == "vix_pct" else v)
     return " · ".join(f"{u} {one(u)}" if k == "vrp_b" else one(u) for u in ("SPX", "RUT")) if k in PER_INDEX else one("SPX")
 
 

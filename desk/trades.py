@@ -62,6 +62,14 @@ def _one_dt(s):
     return None
 
 
+def _os_session(x):
+    """OptionStrat times are local too (entries cluster 5-9am, the last US hours): same shift as ONE, a weekend time is the Friday session."""
+    d = (x - dt.timedelta(hours=14)).date()
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    return d
+
+
 def load_one(path=None):
     path = path or _newest(load_config()["trade_files"]["one_glob"])
     if not path:
@@ -90,8 +98,7 @@ def load_optionstrat(path=None):
         if r[3] is None or not isinstance(r[3], dt.datetime):
             continue
         created, closed = r[3], r[4]
-        # OptionStrat timestamps are UTC
-        to_et = lambda x: (x - dt.timedelta(hours=4)).date() if isinstance(x, dt.datetime) else None
+        to_et = lambda x: _os_session(x) if isinstance(x, dt.datetime) else None
         name = str(r[0] or "")
         und = name.split(" ")[0].split(".")[1] if name.upper().startswith(("SMSF.", "ER.")) and "." in name else name.split(" ")[0].split(".")[0]
         out.append(dict(source="OptionStrat", group=r[18] or "", name=name, underlying=und, status="Closed",

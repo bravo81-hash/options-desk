@@ -148,7 +148,7 @@ def today(exit_days=14, vol_basis="rv20"):
                      + ("" if up else "; with VIX/VIX3M 0.834–0.90 this was the model's best A14 cell since 2009" if calm else "; outside a normal term structure (0.834–0.90) the model lost on average")}]
         if front is not None:
             hot = front >= 0.90 and ivts is not None and ivts < 0.90
-            checks_b.append({"ok": not hot, "text": f"VIX9D/VIX {front:.3f}: " + ("front of the curve under stress (0.90+): A14s entered like this did worse in every split since 2011 (model); readiness steps A14 down one"
+            checks_b.append({"ok": not hot, "text": f"VIX9D/VIX {front:.3f}: " + ("front of the curve elevated (0.90+): A14s entered like this did worse in every split since 2011 (model); readiness steps A14 down one"
                              if hot else "front of the curve calm (under 0.90)" if front < 0.90 else "at 0.90+, but the term-structure rule already covers it")})
         g_list = gates.get(sym, [])
         side = "above" if ivts is not None and ivts > IVTS_LINE else "below"

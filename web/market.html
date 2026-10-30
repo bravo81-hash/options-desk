@@ -532,16 +532,16 @@ async function loadVol() {
   const pctile = (a, v) => { const w = a.slice(-252).filter(ok); return w.length && ok(v) ? 100 * w.filter((x) => x <= v).length / w.length : null; };
   const vNow = maps[1][curveDate] ?? last(vix.c), lastOf = (b) => b ? (curveDate in (b._m || (b._m = Object.fromEntries(b.d.map((d, i) => [d, b.c[i]])))) ? b._m[curveDate] : last(b.c)) : null;
   const ivts = ok(now[1]) && ok(now[2]) ? now[1] / now[2] : null, r9 = ok(now[0]) && ok(now[1]) ? now[0] / now[1] : null;
-  const rvsNow = rvS ? rvS[last(spx.d)] : null, rvrNow = rvR ? rvR[last(rut.d)] : null, rvxNow = lastOf(rvx);
+  const rvsNow = rvS ? rvS[curveDate] ?? rvS[last(spx.d)] : null, rvrNow = rvR ? rvR[curveDate] ?? rvR[last(rut.d)] : null, rvxNow = lastOf(rvx);  // same day as the vol index
   const kpi = (lab, val, sub, k = "") => `<div><span class="lbl">${lab}</span><b class="${k}">${val}</b><span class="small muted">${sub}</span></div>`;
   const ivtsK = !ok(ivts) ? "" : ivts >= 1 ? "neg" : ivts >= 0.9 ? "wrn" : "";
   const vrpS = ok(rvsNow) ? vNow - rvsNow : null, vrpR = ok(rvrNow) && ok(rvxNow) ? rvxNow - rvrNow : null;
   $("volBody").innerHTML = `<div class="kv" style="margin-bottom:14px">
-      ${kpi("VIX", fmt(vNow, 2), `z20 ${sgn(last(z), 2)} · ${fmt(pctile(vix.c, vNow), 0)}th pct (1y)`, last(z) >= 2 ? "neg" : last(z) >= 1 ? "wrn" : "")}
-      ${kpi("VIX9D / VIX", fmt(r9, 3), r9 >= 1 ? "front-end stress" : "near-term calm", r9 >= 1 ? "neg" : "")}
+      ${kpi("VIX", fmt(vNow, 2), `z20 ${sgn(last(z), 2)} · ${ordinal(pctile(vix.c, vNow))} pct (1y)`, last(z) >= 2 ? "neg" : last(z) >= 1 ? "wrn" : "")}
+      ${kpi("VIX9D / VIX", fmt(r9, 3), !ok(r9) ? "" : r9 >= 1 ? "front inverted: stress" : r9 >= 0.9 ? "front elevated (0.90+)" : "near-term calm", r9 >= 1 ? "neg" : r9 >= 0.9 ? "wrn" : "")}
       ${kpi("VIX / VIX3M", fmt(ivts, 3), `${ivtsBand(ivts).label} · ${ivtsBand(ivts).a14} · ${ivtsBand(ivts).cal}`, ivtsBand(ivts).cls)}
-      ${kpi("VVIX", fmt(lastOf(vvix), 1), `vol of VIX · ${fmt(pctile(vvix ? vvix.c : [], lastOf(vvix)), 0)}th pct (1y)`, lastOf(vvix) >= 110 ? "wrn" : "")}
-      ${kpi("SKEW", fmt(lastOf(skew), 1), `tail demand · ${fmt(pctile(skew ? skew.c : [], lastOf(skew)), 0)}th pct (1y)`)}
+      ${kpi("VVIX", fmt(lastOf(vvix), 1), `vol of VIX · ${ordinal(pctile(vvix ? vvix.c : [], lastOf(vvix)))} pct (1y)`, lastOf(vvix) >= 110 ? "wrn" : "")}
+      ${kpi("SKEW", fmt(lastOf(skew), 1), `tail demand · ${ordinal(pctile(skew ? skew.c : [], lastOf(skew)))} pct (1y)`)}
       ${kpi("SPX · VIX − RV20", sgn(vrpS, 1), `realised ${fmt(rvsNow, 1)} · sellers want > 0`, !ok(vrpS) ? "" : vrpS < 0 ? "neg" : "pos")}
       ${kpi("RUT · RVX − RV20", sgn(vrpR, 1), `RVX ${fmt(rvxNow, 1)} · realised ${fmt(rvrNow, 1)}`, !ok(vrpR) ? "" : vrpR < 0 ? "neg" : "pos")}
     </div>

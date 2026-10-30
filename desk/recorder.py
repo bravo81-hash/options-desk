@@ -20,6 +20,11 @@ _run_lock = threading.Lock()
 status = {"running": False, "last": None, "log": []}
 
 
+def close_capture(session):
+    """UTC time of a session's closing marks (ISO). The first capture from here on is kept, so the next pre-open can't replace it."""
+    return dt.datetime.combine(dt.date.fromisoformat(session), dt.time(16, 15), ET).astimezone(dt.timezone.utc).isoformat(timespec="seconds")
+
+
 def session_date(now=None):
     """Trading session the data belongs to: weekends and pre-open map to the prior weekday."""
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ET)

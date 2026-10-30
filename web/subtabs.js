@@ -64,6 +64,13 @@ document.addEventListener("click", (e) => {
   if (item && host && host._showSub) { e.preventDefault(); host._showSub(item.dataset.sub); requestAnimationFrame(() => t.scrollIntoView({behavior: "smooth", block: "start"})); }
 });
 
+/* 51 -> "51st" */
+function ordinal(v) {
+  if (v == null || !isFinite(v)) return "–";
+  const n = Math.round(v), t = n % 100;
+  return n + (t >= 11 && t <= 13 ? "th" : ({1: "st", 2: "nd", 3: "rd"})[n % 10] || "th");
+}
+
 /* One VIX/VIX3M scale for the whole app (same bands as the server's readiness.ivts_band) */
 function ivtsBand(v) {
   if (v == null || !isFinite(v)) return {band: "unknown", label: "–", cls: "", a14: "", cal: ""};

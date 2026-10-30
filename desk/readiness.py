@@ -163,7 +163,7 @@ def now():
         if band["band"] in ("backwardation", "flat"):
             notes.append(f"VIX/VIX3M {ivts:.3f}: {band['a14']}")
         if band["band"] in ("steep", "normal") and front is not None and front >= FRONT_LINE:
-            notes.append(f"VIX9D/VIX {front:.3f} (0.90+): one step down: front-of-curve stress; A14s entered like this did worse in every split since 2011 (model)")
+            notes.append(f"VIX9D/VIX {front:.3f} (0.90+): one step down: front of the curve elevated; A14s entered like this did worse in every split since 2011 (model)")
         if not up:
             notes.append(f"{sym} below its 20-day average: " + (f"one step down with the term structure {band['band']}; {hist}"
                          if band["band"] != "normal" else "no step down with a normal term structure: the model's best A14 cell since 2009"))
