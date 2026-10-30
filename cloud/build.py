@@ -25,7 +25,7 @@ import pandas as pd  # noqa: E402
 
 from desk import db, history, market  # noqa: E402
 from desk.accounts import US_HOLIDAYS  # noqa: E402
-from desk.market import fetch_yf_max  # noqa: E402
+from desk.market import fetch_yf, fetch_yf_max  # noqa: E402
 
 SITE = ROOT / "site"
 ET = ZoneInfo("America/New_York")
@@ -63,6 +63,8 @@ def load_data():
     history.refresh_cboe(force=True)
     log("index history (yfinance) -> SPX / RUT / NDX")
     fetch_yf_max(["^GSPC", "^RUT", "^NDX"])
+    # the data cache carries an afternoon build's bars: without this the evening build keeps them as the close
+    fetch_yf(["^GSPC", "^RUT", "^NDX"] + market.MARKET_SYMBOLS, force=True)
     for yf_sym, sym in (("^GSPC", "SPX"), ("^RUT", "RUT"), ("^NDX", "NDX")):
         rows = db.query("SELECT date, c FROM bars_daily WHERE symbol=?", (yf_sym,))
         db.write("INSERT OR REPLACE INTO index_daily VALUES (?,?,?)", [(sym, r["date"], r["c"]) for r in rows], many=True)

@@ -124,6 +124,8 @@ async function loadCal(ev) {
     $("calMeta").textContent = `${calData.symbol} ${fmt(calData.spot, 2)} · snapshot ${calData.date} · ${calData.pairs.length} pairs · RV20 ${fmt(calData.rv20, 1)}% · ${calData.recorded_days} recorded sessions · ${calData.releases && calData.releases.ok ? `release dates to ${relDay(calData.releases.to)}` : "release dates unavailable"}`;
     calData.pairs.forEach((p) => { p.relN = p.events ? p.events.length : null; });
     renderCal();
+    const proxy = calData.pairs.length && calData.pairs.every((p) => /CBOE/.test(p.zsrc || ""));
+    $("calZNote").innerHTML = proxy ? `<p class="note">Contango z is close across pairs because the history behind it is one CBOE curve until a pair has 20 recorded sessions (${calData.recorded_days} so far). Today it says how the whole curve sits, not which pair is better.</p>` : "";
     $("calGates").innerHTML = gateCards(calData.gates);
   } catch (e) { $("heat").innerHTML = errBox(e); }
 }

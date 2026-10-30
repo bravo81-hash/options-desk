@@ -350,7 +350,7 @@ function niceTicks(lo, hi, n = 4) {
 }
 const charts = new Set();
 const ro = new ResizeObserver((ents) => ents.forEach((e) => { const el = e.target; if (el._draw && Math.abs(el.clientWidth - (el._w || 0)) > 4) el._draw(); }));
-function mount(el, draw) { el._draw = () => { el._w = el.clientWidth; draw(el.clientWidth || 600); }; if (!charts.has(el)) { charts.add(el); ro.observe(el); } el._draw(); }
+function mount(el, draw) { el._draw = () => { el._w = el.clientWidth; draw(Math.max(el.clientWidth || 600, 160)); }; if (!charts.has(el)) { charts.add(el); ro.observe(el); } el._draw(); }
 
 /* lineChart: {dates, series:[{name,vals,color,width,dash,area}], band:{lo,hi}, refs:[{y,label}], shade:[colorOrNull per index],
                yMin,yMax, h, fy, endLabels, fmtTip} */
@@ -684,7 +684,7 @@ function renderSectorTable() {
 /* ============================ Regime strip ========================= */
 // tested odds from the server (same numbers the Trade readiness bar uses)
 let ODDS = null;
-fetch("/api/readiness").then((r) => r.json()).then((R) => { if (!R.error) { ODDS = R; oddsLines(); renderRegime(); } }).catch((e) => console.warn("readiness odds:", e));
+const loadOdds = () => fetch("/api/readiness").then((r) => r.json()).then((R) => { if (!R.error) { ODDS = R; oddsLines(); renderRegime(); } }).catch((e) => console.warn("readiness odds:", e));
 function oddsLines() {
   if (!ODDS || !$("warnOdds")) return;
   const k = Math.min(5, S.warnTested ?? ODDS.warnings.total5), st = ODDS.warnings.all[String(k)];
@@ -937,7 +937,7 @@ async function runSection(sec) {
 let busy = false;
 async function refreshAll(fresh) {
   if (busy) return; busy = true; $("refresh").disabled = true; forceFresh = !!fresh; memo = new Map(); oldestStamp = null;
-  $("updated").textContent = "Updating…";
+  $("updated").textContent = "Updating…"; loadOdds();
   const order = [SEC.warn, SEC.breadth, SEC.vol, SEC.acct, SEC.sect, SEC.cal, SEC.cross, SEC.watch];
   window.loadVixCond && window.loadVixCond($("vcBody"), true);
   const results = await Promise.all(order.map(runSection));
@@ -949,6 +949,8 @@ async function refreshAll(fresh) {
   scheduleNext();
 }
 $("refresh").addEventListener("click", () => refreshAll(true));
+// the readiness bar counts the same six warnings: when it moves on to a newer close, catch up with it
+try { parent.addEventListener("readiness", () => { const R = parent.READY; if (!busy && S.warn && R && R.warnings.total6 !== S.warn.total) refreshAll(false); }); } catch (e) {}
 
 /* auto-refresh: chosen interval, paused while the tab is hidden, countdown in the header */
 let autoMin = 10, nextAt = null, live = false;

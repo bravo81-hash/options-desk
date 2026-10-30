@@ -84,7 +84,7 @@
     </div>
     <div class="grid" data-subs id="tab-cal-grid">
       <section class="panel c5" data-sub="Scanner"><header><h2>Pair heatmap</h2><span class="small muted" id="heatNote">rows = front expiry, columns = back expiry · click a cell</span></header><div class="chart" id="heat"></div><div id="heatLegend"></div></section>
-      <section class="panel c7 scrollp" data-sub="Scanner"><header><h2>Top pairs</h2><span class="small muted">click a column to sort · click a row for history</span></header><div id="pairTable"></div>
+      <section class="panel c7 scrollp" data-sub="Scanner"><header><h2>Top pairs</h2><span class="small muted">click a column to sort · click a row for history</span></header><div id="pairTable"></div><div id="calZNote"></div>
         <p class="note">Contango = back ATM IV − front ATM IV. Forward vol = the vol implied between the two expiries, √((σ²ᵦTᵦ − σ²ꜰTꜰ)/(Tᵦ − Tꜰ)); forward premium = forward vol − front IV. Z-score compares today's contango for the same front/back maturities with the last year: from CBOE's VIX9D…VIX1Y curve for SPX now, and from your own recorded surface once 20 sessions exist (RUT needs recorded history). Debit = ATM put calendar from the snapshot's mids.</p></section>
       <section class="panel modalp" id="pairPanel" hidden><header><h2>Selected pair</h2><button type="button" class="ghost mclose">Close</button></header><div id="pairBox"></div></section>
       <section class="panel c12" data-sub="Gates"><header><h2>Strategy gates</h2></header><div class="cards" id="calGates"></div></section>

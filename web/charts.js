@@ -18,7 +18,7 @@ function niceTicks(lo, hi, n = 4) {
   const out = []; for (let v = Math.ceil(lo / st) * st; v <= hi + 1e-9; v += st) out.push(+v.toFixed(10)); return out;
 }
 const ro = new ResizeObserver((es) => es.forEach((e) => { const el = e.target; if (el._draw && Math.abs(el.clientWidth - (el._w || 0)) > 4) el._draw(); }));
-function mount(el, draw) { el._draw = () => { el._w = el.clientWidth; draw(el.clientWidth || 600); }; if (!el._obs) { el._obs = 1; ro.observe(el); } el._draw(); }
+function mount(el, draw) { el._draw = () => { el._w = el.clientWidth; draw(Math.max(el.clientWidth || 600, 160)); }; if (!el._obs) { el._obs = 1; ro.observe(el); } el._draw(); }
 const legend = (items) => `<div class="legend">${items.map(([n, c, box]) => `<span><i class="${box ? "box" : ""}" style="background:${c}"></i>${esc(n)}</span>`).join("")}</div>`;
 
 /* Time series on a shared date axis. series: [{name, data:[{d,v}], color, width, dash, short}] */

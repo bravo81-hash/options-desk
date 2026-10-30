@@ -34,6 +34,11 @@ def _ser(n):
     return s
 
 
+def _asof(s, idx):
+    """Like the page: the latest reading on or before each date, at most 3 sessions old (a late series can miss a bar)."""
+    return s.reindex(idx.union(s.index)).ffill(limit=3).reindex(idx)
+
+
 def _ema_like(a, n, alpha):
     out = np.full(len(a), np.nan)
     prev, run, s, vals = None, 0, 0.0, a.values
@@ -72,12 +77,12 @@ def frame():
     spy = _bars("SPY")
     es = _bars("ES=F")
     df = spy[["c", "h", "l", "v"]].copy()
-    df["vix"] = _ser("VIX").reindex(df.index)
-    df["v3"] = _ser("VIX3M").reindex(df.index)
+    df["vix"] = _asof(_ser("VIX"), df.index)
+    df["v3"] = _asof(_ser("VIX3M"), df.index)
     df["es_c"] = es.c.reindex(df.index) if len(es) else np.nan
     df["es_v"] = es.v.reindex(df.index) if len(es) else np.nan
-    df["br50"] = _ser("BR.SPX.50").reindex(df.index)
-    df["br200"] = _ser("BR.SPX.200").reindex(df.index)
+    df["br50"] = _asof(_ser("BR.SPX.50"), df.index)
+    df["br200"] = _asof(_ser("BR.SPX.200"), df.index)
     c = df.c
     h = _wma(2 * _wma(c, 7) - _wma(c, 15), 3)  # HMA(15)
     s50 = c.rolling(50).mean()
@@ -87,8 +92,7 @@ def frame():
     df["obvZ"] = _zs((np.sign(c.diff()).fillna(0) * df.v).cumsum(), 20)
     df["fiEq"] = _ema(c.diff() * df.v, 13) / 1e6
     es_fi = _ema(es.c.diff() * es.v, 13) / 1e6 if len(es) else pd.Series(dtype=float)
-    # like the page: the latest ES reading on or before each SPY date (ES can miss a bar), at most 3 days old
-    df["fiEs"] = es_fi.reindex(df.index.union(es_fi.index)).ffill(limit=3).reindex(df.index) if len(es) else np.nan
+    df["fiEs"] = _asof(es_fi, df.index) if len(es) else np.nan
     df["ivts"] = df.vix / df.v3
     hi20 = c.rolling(20).max()
     df["brN"] = (df.br200 < 50).astype(int) + ((c >= hi20) & (df.br50 < df.br50.shift(20))).astype(int)

@@ -253,7 +253,8 @@ def refresh_marks():
                 if av.tag in tags and av.account != "All":
                     a = account["summary"].setdefault(av.account, {"currency": av.currency})
                     a[av.tag] = _f(av.value)
-            for f in ib.reqExecutions():
+            from .accounts import todays_fills
+            for f in todays_fills(ib):
                 e, c = f.execution, f.contract
                 account["fills"].append({"account": e.acctNumber, "time": e.time.isoformat() if e.time else None,
                                          "symbol": c.symbol, "local": c.localSymbol, "sec_type": c.secType,

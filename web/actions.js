@@ -53,6 +53,7 @@ function render() {
 
 async function load() {
   const host = $("acDo"); if (!host) return;
+  if (!host.firstChild) ["acDo", "acNew"].forEach((id) => { $(id).innerHTML = `<div class="state loading">Reading your trades…</div>`; });
   $("acWhen").textContent = new Date().toLocaleString([], {weekday: "long", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
   const [Rk, Rd, Fr, Sn] = await Promise.all([
     window.riskActions ? window.riskActions().catch(() => null) : null,
@@ -202,7 +203,7 @@ function orders(Rk) {
   subBtn("Orders & alerts").hidden = !Rk;
   if (!Rk) { $("acOrders").innerHTML = ""; return; }
   const P = Rk.trades.filter((t) => t.plan && (t.plan.order || t.plan.at));
-  $("acOrdMeta").textContent = `one GTC target close and two price alerts for each of ${P.length} trades`;
+  $("acOrdMeta").textContent = `one GTC target close and two price alerts for each of the ${P.length} of ${Rk.trades.length} open trades with card rules`;
   if (!P.length) { $("acOrders").innerHTML = `<div class="state">No carded trades${active() ? " in the filter" : ""}.</div>`; return; }
   $("acOrders").innerHTML = `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">GTC target close</th><th class="n">Alert: decide</th><th class="n">Alert: stop</th><th title="dot = index now; orange = decide alert, red = stop alert; scale −10% to +6% from spot">How far</th></tr></thead><tbody>${
     P.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.firstExp - b.firstExp).map((t) => { const q = t.plan;

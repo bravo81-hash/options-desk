@@ -26,10 +26,11 @@ import pandas as pd
 
 from . import db
 from .a14 import put_price
-from .history import series
+from .history import last_session, series
 from .readiness import ivts_band
 
 START = "2009-10-01"
+INDEX_NAME = {"^GSPC": "SPX", "^RUT": "RUT"}
 VERSION = 8
 SKEW = {"SPX": (0.798, -1.102, 1.584), "RUT": (0.875, -0.735, 1.174)}  # fitted on your ONE fills, Jun-Oct 2026
 GEOM = {"SPX": (0.0, 0.29, 0.38), "RUT": (0.05, 0.33, 0.44)}  # upper offset, upper wing, lower wing (sd units)
@@ -42,14 +43,18 @@ _lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ data
-def _bars(sym):
-    rows = db.query("SELECT date, c FROM bars_daily WHERE symbol=? AND date>=? ORDER BY date", (sym, START))
-    return {r["date"]: r["c"] for r in rows if r["c"]}
-
-
 def _bars_all(sym):
     rows = db.query("SELECT date, c FROM bars_daily WHERE symbol=? ORDER BY date", (sym,))
-    return {r["date"]: r["c"] for r in rows if r["c"]}
+    out = {r["date"]: r["c"] for r in rows if r["c"]}
+    # yfinance index bars only refresh with the studies: finished closes in index_daily (TWS, CBOE) carry them forward,
+    # so the backtest and Market conditions stand on the same close as the gates and the readiness bar
+    last, done, live = max(out, default=""), last_session().isoformat(), db.get_meta("index_live")
+    out.update({d: c for d, c in series(INDEX_NAME[sym], last).items() if last < d <= done and d != live})
+    return out
+
+
+def _bars(sym):
+    return {d: c for d, c in _bars_all(sym).items() if d >= START}
 
 
 def _season_up(full, days, h=21, lookback=20):
@@ -610,14 +615,14 @@ def shape_score(D, u, dte, x, rule=None):
 
 
 def _last_close():
-    return (db.query("SELECT MAX(date) d FROM bars_daily WHERE symbol='^GSPC'") or [{}])[0].get("d")
+    return max(_bars_all("^GSPC"), default=None)
 
 
 def _data_key():
     """Newest close of every series load() joins: it stops at the last day they all have, so a late RVX must reload it."""
-    bars = db.query("SELECT symbol, MAX(date) d FROM bars_daily WHERE symbol IN ('^GSPC','^RUT') GROUP BY symbol")
+    bars = [(s, max(_bars_all(s), default=None)) for s in INDEX_NAME]
     vols = db.query("SELECT symbol, MAX(date) d FROM index_daily WHERE symbol IN ('VIX9D','VIX','VIX3M','VIX6M','VIX1Y','RVX') GROUP BY symbol")
-    return tuple(sorted((r["symbol"], r["d"]) for r in bars + vols))
+    return tuple(sorted(bars + [(r["symbol"], r["d"]) for r in vols]))
 
 
 def cached():

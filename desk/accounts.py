@@ -114,8 +114,7 @@ def collect(ib, positions_raw, marks=None):
         daily[a] = {"daily": _num(p.dailyPnL), "unrealized": _num(p.unrealizedPnL), "realized": _num(p.realizedPnL)}
         ib.cancelPnL(a)
     # executions -> journal
-    fills = ib.reqExecutions()
-    ib.sleep(1)  # commission reports arrive just after the executions and update these fills in place
+    fills = todays_fills(ib)
     rows = []
     for f in fills:
         e, c = f.execution, f.contract
@@ -323,6 +322,14 @@ def weekly(weeks=26):
     nav_series = {a: [{"d": d, "v": byday[d][a]["nav"]} for d in days if a in byday[d] and byday[d][a]["nav"]] for a in accts}
     return {"accounts": [{"id": a, "label": labels.get(a, a)} for a in accts], "weeks": out, "nav": nav_series,
             "first": days[0] if days else None, "last": days[-1] if days else None, "basis": "nav"}
+
+
+def todays_fills(ib):
+    """Today's fills with their commissions. reqExecutions returns new Fill objects that never see the commission
+    reports: ib_async puts those on the fills it stores, which ib.fills() returns."""
+    ib.reqExecutions()
+    ib.sleep(1)  # the reports arrive just after the executions
+    return ib.fills()
 
 
 def last_close_nav(before):

@@ -24,19 +24,20 @@ window.DESK_CLOUD = true;
   let SNAP = null;
   const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const b64e = (u8) => { let s = ""; u8.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s); };
-  const REMEMBER_MS = 7 * 864e5;  // "Remember" lasts a week; otherwise the key goes with the tab
+  // every saved key expires: a week with "Remember", 12 hours without (a browser that restores its tabs keeps the tab's copy)
+  const REMEMBER_MS = 7 * 864e5, TAB_MS = 12 * 36e5;
   const store = {
     get() {
       for (const st of [sessionStorage, localStorage]) {
         try {
           const v = JSON.parse(st.getItem("od.snapkey"));
-          if (v && (st === sessionStorage || v.until > Date.now())) return v;
+          if (v && v.until > Date.now()) return v;
           st.removeItem("od.snapkey");
         } catch (e) {}
       }
       return null;
     },
-    set(v, remember) { this.clear(); try { (remember ? localStorage : sessionStorage).setItem("od.snapkey", JSON.stringify(remember ? {...v, until: Date.now() + REMEMBER_MS} : v)); } catch (e) {} },
+    set(v, remember) { this.clear(); try { (remember ? localStorage : sessionStorage).setItem("od.snapkey", JSON.stringify({...v, until: Date.now() + (remember ? REMEMBER_MS : TAB_MS)})); } catch (e) {} },
     clear() { [sessionStorage, localStorage].forEach((st) => { try { st.removeItem("od.snapkey"); } catch (e) {} }); },
   };
   async function envelope() { // newest of the Pages copy (rebuilt every 30 min) and the snapshot branch (immediate)
