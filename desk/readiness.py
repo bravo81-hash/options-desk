@@ -108,12 +108,12 @@ def _skew_note():
 
 def _events():
     from .market import calendar
-    today = dt.date.today()
+    now = dt.datetime.now(dt.timezone.utc)  # event times are UTC, so the window is too, whatever the laptop's date
     try:
-        ev = calendar(today.isoformat(), (today + dt.timedelta(days=3)).isoformat()).get("result", [])
+        ev = calendar(now.date().isoformat(), (now.date() + dt.timedelta(days=3)).isoformat(), widen=False).get("result", [])
     except Exception:
         return []
-    return [e for e in ev if any(k.lower() in e.get("title", "").lower() for k in BIG)]
+    return [e for e in ev if e["date"] >= now.isoformat(timespec="seconds").replace("+00:00", "Z") and any(k.lower() in e.get("title", "").lower() for k in BIG)]
 
 
 def now():

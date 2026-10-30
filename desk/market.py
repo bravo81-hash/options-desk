@@ -242,7 +242,7 @@ def refresh_all(force=False):
 
 
 # ------------------------------------------------------------------ economic calendar
-def calendar(date_from=None, date_to=None):
+def calendar(date_from=None, date_to=None, widen=True):
     events = []
     for wk in ("thisweek", "nextweek"):
         key = f"ff:{wk}"
@@ -280,7 +280,7 @@ def calendar(date_from=None, date_to=None):
         seen.add(k)
         out.append({"date": du.isoformat().replace("+00:00", "Z"), "title": e["title"], "importance": 1 if e["impact"] == "High" else 0,
                     "forecast": e.get("forecast") or None, "previous": e.get("previous") or None, "actual": e.get("actual") or None, "period": ""})
-    if not out and (lo or hi):  # the free feed only covers the current week; show it rather than nothing
+    if widen and not out and (lo or hi):  # the free feed only covers the current week; show it rather than nothing
         res = calendar()
         res["note"] = "Next week's schedule appears when the free feed rolls over on Sunday (US time); showing this week's events."
         return res
