@@ -46,3 +46,9 @@ def test_warnings_read_the_last_value_of_a_series_that_is_a_day_late():
     idx = pd.to_datetime(["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30"])
     out = warnings._asof(pd.Series([0.888], index=idx[:1]), idx)
     assert out.iloc[:4].tolist() == [0.888] * 4 and pd.isna(out.iloc[4])  # at most 3 sessions old
+
+
+def test_vix_ratio_never_spans_two_days():
+    idx = pd.to_datetime(["2026-10-29", "2026-10-30"])
+    vix, v3 = pd.Series([17.2], index=idx[:1]), pd.Series([19.37, 20.78], index=idx)  # VIX's file lands later
+    assert warnings._ivts(vix, v3, idx).tolist() == [17.2 / 19.37] * 2

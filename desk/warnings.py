@@ -39,6 +39,11 @@ def _asof(s, idx):
     return s.reindex(idx.union(s.index)).ffill(limit=3).reindex(idx)
 
 
+def _ivts(vix, v3, idx):
+    """VIX/VIX3M from one day: CBOE's files land hours apart, and a ratio across two days is a wrong number."""
+    return _asof((vix / v3).dropna(), idx)
+
+
 def _ema_like(a, n, alpha):
     out = np.full(len(a), np.nan)
     prev, run, s, vals = None, 0, 0.0, a.values
@@ -77,8 +82,6 @@ def frame():
     spy = _bars("SPY")
     es = _bars("ES=F")
     df = spy[["c", "h", "l", "v"]].copy()
-    df["vix"] = _asof(_ser("VIX"), df.index)
-    df["v3"] = _asof(_ser("VIX3M"), df.index)
     df["es_c"] = es.c.reindex(df.index) if len(es) else np.nan
     df["es_v"] = es.v.reindex(df.index) if len(es) else np.nan
     df["br50"] = _asof(_ser("BR.SPX.50"), df.index)
@@ -93,7 +96,7 @@ def frame():
     df["fiEq"] = _ema(c.diff() * df.v, 13) / 1e6
     es_fi = _ema(es.c.diff() * es.v, 13) / 1e6 if len(es) else pd.Series(dtype=float)
     df["fiEs"] = _asof(es_fi, df.index) if len(es) else np.nan
-    df["ivts"] = df.vix / df.v3
+    df["ivts"] = _ivts(_ser("VIX"), _ser("VIX3M"), df.index)
     hi20 = c.rolling(20).max()
     df["brN"] = (df.br200 < 50).astype(int) + ((c >= hi20) & (df.br50 < df.br50.shift(20))).astype(int)
     df["w_trend"] = (df.dsum < 0).astype(int)

@@ -422,7 +422,8 @@ async function loadWarnings() {
   for (let i = N0; i < c.length; i++) {
     const d = spy.d[i];
     const dsum = s[i] == null || h[i] == null || s[i - 1] == null || h[i - 1] == null ? null : (s[i] > s[i - 1] ? 1 : -1) + (h[i] > h[i - 1] ? 1 : -1) + (h[i] > s[i] ? 1 : -1) + (c[i] > h[i] ? 1 : -1);
-    const v1 = at(vix, vix && vix.c, d), v3 = at(vix3m, vix3m && vix3m.c, d), ivts = v1 && v3 ? v1 / v3 : null;
+    const dv = vix && vix3m ? [vix.d[idxAt(vix, d)], vix3m.d[idxAt(vix3m, d)]].sort()[0] : null;  // both from one day: CBOE's files land hours apart
+    const v1 = dv ? at(vix, vix.c, dv) : null, v3 = dv ? at(vix3m, vix3m.c, dv) : null, ivts = v1 && v3 ? v1 / v3 : null;
     const fe = es ? at(es, fiEs, d) : null;
     const ix = s5fi ? idxAt(s5fi, d) : -1, br50 = ix >= 0 ? s5fi.c[ix] : null, br50ago = ix >= 20 ? s5fi.c[ix - 20] : null, br200 = at(s5th, s5th && s5th.c, d);
     const brLow = ok(br200) && br200 < 50, brDiv = ok(hi20[i]) && c[i] >= hi20[i] && ok(br50) && ok(br50ago) && br50 < br50ago;
