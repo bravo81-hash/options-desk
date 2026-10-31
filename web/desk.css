@@ -65,6 +65,10 @@ input,select{border-radius:6px}
 .desk .readybar>*{flex:none}
 .desk .readybar .lbl{color:var(--muted)}
 .rdsize{font-weight:700;font-size:17px;white-space:nowrap}
+.hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;align-items:start}
+.hgrid h3{margin:0 0 4px}
+.hgrid table.wi th,.hgrid table.wi td{padding:3px 5px}
+@media (max-width:760px){.hgrid{grid-template-columns:minmax(0,1fr)!important}.hgrid>[style*="span 2"]{grid-column:auto!important}}
 .desk .rdwhy{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 button.rdchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-size:13px;font-weight:500;padding:2px 8px;white-space:nowrap}
 button.rdchip:hover{border-color:var(--accent)}
@@ -107,7 +111,8 @@ button.rdchip:hover{border-color:var(--accent)}
 .hline>span{white-space:nowrap}
 table.wi td,table.wi th{padding-left:14px;padding-right:14px}
 
-@media (max-width:1180px){.desk .rdwhy{display:none} .desk .readybar{flex-wrap:wrap}}
+@media (max-width:1600px){.desk .rdwhy{display:none}}
+@media (max-width:1180px){.desk .readybar{flex-wrap:wrap}}
 @media (max-width:900px){
   .desk .wrap{grid-template-columns:minmax(0,1fr)}
   .desk header.top{flex-wrap:wrap;position:static;padding:7px 12px}

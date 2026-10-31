@@ -4,8 +4,9 @@
   yfinance for ETFs and ES futures (consolidated volume, as on TradingView). Cached in SQLite.
 * Breadth: computed here from S&P 500 / Nasdaq-100 members (Wikipedia lists + yfinance closes):
   % of members above their 20/50/200-day SMA, overall and per GICS sector.
-* Economic calendar: Forex Factory weekly JSON (US events, high/medium impact). Release dates further out:
-  the Fed's meeting page and TradingView's calendar, cached by refresh_releases().
+* Economic calendar: Forex Factory's weekly JSON (US events, high/medium impact) for its own week, TradingView's
+  calendar after that, and the official schedules in KNOWN wherever neither has the event. Release dates further
+  out: the Fed's meeting page and TradingView's calendar, cached by refresh_releases().
 * Account: TWS (read-only), every managed sub-account.
 
 Symbols arrive in the TradingView form the page already used (e.g. AMEX:SPY, INDEX:S5FI) and are
@@ -16,6 +17,7 @@ import io
 import json
 import re
 import threading
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -25,6 +27,7 @@ from . import db
 from .history import series
 
 UA = {"User-Agent": "Mozilla/5.0"}
+ET = ZoneInfo("America/New_York")
 SECTOR_CODES = {"SKFI": "Information Technology", "SFFI": "Financials", "SLFI": "Communication Services",
                 "SYFI": "Consumer Discretionary", "SIFI": "Industrials", "SVFI": "Health Care",
                 "SPFI": "Consumer Staples", "SEFI": "Energy", "SUFI": "Utilities", "SSFI": "Real Estate",
@@ -216,6 +219,13 @@ def refresh_breadth(force=False):
             cols = [t for t, s in sp.items() if s == sec]
             for d, v in pct_above(cols, 50).items():
                 rows.append((f"BR.SPX.{sec}.50", d.strftime("%Y-%m-%d"), float(v)))
+        # S&P 500 members' net advancers and new 52-week lows, % of members: the free stand-in for NYSE/Nasdaq A/D
+        sub = px[[c for c in sp if c in px.columns]]
+        chg, n = sub.diff(), sub.notna().sum(axis=1).replace(0, np.nan)
+        net = (100.0 * ((chg > 0).sum(axis=1) - (chg < 0).sum(axis=1)) / n).iloc[1:]
+        lows = (100.0 * (sub <= sub.rolling(252, min_periods=200).min()).sum(axis=1) / n).iloc[200:]
+        rows += [("BR.SPX.AD", d.strftime("%Y-%m-%d"), float(v)) for d, v in net.dropna().items()]
+        rows += [("BR.SPX.NL", d.strftime("%Y-%m-%d"), float(v)) for d, v in lows.dropna().items()]
         db.write("INSERT OR REPLACE INTO index_daily (symbol, date, close) VALUES (?,?,?)", rows, many=True)
         db.set_meta("breadth_refreshed", dt.datetime.now().isoformat(timespec="seconds"))
         db.set_meta("breadth_members", json.dumps({"spx": len(sp), "ndx": len(ndx)}))
@@ -244,55 +254,113 @@ def refresh_all(force=False):
 
 
 # ------------------------------------------------------------------ economic calendar
-def calendar(date_from=None, date_to=None, widen=True):
-    events = []
-    for wk in ("thisweek", "nextweek"):
-        key = f"ff:{wk}"
-        cached = db.get_meta(key)
-        stamp = db.get_meta(key + ":ts")
-        fresh = stamp and dt.datetime.fromisoformat(stamp) > dt.datetime.now() - dt.timedelta(hours=2)
-        if not fresh:
-            try:
-                r = requests.get(f"https://nfs.faireconomy.media/ff_calendar_{wk}.json", headers=UA, timeout=20)
-                if r.status_code == 200:
-                    cached = r.text
-                    db.set_meta(key, cached)
-                    db.set_meta(key + ":ts", dt.datetime.now().isoformat(timespec="seconds"))
-            except Exception:
-                pass
-        if cached:
-            try:
-                events += json.loads(cached)
-            except ValueError:
-                pass
-    out = []
-    lo = dt.datetime.fromisoformat(date_from).date() if date_from else None
-    hi = dt.datetime.fromisoformat(date_to).date() if date_to else None
-    seen = set()
+# Official schedules, read from bls.gov and federalreserve.gov on 2026-11-01. The fallback when the feeds fail, and the
+# only source for the election. Extend each year: the Data check warns when under 60 days are left.
+KNOWN = {
+    "CPI": ("08:30", "CPI (schedule)", ["2026-11-10", "2026-12-10", "2027-01-13", "2027-02-11", "2027-03-10", "2027-04-13", "2027-05-12",
+                                        "2027-06-10", "2027-07-14", "2027-08-11", "2027-09-14", "2027-10-14", "2027-11-10", "2027-12-10"]),
+    "Payrolls": ("08:30", "Nonfarm payrolls (schedule)", ["2026-11-06", "2026-12-04", "2027-01-08", "2027-02-05", "2027-03-05", "2027-04-02", "2027-05-07",
+                                                          "2027-06-04", "2027-07-02", "2027-08-06", "2027-09-03", "2027-10-08", "2027-11-05", "2027-12-03"]),
+    "FOMC": ("14:00", "FOMC decision (schedule)", ["2026-12-09", "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09", "2027-07-28", "2027-09-15",
+                                                   "2027-10-27", "2027-12-08"]),
+    "Election": ("19:00", "US midterm election", ["2026-11-03"]),  # first polls close: the night's results are the event
+}
+_ff_tried = None  # Forex Factory's last attempt: a failure isn't stored, so without this every request would retry it
+FF_RETRY = dt.timedelta(minutes=30)
+
+
+def _zulu(d):
+    return d.astimezone(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def known_events():
+    """KNOWN as calendar rows, plus any FOMC day on the Fed's own page."""
+    rows = []
+    fed = json.loads(db.get_meta("fed:fomc") or "[]")
+    for kind, (at, title, days) in KNOWN.items():
+        for day in sorted(set(days) | set(fed if kind == "FOMC" else ())):
+            when = dt.datetime.fromisoformat(f"{day}T{at}:00").replace(tzinfo=ET)
+            rows.append({"date": _zulu(when), "title": title, "importance": 1, "kind": kind, "source": "schedule", "forecast": None, "previous": None, "actual": None, "period": ""})
+    return rows
+
+
+def known_to():
+    """Last day the hard-coded schedules reach: the earliest of their ends, so no kind runs out unnoticed."""
+    return min((max(days) for kind, (_, _, days) in KNOWN.items() if kind != "Election"), default=None)
+
+
+def _forex_factory(fetch=True):
+    """Forex Factory's current week (the only file left: its next-week and last-week files return 404 and this one
+    keeps the old week until Sunday, US time). Returns (rows, day the feed ends or None)."""
+    global _ff_tried
+    key = "ff:thisweek"
+    cached, stamp = db.get_meta(key), db.get_meta(key + ":ts")
+    fresh = stamp and dt.datetime.fromisoformat(stamp) > dt.datetime.now() - dt.timedelta(hours=2)
+    if fetch and not fresh and (_ff_tried is None or dt.datetime.now() - _ff_tried > FF_RETRY):
+        _ff_tried = dt.datetime.now()
+        try:
+            r = requests.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json", headers=UA, timeout=20)
+            if r.status_code == 200:
+                cached = r.text
+                db.set_meta(key, cached)
+                db.set_meta(key + ":ts", dt.datetime.now().isoformat(timespec="seconds"))
+        except Exception:
+            pass
+    try:
+        events = json.loads(cached) if cached else []
+    except ValueError:
+        events = []
+    rows, seen = [], set()
     for e in events:
         if e.get("country") != "USD" or e.get("impact") not in ("High", "Medium"):
-            continue
-        d = dt.datetime.fromisoformat(e["date"])
-        du = d.astimezone(dt.timezone.utc)
-        if (lo and du.date() < lo) or (hi and du.date() > hi):
             continue
         k = (e["title"], e["date"])
         if k in seen:
             continue
         seen.add(k)
-        out.append({"date": du.isoformat().replace("+00:00", "Z"), "title": e["title"], "importance": 1 if e["impact"] == "High" else 0,
-                    "forecast": e.get("forecast") or None, "previous": e.get("previous") or None, "actual": e.get("actual") or None, "period": ""})
-    if widen and not out and (lo or hi):  # the free feed only covers the current week; show it rather than nothing
+        rows.append({"date": _zulu(dt.datetime.fromisoformat(e["date"])), "title": e["title"], "importance": 1 if e["impact"] == "High" else 0, "kind": _release_kind(e["title"]),
+                     "source": "ff", "forecast": e.get("forecast") or None, "previous": e.get("previous") or None, "actual": e.get("actual") or None, "period": ""})
+    return rows, (max(e["date"] for e in events)[:10] if events else None)
+
+
+def _merged(fetch=True):
+    """Forex Factory for its week, TradingView after it, the official schedule wherever neither has the event.
+    Returns (rows, how far a live feed reaches)."""
+    ff, ff_to = _forex_factory(fetch)
+    tv = json.loads(db.get_meta("tv:events") or "[]")
+    tv = [r for r in tv if (not ff_to or r["date"][:10] > ff_to) and "election" not in r["title"].lower()]  # date-only row: KNOWN has the time
+    rows = ff + tv
+    have = {(r["date"][:10], r.get("kind")) for r in rows}
+    rows += [r for r in known_events() if (r["date"][:10], r["kind"]) not in have]
+    ts = db.get_meta("tv:events:ts")
+    tv_on = bool(tv) and bool(ts) and dt.datetime.fromisoformat(ts) > dt.datetime.now() - dt.timedelta(days=3)
+    tv_to = max((r["date"][:10] for r in tv), default=None) if tv_on else None
+    return sorted(rows, key=lambda r: r["date"]), max(filter(None, (ff_to, tv_to)), default=None)
+
+
+def calendar(date_from=None, date_to=None, widen=True, fetch=True):
+    rows, live_to = _merged(fetch)
+    today = dt.datetime.now(dt.timezone.utc).date()
+    lo = dt.datetime.fromisoformat(date_from).date() if date_from else None
+    hi = dt.datetime.fromisoformat(date_to).date() if date_to else None
+    near = (hi or today + dt.timedelta(days=45)).isoformat()  # the schedules run for a year: a plain call doesn't need them all
+    rows = [r for r in rows if r["source"] != "schedule" or r["date"][:10] <= near]
+    out = [r for r in rows if (not lo or r["date"][:10] >= lo.isoformat()) and (not hi or r["date"][:10] <= hi.isoformat())]
+    want = (hi or today + dt.timedelta(days=7)).isoformat()
+    state = "unavailable" if not live_to or live_to < today.isoformat() else "ok" if live_to >= want else "partial"
+    note = {"unavailable": "Calendar feed unavailable: showing the known schedule only (CPI, payrolls, FOMC, elections).",
+            "partial": f"Calendar feeds reach {live_to}: after that, the known schedule only (CPI, payrolls, FOMC, elections).", "ok": ""}[state]
+    if widen and not out and (lo or hi):  # nothing in the window: show the rest of the feed rather than a blank box
         res = calendar()
-        res["note"] = "Next week's schedule appears when the free feed rolls over on Sunday (US time); showing this week's events."
+        res["note"] = note or "Nothing in this window: showing the rest of the feed."
         return res
-    return {"result": out, "status": "ok"}
+    return {"result": out, "status": "ok", "feed": state, "live_to": live_to, "note": note}
 
 
 # long-range dates for the calendar checks. Forex Factory only covers the current week, so: the Fed's own page for
 # FOMC decisions, and TradingView's calendar (undocumented, about 30 days out) for the data releases
-RELEASES = [("FOMC", ("fed interest rate decision",)), ("Payrolls", ("non farm payrolls", "nonfarm payrolls")),
-            ("CPI", ("inflation rate", "core inflation rate", "cpi")), ("PCE", ("pce price index",)), ("GDP", ("gdp growth rate",))]
+RELEASES = [("FOMC", ("fed interest rate decision", "federal funds rate")), ("Payrolls", ("non farm payrolls", "nonfarm payrolls", "non-farm employment")),
+            ("CPI", ("inflation rate", "core inflation rate", "cpi")), ("PCE", ("pce price index",)), ("GDP", ("gdp growth rate", "gdp q/q"))]
 NOT_RELEASE = ("minutes", "expectations", "nowcast", "forecast")
 MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
 
@@ -314,6 +382,16 @@ def parse_releases(rows):
             seen.add((day, kind))
             out.append({"date": day, "kind": kind, "title": e["title"]})
     return sorted(out, key=lambda r: (r["date"], r["kind"]))
+
+
+def parse_events(rows):
+    """TradingView rows of medium or high importance in the calendar's shape."""
+    out = []
+    for e in rows:
+        if (e.get("importance") or 0) >= 0 and e.get("title") and e.get("date"):
+            out.append({"date": _zulu(dt.datetime.fromisoformat(e["date"].replace("Z", "+00:00"))), "title": e["title"], "importance": 1 if e["importance"] >= 1 else 0, "kind": _release_kind(e["title"]),
+                        "source": "tv", "forecast": e.get("forecast"), "previous": e.get("previous"), "actual": e.get("actual"), "period": e.get("period") or ""})
+    return out
 
 
 def parse_fomc(html):
@@ -342,6 +420,8 @@ def _fetch_tv():
         raise ValueError("no releases in the feed")
     db.set_meta("tv:releases", json.dumps({"rows": rows, "to": max(e["date"] for e in feed)[:10]}))
     db.set_meta("tv:releases:ts", dt.datetime.now().isoformat(timespec="seconds"))
+    db.set_meta("tv:events", json.dumps(parse_events(feed)))
+    db.set_meta("tv:events:ts", dt.datetime.now().isoformat(timespec="seconds"))
 
 
 def _fetch_fomc():

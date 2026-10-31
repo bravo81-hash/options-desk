@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from desk import db, history, market  # noqa: E402
+from desk import db, heads, history, market  # noqa: E402
 from desk.accounts import US_HOLIDAYS  # noqa: E402
 from desk.market import fetch_yf, fetch_yf_max  # noqa: E402
 
@@ -70,6 +70,9 @@ def load_data():
         db.write("INSERT OR REPLACE INTO index_daily VALUES (?,?,?)", [(sym, r["date"], r["c"]) for r in rows], many=True)
     log("ETFs + breadth")
     market.refresh_all()
+    log("calendars, earnings, futures (each keeps its last copy on failure)")
+    log(f"  release dates not refreshed: {market.refresh_releases() or 'none'}")
+    log(f"  heads-up: {heads.refresh(now=True)}")
 
 
 # ---------------------------------------------------------------- 2. validation
@@ -142,6 +145,7 @@ def build_api(lc):
                 problems.append(f"ohlcv {sym}: {(d or {}).get('error')}")
     today = dt.date.today()
     write("md/calendar.json", get(f"/api/md/calendar?date_from={(today - dt.timedelta(days=3)).isoformat()}&date_to={(today + dt.timedelta(days=21)).isoformat()}"))
+    write("heads.json", get("/api/heads"))
     for name, url in (("vixcond", "/api/vixcond"), ("readiness", "/api/readiness"), ("term", "/api/term")):
         d = get(url)
         if not d or d.get("error"):
@@ -159,7 +163,8 @@ def build_api(lc):
     src = [("Index prices", q("SELECT MAX(date) d FROM index_daily WHERE symbol='SPX'"), "SPX / RUT / NDX daily closes (yfinance)"),
            ("VIX family", q("SELECT MAX(date) d FROM index_daily WHERE symbol='VIX3M'"), "CBOE VIX, VIX9D, VIX3M, VIX6M, VIX1Y, VVIX, SKEW, RVX"),
            ("ETF prices", q("SELECT MAX(date) d FROM bars_daily WHERE symbol='SPY'"), "Market tab ETFs and sectors (yfinance)"),
-           ("Breadth", q("SELECT MAX(date) d FROM index_daily WHERE symbol='BR.SPX.50'"), "computed from S&P 500 / Nasdaq-100 members")]
+           ("Breadth", q("SELECT MAX(date) d FROM index_daily WHERE symbol='BR.SPX.50'"), "computed from S&P 500 / Nasdaq-100 members"),
+           ("Event risk and overnight", (heads._box("scan").get("ts") or "")[:10] or None, "earnings, futures and after-hours moves as of the last cloud build")]
     write("freshness.json", {"last_close": lc.isoformat(), "cloud": True,
                              "sources": [{"name": n, "date": d, "stale": sessions_behind(d, lc) > 0, "what": w} for n, d, w in src]})
     write("cloud.json", {"built": dt.datetime.now(dt.timezone.utc).isoformat(timespec="minutes"), "last_close": lc.isoformat()})

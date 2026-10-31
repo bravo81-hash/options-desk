@@ -35,12 +35,17 @@
   <section class="tab" id="tab-actions">
     <div class="achead" id="acHead"></div>
     <div class="row" id="acFilt" style="gap:12px"></div>
+    <div id="acPreLine"></div>
     <div class="grid" id="acGrid">
       <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
         <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
       <section class="panel c7"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
-      <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 days</span></header><div id="acComing"></div></section>
+      <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 trading days</span></header><div id="acComing"></div></section>
       <div class="c12"><div class="grid" data-subs data-closed id="acMore">
+        <section class="panel c12" data-sub="Event risk"><header><h2>Event risk</h2><span class="small muted" id="acEvMeta"></span></header><div id="acEvent"><div class="state loading">Reading the calendars…</div></div></section>
+        <section class="panel c12" data-sub="Overnight"><header><h2>Overnight and pre-session</h2><span class="small muted" id="acNightMeta"></span><button type="button" class="ghost" id="acHdRefresh">Refresh</button></header><div id="acNight"><div class="state loading">Reading futures…</div></div></section>
+        <section class="panel c12" data-sub="Stress"><header><h2>Stress signals</h2><span class="small muted" id="acStressMeta"></span></header><div id="acStress"><div class="state loading">Counting signals…</div></div></section>
+        <section class="panel c12" data-sub="Pre-close"><header><h2>Pre-close checklist</h2><span class="small muted" id="acPreMeta"></span></header><div id="acPre"><div class="state loading">Reading the book…</div></div></section>
         <section class="panel c12" data-sub="Market conditions"><header><h2>Market conditions</h2><span class="small muted">every signal today, and what entries in the same conditions made since 2009</span></header><div id="acCond"></div></section>
         <section class="panel c12" data-sub="Orders &amp; alerts"><header><h2>Orders &amp; alerts to have in TWS</h2><span class="small muted" id="acOrdMeta">one GTC target close and two price alerts per open trade</span></header><div id="acOrders"></div></section>
         <section class="panel c12" data-sub="Data check"><header><h2>Data check</h2><span class="small muted" id="acChkMeta"></span></header><div id="acChecks"></div></section>
@@ -127,6 +132,7 @@
       <section class="panel c12" data-sub="Capital use"><header><h2>Capital use</h2><span class="small muted">margin and days tied up by DTE at entry · return per day held, against your closed A14s</span></header><div id="rkCapital"></div></section>
       <section class="panel c12" data-sub="Book graph"><header><h2>Whole book vs market move</h2><span class="small muted" id="rkBookNote">SPX moves x%, RUT moves beta × x%, stocks move x%</span></header><div class="chart" id="rkBook"></div><div id="rkBookLegend"></div></section>
       <section class="panel c12" data-sub="What-if"><header><h2>Book what-if</h2><span class="small muted" id="rkWiMeta"></span><label class="lbl" for="rkWiDays">Horizon</label><select id="rkWiDays"><option value="1">1 day</option><option value="7" selected>1 week</option><option value="14">2 weeks</option><option value="30">1 month</option></select></header><div id="rkWi"></div></section>
+      <section class="panel c12" data-sub="Gap what-if"><header><h2>Gap what-if</h2><span class="small muted" id="rkGapMeta"></span></header><div id="rkGap"></div></section>
       <div class="c12" data-sub="Trade cards" id="rkGroups"></div>
       <section class="panel modalp" id="rkDetailPanel" hidden><header><h2 id="rkDetailTitle">Trade</h2><button type="button" class="ghost" id="rkClose">Close</button></header><div class="chart" id="rkDetailChart"></div><div id="rkDetailLegend"></div><div id="rkDetailLegs"></div></section>
     </div>
@@ -291,11 +297,11 @@
       <h2>Start in three steps</h2>
       <div class="steps">
         <div><b>1</b><h3>Read the size</h3><p>The ribbon at the top gives the size for new trades today. Press <i>Why</i> for the reasons and the size rules.</p></div>
-        <div><b>2</b><h3>Work through Actions</h3><p><i>Do today</i> lists the trades past a line, <i>New trades</i> says what's open, <i>Coming up</i> shows the next 3 days.</p></div>
+        <div><b>2</b><h3>Work through Actions</h3><p><i>Do today</i> lists the trades past a line, <i>New trades</i> says what's open, <i>Coming up</i> shows the next 3 trading days. The ribbon's <i>Event risk</i> chip opens the heads-up tabs.</p></div>
         <div><b>3</b><h3>Place orders in TWS</h3><p>You place every order yourself. The desk only reads from TWS: it never sends, changes or cancels an order.</p></div>
       </div>
       <nav class="gtoc">
-        <a href="#g-start">Set-up</a><a href="#g-daily">Daily routine</a><a href="#g-ready">Trade readiness</a><a href="#g-market">Market</a><a href="#g-vol">Term structure, Calendar scanner, Skew</a>
+        <a href="#g-start">Set-up</a><a href="#g-daily">Daily routine</a><a href="#g-ready">Trade readiness</a><a href="#g-heads">Event risk &amp; overnight</a><a href="#g-market">Market</a><a href="#g-vol">Term structure, Calendar scanner, Skew</a>
         <a href="#g-risk">Risk grid</a><a href="#g-em">Expected moves</a><a href="#g-a14">A14 scanner</a><a href="#g-pnl">P&amp;L &amp; Recon</a>
         <a href="#g-evid">Evidence &amp; Recorder</a><a href="#g-gloss">Glossary</a><a href="#g-trouble">If something looks wrong</a>
       </nav>
@@ -315,8 +321,8 @@
 
       <section class="panel c6" id="g-daily" data-sub="Start here"><header><h2>Daily routine (10 minutes)</h2></header>
         <ol>
-          <li><b>Ribbon</b>: read the size for each structure. If the Data pill is amber, something is older than the last close.</li>
-          <li><b>Actions</b>: work down <i>Do today</i>, <i>New trades</i> and <i>Coming up</i>. Under them, the <i>Market conditions</i>, <i>Orders &amp; alerts</i> and <i>Data check</i> tabs open on a click, and a second click closes them. Data check opens by itself when something is out of date.</li>
+          <li><b>Ribbon</b>: read the size for each structure, and the <i>Event risk</i> chip beside it (green, amber or red, with the stress count and any alerts). If the Data pill is amber, something is older than the last close.</li>
+          <li><b>Actions</b>: work down <i>Do today</i>, <i>New trades</i> and <i>Coming up</i>. Under them, the <i>Event risk</i>, <i>Overnight</i>, <i>Stress</i>, <i>Pre-close</i>, <i>Market conditions</i>, <i>Orders &amp; alerts</i> and <i>Data check</i> tabs open on a click, and a second click closes them. Data check opens by itself when something is out of date; Pre-close opens by itself from 14:30 to 16:00 ET.</li>
           <li><b>P&amp;L &amp; Recon</b>: <i>Reconciliation</i> should say <i>Quantities match</i> for both accounts. If not, fix ONE before trusting the Risk grid.</li>
           <li><b>Risk grid</b>: check P&amp;L now, Delta per 1% and Worst in range. <b>Expected moves</b> shows where your short strikes sit from spot.</li>
           <li><b>Opening something new?</b> Start at <b>Today's pick</b>, then use the Calendar or A14 scanner for alternatives.</li>
@@ -332,6 +338,15 @@
           <li>Each structure can then step down for your own rules and the 2009–2026 backtest: A14 when the index is below its 20-day average, VIX/VIX3M is 0.90+ (flat: one step; backwardation: stand aside) or RUT premium is thin; calendars stand aside at VIX/VIX3M 0.90+ and step down below the 20-day average or into CPI / FOMC / payrolls / PCE / GDP.</li>
           <li><b>One VIX/VIX3M scale everywhere</b>: ≤ 0.834 steep contango (calm; the best calendar zone since 2009), 0.834–0.90 normal, 0.90–1.00 flat (stress building; A14 size down, calendars avoid), ≥ 1 backwardation. <b>Two trends everywhere</b>: short-term = vs the 20-day average, long-term = vs the 200-day.</li>
           <li>It reflects history, not a forecast: rougher odds have also come with higher average returns (selling after drops), so treat it as position sizing, not direction.</li>
+        </ol>
+      </section>
+      <section class="panel c6" id="g-heads" data-sub="Tabs"><header><h2>Event risk, overnight, stress</h2></header>
+        <ol>
+          <li><b>Information only.</b> None of this changes the size call, the gates, the rankings or Today's pick. It's there because a calm-looking market at the close can still gap on what reports that night.</li>
+          <li><b>Event risk</b>: red when over 15% of the S&amp;P 500 reports within 24 trading hours, or payrolls, CPI, FOMC or an election falls inside them. Amber at 5% or more, a top-10 name reporting, another high-impact release, or a top-tier release or over 15% inside 48 trading hours. Weekends and market holidays don't count. With a feed down and nothing else to flag it reads Unknown, never green.</li>
+          <li><b>Overnight</b>: ES, NQ and RTY against their own price at the cash close (alert over 0.75%), VIX futures front vs second month at the last settlement, and the top 10 names out of hours (alert over 5%). <b>Leader spillover</b>: a top-10 name or SMH down 3σ or 7% in a day flags next-day risk; other leaders are listed without raising an alert.</li>
+          <li><b>Stress</b>: how many of 11 signals are firing across the vol curve, breadth and cross-assets, with the last 30 sessions. It's a separate count from the Market warnings (of 6). Amber at 3, red at 5.</li>
+          <li><b>Pre-close</b>: event risk, net gamma, the ±2σ overnight P&amp;L and, when event risk is red, a reference price for a put spread. It opens by itself from 14:30 to 16:00 ET.</li>
         </ol>
       </section>
       <section class="panel c6" id="g-pick" data-sub="Tabs"><header><h2>Today's pick</h2></header>
@@ -379,6 +394,7 @@
           <li><b>Trade plan</b> — every open trade with card rules gets one action, checked in this order: hard stop → target → time stop → slow (under half your pace target after 3+ weeks, or 25% past your usual hold) → decide line → hold. A14: target +5% (entered at 21 DTE or less) or +7%, decide line −6%, hard stop −10%, out at 2 DTE; Allantis the same with +7%. Calendars follow the card (TimeEdge +5% / −15% / 1 DTE, TimeZone +5% / −5% / 7 DTE) with one adjustment, then exit. <i>Adjust?</i> applies gates from your own adjustment history: never above +3%; only when red or the underlying is ±1.5% from entry; reshape only above 21 DTE (10–21: roll out or close). The detail panel shows the levels in dollars and the ±1.5% band. Adjustment counts come from the newest ONE Detail Report in Documents or Downloads. The table's <i>Plan</i> column carries the same action.</li>
           <li><b>Capital use</b> — your pace target (what your closed 22–45 DTE A14s earned per day, about 0.41%) against the book: <i>pace now</i> (theta per day ÷ margin, what each trade earns from here) and <i>% / day so far</i>. Trades under half the target from here, or so far after 3+ weeks, are listed as <b>slow</b> with the margin they tie up and the daily gap to target; <i>past usual hold</i> marks trades held 25% longer than your closed A14s with the same entry DTE. The trade table has a <i>Pace now</i> column with fast / slow tags. The Journal's Overview shows the same pace by month closed.</li>
           <li><b>Whole book</b> chart — every trade added together against a % market move.</li>
+          <li><b>Gap what-if</b> — the book at the next open for gaps of ±1.5% and ±2.5%, and at where futures are now, with the VIX down 3, flat, up 3 or up 6, in total and per account. RUT moves 1.2 × the SPX gap on the ± rows; the Futures row uses RTY's own move.</li>
           <li><b>What-if</b> — the whole book at ±1σ and ±2σ with IV down 3, unchanged, or up 5 or 10 points, at a horizon you pick (σ comes from the VIX). Below it, per account: SPX-weighted delta, the worst cell, and the excess liquidity left after it. That figure is a best case, because the margin requirement also rises in a real move.</li>
           <li><b>Health line</b> — on each trade card, in the detail panel and in Do today: total against stop and target, days in trade against your usual hold, short strikes in σ, and whether an adjustment is allowed. Short strikes turn amber only when spot is 0.5σ or more through one, since around the short is a BWB's best zone.</li>
         </ol>
@@ -508,6 +524,7 @@
 <script src="season.js"></script>
 <script src="journal.js"></script>
 <script src="backtest.js"></script>
+<script src="heads.js"></script>
 <script src="actions.js"></script>
   <script src="update.js"></script>
 </body>

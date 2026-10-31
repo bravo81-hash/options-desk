@@ -12,9 +12,9 @@ window.DESK_CLOUD = true;
   const LOCKED = "🔒 Part of your snapshot: unlock it to see this.";
   const san = (s) => String(s || "").replace(/[^A-Za-z0-9._-]/g, "_");
   const json = (o) => new Response(JSON.stringify(o), {status: 200, headers: {"Content-Type": "application/json"}});
-  const STATIC = {vixcond: "vixcond.json", readiness: "readiness.json", freshness: "freshness.json", term: "term.json", cloud: "cloud.json"};
+  const STATIC = {vixcond: "vixcond.json", readiness: "readiness.json", freshness: "freshness.json", term: "term.json", cloud: "cloud.json", heads: "heads.json"};
   // market data the cloud rebuilds itself (fresher than the laptop snapshot)
-  const MARKET = new Set(["md/ohlcv", "md/calendar", "season", "vixcond", "readiness", "term", "cloud"]);
+  const MARKET = new Set(["md/ohlcv", "md/calendar", "season", "vixcond", "readiness", "term", "cloud", "heads"]);
   // query parameters that select a snapshot entry (keep in step with desk/snapshot.py KEEP)
   const KEEP = {calendar: ["symbol"], pair: ["symbol", "front", "back"], "pair/curve": ["symbol", "front", "back", "strike"],
                 skew: ["symbol", "tenor"], pick: ["vol"], "a14/scan": ["sym", "vol"], "a14/curve": ["sym", "expiry", "u", "s", "l"]};
@@ -26,19 +26,22 @@ window.DESK_CLOUD = true;
   const b64e = (u8) => { let s = ""; u8.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s); };
   // every saved key expires: a week with "Remember", 12 hours without (a browser that restores its tabs keeps the tab's copy)
   const REMEMBER_MS = 7 * 864e5, TAB_MS = 12 * 36e5;
+  // a new name, so a key saved before keys expired (or without Remember ticked, in a restored tab) can't open anything
+  const KEY = "od.snapkey.v2", OLD = ["od.snapkey"];
+  [sessionStorage, localStorage].forEach((st) => { try { OLD.forEach((k) => st.removeItem(k)); } catch (e) {} });
   const store = {
     get() {
       for (const st of [sessionStorage, localStorage]) {
         try {
-          const v = JSON.parse(st.getItem("od.snapkey"));
+          const v = JSON.parse(st.getItem(KEY));
           if (v && v.until > Date.now()) return v;
-          st.removeItem("od.snapkey");
+          st.removeItem(KEY);
         } catch (e) {}
       }
       return null;
     },
-    set(v, remember) { this.clear(); try { (remember ? localStorage : sessionStorage).setItem("od.snapkey", JSON.stringify({...v, until: Date.now() + (remember ? REMEMBER_MS : TAB_MS)})); } catch (e) {} },
-    clear() { [sessionStorage, localStorage].forEach((st) => { try { st.removeItem("od.snapkey"); } catch (e) {} }); },
+    set(v, remember) { this.clear(); try { (remember ? localStorage : sessionStorage).setItem(KEY, JSON.stringify({...v, until: Date.now() + (remember ? REMEMBER_MS : TAB_MS)})); } catch (e) {} },
+    clear() { [sessionStorage, localStorage].forEach((st) => { try { st.removeItem(KEY); } catch (e) {} }); },
   };
   async function envelope() { // newest of the Pages copy (rebuilt every 30 min) and the snapshot branch (immediate)
     const got = await Promise.all([BASE + "private/snapshot.json", SNAP_RAW].map((u) => real(u, {cache: "no-cache"}).then((r) => (r.ok ? r.json() : null)).catch(() => null)));
@@ -122,6 +125,10 @@ window.DESK_CLOUD = true;
     }
     if (m.stub) return json(m.stub);
     if (m.laptop) return json({error: (await snapReady).state === "locked" ? LOCKED : LAPTOP, success: false});
+    if (m.file === "heads.json") { // whichever is newer: this build's copy or the one in the laptop's snapshot
+      const st = await snapReady, c = await (await serveFile(m)).json().catch(() => null), l = st.state === "open" ? SNAP.heads : null;
+      return json(l && l.ts && (!c || !c.ts || l.ts > c.ts) ? l : c || {error: "Not in the cloud copy."});
+    }
     return serveFile(m);
   };
 
@@ -142,7 +149,7 @@ window.DESK_CLOUD = true;
     const css = document.createElement("style"); // laptop-only controls
     css.textContent = "#jnSave,#jnAuto,#oneImport,#snapPanel,#flexPanel{display:none!important} #jnNote{pointer-events:none;opacity:.8}";
     document.head.appendChild(css);
-    document.querySelectorAll("#rkRefresh,#plRefresh,#emRefresh,#a14Fetch,#pkFetch,#btnRecord,#btnTws,#btnHist").forEach((b) => { b.hidden = true; });
+    document.querySelectorAll("#rkRefresh,#plRefresh,#emRefresh,#a14Fetch,#pkFetch,#btnRecord,#btnTws,#btnHist,#acHdRefresh").forEach((b) => { b.hidden = true; });
     if (!isDesk) return;
     let built = "";
     try { const c = await (await real(BASE + "api/cloud.json", {cache: "no-cache"})).json(); built = when(c.built); } catch (e) {}

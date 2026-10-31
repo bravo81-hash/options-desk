@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const api = async (path, opts) => { const r = await fetch(path, opts); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return r.json(); };
 const zcls = (z) => !ok(z) ? "muted" : Math.abs(z) >= 2 ? "neg" : Math.abs(z) >= 1 ? "wrn" : "";
 const zTxt = (z) => ok(z) ? `z ${sgn(z, 2)}` : "z –";
+const zTag = (p) => p.z_prov ? ", provisional" : "";
 const pctTxt = (p) => ok(p) ? `${ordinal(p)} pct (1y)` : "";
 const errBox = (e) => `<div class="state err">${esc(e.message || e)}</div>`;
 
@@ -80,7 +81,7 @@ function gateCards(gates) {
   return gates.map((g) => `<div class="card ${g.pass ? "pass" : "fail"}"><div class="row" style="justify-content:space-between"><h2>${esc(g.name)}</h2><span class="chip ${g.pass ? "pos" : "neg"}">${g.pass ? "✓ Rules pass" : "✕ Rule fails"}</span></div>
     <span class="small muted">${esc(g.rule)}</span>
     <span class="small">${segBar([{n: g.checks.filter((c) => c[1]).length, color: "var(--up)", label: "checks pass"}, {n: g.checks.filter((c) => !c[1]).length, color: "var(--down)", label: "checks fail"}], {w: 160})} ${g.checks.filter((c) => c[1]).length} of ${g.checks.length} checks pass</span>
-    <span class="small">Nearest pair: <b class="mono">${g.pair.fdte} / ${g.pair.bdte} DTE</b> · contango <b class="mono">${sgn(g.pair.contango)}</b> pts${ok(g.pair.z) ? ` · <span class="${zcls(g.pair.z)}">${zTxt(g.pair.z)}</span>` : ""}${ok(g.pair.debit) ? ` · ATM put cal ${fmt(g.pair.debit)}` : ""}</span>
+    <span class="small">Nearest pair: <b class="mono">${g.pair.fdte} / ${g.pair.bdte} DTE</b> · contango <b class="mono">${sgn(g.pair.contango)}</b> pts${ok(g.pair.z) ? ` · <span class="${zcls(g.pair.z)}">${zTxt(g.pair.z)}${zTag(g.pair)}</span>` : ""}${ok(g.pair.debit) ? ` · ATM put cal ${fmt(g.pair.debit)}` : ""}</span>
     <ul>${g.checks.map(([t, pass, v]) => `<li><span class="${pass ? "pos" : "neg"}">${pass ? "✓" : "✕"}</span> ${esc(t)} <span class="muted mono">${esc(v)}</span></li>`).join("")}</ul></div>`).join("");
 }
 async function loadToday() {
@@ -125,14 +126,14 @@ async function loadCal(ev) {
     calData.pairs.forEach((p) => { p.relN = p.events ? p.events.length : null; });
     renderCal();
     const proxy = calData.pairs.length && calData.pairs.every((p) => /CBOE/.test(p.zsrc || ""));
-    $("calZNote").innerHTML = proxy ? `<p class="note">Contango z is close across pairs because the history behind it is one CBOE curve until a pair has 20 recorded sessions (${calData.recorded_days} so far). Today it says how the whole curve sits, not which pair is better.</p>` : "";
+    $("calZNote").innerHTML = proxy ? `<p class="small"><b>* Contango z is provisional</b> (${calData.recorded_days} of 20 recorded sessions): it comes from one CBOE curve, so it says how the whole curve sits, not which pair is better. It turns pair-specific by itself at 20.</p>` : "";
     $("calGates").innerHTML = gateCards(calData.gates);
   } catch (e) { $("heat").innerHTML = errBox(e); }
 }
 function calWhy(p, rank, total, colLabel, s) {
   const pros = [], cons = [];
   if (p.contango > 0) pros.push(`back month ${fmt(p.contango)} vol pts above the front: contango pays the calendar`); else cons.push(`inverted (${sgn(p.contango)} pts): front IV above back`);
-  if (ok(p.z)) (p.z <= -1 ? cons : pros).push(p.z >= 1 ? `contango steeper than usual (z ${sgn(p.z)})` : p.z <= -1 ? `contango flatter than usual (z ${sgn(p.z)})` : `contango about normal (z ${sgn(p.z)})`);
+  if (ok(p.z)) (p.z <= -1 ? cons : pros).push(p.z >= 1 ? `contango steeper than usual (z ${sgn(p.z)}${zTag(p)})` : p.z <= -1 ? `contango flatter than usual (z ${sgn(p.z)}${zTag(p)})` : `contango about normal (z ${sgn(p.z)}${zTag(p)})`);
   if (ok(p.fwd_premium)) (p.fwd_premium > 0 ? pros : cons).push(`forward vol ${fmt(p.fwd_vol)} is ${sgn(p.fwd_premium)} vs the front IV`);
   if (ok(p.fwd_vs_rv)) (p.fwd_vs_rv > 0 ? pros : cons).push(`forward vol ${sgn(p.fwd_vs_rv)} vs 20-day realised`);
   if (p.fdte <= 5) cons.push(`front expires in ${p.fdte}d: gamma risk`);
@@ -148,7 +149,7 @@ function renderCal() {
   const fronts = [...new Map(P.map((p) => [p.front, p.fdte])).entries()].sort((a, b) => a[1] - b[1]);
   const backs = [...new Map(P.map((p) => [p.back, p.bdte])).entries()].sort((a, b) => a[1] - b[1]);
   const cells = new Map(P.map((p) => [`${p.front}|${p.back}`, {v: p[k], sel: calSel && calSel.front === p.front && calSel.back === p.back,
-    title: `<div><b>${p.fdte} / ${p.bdte} DTE</b> (${p.front} → ${p.back})</div><div>Front IV <b>${fmt(p.front_iv)}</b> · back <b>${fmt(p.back_iv)}</b></div><div>Contango <b>${sgn(p.contango)}</b> · ${zTxt(p.z)}</div><div>Fwd vol <b>${fmt(p.fwd_vol)}</b> · premium <b>${sgn(p.fwd_premium)}</b></div><div>ATM put cal <b>${fmt(p.debit)}</b></div>${relTxt(p) ? `<div>Front runs past <b>${esc(relTxt(p))}</b></div>` : ""}`}]));
+    title: `<div><b>${p.fdte} / ${p.bdte} DTE</b> (${p.front} → ${p.back})</div><div>Front IV <b>${fmt(p.front_iv)}</b> · back <b>${fmt(p.back_iv)}</b></div><div>Contango <b>${sgn(p.contango)}</b> · ${zTxt(p.z)}${zTag(p)}</div><div>Fwd vol <b>${fmt(p.fwd_vol)}</b> · premium <b>${sgn(p.fwd_premium)}</b></div><div>ATM put cal <b>${fmt(p.debit)}</b></div>${relTxt(p) ? `<div>Front runs past <b>${esc(relTxt(p))}</b></div>` : ""}`}]));
   heatmap($("heat"), {label: "pair heatmap", rows: fronts.map(([e, d]) => ({key: e, label: `${d}d ${shortDate(e.slice(0, 4) + "-" + e.slice(4, 6) + "-" + e.slice(6))}`})),
     cols: backs.map(([e, d]) => ({key: e, label: `${d}d`})), cells, onClick: (f, b) => selectPair(f, b)});
   $("heatLegend").innerHTML = legend([[`higher ${METRIC[k][0].toLowerCase()}`, "var(--up)", 1], [`lower / negative`, "var(--down)", 1], ["no data", "var(--soft)", 1]]);
@@ -158,7 +159,7 @@ function renderCal() {
   $("pairTable").innerHTML = `<div class="tbl"><table><thead><tr><th class="n" title="rank by the sorted column · hover a badge for why">#</th>${cols.map(([c, l]) => `<th class="sort n" tabindex="0" data-k="${c}" ${s.k === c ? `aria-sort="${s.dir < 0 ? "descending" : "ascending"}"` : ""}>${l}${s.k === c ? (s.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>${
     rows.map((p, i) => `<tr class="click ${calSel && calSel.front === p.front && calSel.back === p.back ? "sel" : ""}" tabindex="0" data-f="${p.front}" data-b="${p.back}">
       <td class="n"><span class="rank" data-i="${i}">${i + 1}</span></td><td class="n">${p.fdte}d</td><td class="n">${p.bdte}d</td><td class="n">${fmt(p.front_iv)}</td><td class="n">${fmt(p.back_iv)}</td>
-      <td class="n ${p.contango < 0 ? "neg" : ""}">${sgn(p.contango)}</td><td class="n ${zcls(p.z)}" title="${esc(p.zsrc || "")}">${ok(p.z) ? sgn(p.z) : "–"}</td>
+      <td class="n ${p.contango < 0 ? "neg" : ""}">${sgn(p.contango)}</td><td class="n ${zcls(p.z)}" title="${esc(p.z_prov ? "provisional: from the one CBOE curve until this pair has 20 recorded sessions" : p.zsrc || "")}">${ok(p.z) ? sgn(p.z) + (p.z_prov ? "*" : "") : "–"}</td>
       <td class="n">${fmt(p.fwd_vol)}</td><td class="n">${sgn(p.fwd_premium)}</td><td class="n">${sgn(p.fwd_vs_rv)}</td><td class="n">${fmt(p.debit)}</td><td class="n">${relChip(p)}</td></tr>`).join("")}</tbody></table></div>`;
   const ci = cols.findIndex(([c]) => c === s.k), vals = rows.map((p) => p[s.k]).filter(ok), mx = Math.max(...vals.map(Math.abs), 1e-9), signed = vals.some((v) => v < 0);
   if (ci >= 0) $("pairTable").querySelectorAll("tbody tr").forEach((tr, i) => { const td = tr.children[ci + 1], v = rows[i][s.k];
@@ -231,7 +232,7 @@ async function selectPair(front, back) {
     if (d.actual && d.actual.length) series.push({name: "This exact expiry pair", short: "actual", data: d.actual, color: "var(--accent)", width: 2, dots: true});
     $("pairBox").innerHTML = `<div class="kv">
       <div><span class="lbl">Pair</span><b class="mono">${p.fdte} / ${p.bdte}d</b><span class="small muted">${front} → ${back}</span></div>
-      <div><span class="lbl">Contango</span><b>${sgn(p.contango)}</b><span class="small ${zcls(p.z)}">${zTxt(p.z)} ${p.zsrc ? "· " + esc(p.zsrc) : ""}</span></div>
+      <div><span class="lbl">Contango</span><b>${sgn(p.contango)}</b><span class="small ${zcls(p.z)}">${zTxt(p.z)}${zTag(p)} ${p.zsrc ? "· " + esc(p.zsrc) : ""}</span></div>
       <div><span class="lbl">Forward vol</span><b>${fmt(p.fwd_vol)}</b><span class="small muted">premium ${sgn(p.fwd_premium)} · vs RV ${sgn(p.fwd_vs_rv)}</span></div>
       <div><span class="lbl">ATM put calendar</span><b>${fmt(p.debit)}</b><span class="small muted">strike ${fmt(p.strike, 0)}</span></div></div>
       <div class="chart" id="pairChart"></div>${legend(series.map((s) => [s.name, s.color]))}

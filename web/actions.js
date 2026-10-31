@@ -58,9 +58,10 @@ async function load() {
   const [Rk, Rd, Fr, Sn] = await Promise.all([
     window.riskActions ? window.riskActions().catch(() => null) : null,
     api("/api/readiness").catch(() => null), api("/api/freshness").catch(() => null),
-    window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null)]);
+    window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null), window.loadHeads ? window.loadHeads().catch(() => null) : null]);
   L = {Rk, Rd}; SCAN = null;
   headline(Rd); render(); entries(Rd); checks(Rk, Fr, Sn); conditions(); matrix(Rd);
+  if (window.renderHeads) window.renderHeads(Rk);
   ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
 }
 
@@ -124,7 +125,7 @@ async function conditions() {
   el.innerHTML = `<div class="tbl"><table><thead><tr><th>Signal</th><th>Today${C.date ? ` <span class="muted">(${esc(C.date)})</span>` : ""}</th>${S.map((s) => `<th class="n">${s}</th>`).join("")}<th>In the size call?</th></tr></thead><tbody>${body}${sizeRow}</tbody></table></div>
     <div class="kv mini" style="margin-top:8px">${C.odds.map((o) => `<div><span class="lbl">${esc(o.name)}</span><b class="${o.dd5 > C.base_dd5 * 1.3 ? "neg" : o.dd5 < C.base_dd5 * 0.85 ? "pos" : ""}">${ok(o.dd5) ? o.dd5.toFixed(0) + "%" : "–"}</b>${ok(o.dd5) && window.oddsBar ? window.oddsBar(o.dd5, C.base_dd5) : ""}<span class="small muted">chance of a 5% SPX drop in 21 sessions (normally ${C.base_dd5.toFixed(0)}%) · ${esc(o.reading || "")}</span></div>`).join("")}
       ${f21 ? `<div><span class="lbl">Seasonality, next 21 sessions</span><b>${f21.up.toFixed(0)}% up</b><span class="small muted">avg ${pctS(f21.mean)}, worst ${pctS(f21.worst)} over the last ${f21.n} years · ${esc(C.season.cycle || "")} year</span></div>` : ""}
-      <div><span class="lbl">High-impact releases, 3 days</span><b class="${C.events.length ? "wrn" : ""}">${C.events.length ? [...new Set(C.events.map((e) => e.title))].length + " releases" : "none"}</b><span class="small muted">${esc([...new Set(C.events.map((e) => e.title))].join(", ") || "calendars step down into CPI, FOMC, payrolls, PCE, GDP")}</span></div></div>
+      <div><span class="lbl">High-impact releases, 3 days</span><b class="${C.events.length || (C.events_feed && C.events_feed.state === "unavailable") ? "wrn" : ""}">${C.events.length ? [...new Set(C.events.map((e) => e.title))].length + ([...new Set(C.events.map((e) => e.title))].length > 1 ? " releases" : " release") : C.events_feed && C.events_feed.state === "unavailable" ? "feed unavailable" : "none"}</b><span class="small muted">${esc([...new Set(C.events.map((e) => e.title))].join(", ") || "calendars step down into CPI, FOMC, payrolls, PCE, GDP")}</span></div></div>
     <p class="note">The bars in each cell are the average per bucket of that signal, low to high (today's bucket solid, hover for numbers). Each cell compares entries made in today's bucket of that signal with all entries of that structure since 2009: <b>helps</b> = at least ${C.rules.edge} point better than the structure's average, <b>hurts</b> = at least ${C.rules.edge} point worse, <b>few entries</b> = under ${C.rules.min_n} in the bucket. The signals overlap (high IV percentile, flat term structure and a falling index tend to come together), so count them as evidence, not votes: the size call above is the readiness bar's, and the last column says which signals feed it. The trend row uses today's term-structure band, as the size rule does. A14: ${esc(C.basis.A14)}. Calendars: ${esc(C.basis.Calendar)}. The model prices one fixed skew shape, so the SKEW, VVIX and IV-percentile rows show what those markets went on to do, not their effect on prices.</p>`;
 }
 
@@ -166,7 +167,7 @@ function matrixRender(Rd) {
   $("acMatrix").innerHTML = `<p class="small" style="margin:0 0 6px">Today: VIX/VIX3M <b>${fmt(Rd.ivts, 3)}</b> (${esc(Rd.ivts_band.label)}) · VIX9D/VIX <b class="${ok(Rd.front) && Rd.front >= 0.9 ? "wrn" : ""}">${fmt(Rd.front, 3)}</b> · SPX ${trendOf("A14 SPX")} and RUT ${trendOf("A14 RUT")} their 20-day averages · market size <b>${esc(size)}</b> (${esc(Rd.why)}).</p>
     <div class="tbl"><table><thead><tr><th>Term structure</th><th>Index vs</th>${STRUCTS.map((s) => `<th class="n">${s}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
     <p><button type="button" class="ghost" id="acMxAll">${mxAll ? "Show today's rows only" : "Show all 8 rows"}</button></p>
-    <p class="note">How to read it: the market size (from the drop odds in the readiness bar) is the starting point; each cell shows the steps the term-structure, trend and front-of-curve rules take off it at today's VIX9D/VIX, and the size that leaves today. A14s take one more step with VIX9D/VIX at 0.90+ in a steep or normal term structure (the cells' results are for all VIX9D/VIX readings). Other flags on top: thin RUT premium (RVX within 3 pts of VIX) steps RUT A14s down, a high-impact release within 3 days steps calendars down. Results: A14 = 45 DTE, your median shape, revised exits (target 7%, stop −20%, time and pace), % of max loss; calendars = 15/22 DTE ATM put calendar, target 5%, stop −15%, % of the debit. The model uses one fixed skew shape, so it shows the term-structure and trend effect, not that day's skew.</p>`;
+    <p class="note">How to read it: the market size (from the drop odds in the readiness bar) is the starting point; each cell shows the steps the term-structure, trend and front-of-curve rules take off it at today's VIX9D/VIX, and the size that leaves today. A14s take one more step with VIX9D/VIX at 0.90+ in a steep or normal term structure (the cells' results are for all VIX9D/VIX readings). Other flags on top: thin RUT premium (RVX 3 pts or less above VIX) steps RUT A14s down, a high-impact release within 3 days steps calendars down. Results: A14 = 45 DTE, your median shape, revised exits (target 7%, stop −20%, time and pace), % of max loss; calendars = 15/22 DTE ATM put calendar, target 5%, stop −15%, % of the debit. The model uses one fixed skew shape, so it shows the term-structure and trend effect, not that day's skew.</p>`;
 }
 
 function entries(Rd) {
@@ -202,27 +203,33 @@ function ideasRender() {
 function orders(Rk) {
   subBtn("Orders & alerts").hidden = !Rk;
   if (!Rk) { $("acOrders").innerHTML = ""; return; }
-  const P = Rk.trades.filter((t) => t.plan && (t.plan.order || t.plan.at));
+  const P = Rk.trades.filter((t) => t.plan && (t.plan.order || t.plan.at)), none = Rk.trades.filter((t) => !t.plan);
   $("acOrdMeta").textContent = `one GTC target close and two price alerts for each of the ${P.length} of ${Rk.trades.length} open trades with card rules`;
   if (!P.length) { $("acOrders").innerHTML = `<div class="state">No carded trades${active() ? " in the filter" : ""}.</div>`; return; }
   $("acOrders").innerHTML = `<div class="tbl"><table><thead><tr><th>Trade</th><th class="n">GTC target close</th><th class="n">Alert: decide</th><th class="n">Alert: stop</th><th title="dot = index now; orange = decide alert, red = stop alert; scale −10% to +6% from spot">How far</th></tr></thead><tbody>${
     P.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.firstExp - b.firstExp).map((t) => { const q = t.plan;
       return `<tr><td class="small">${esc(t.name)} <span class="muted">${esc(t.acctLabel || "")}</span></td><td class="n small">${order(q.order)}</td><td class="n small">${lv(q.at && q.at.decide, t.underlying)}</td><td class="n small">${lv(q.at && q.at.stop, t.underlying)}</td><td>${dist(t)}</td></tr>`; }).join("")}</tbody></table></div>
-    <p class="note">Target orders are valid until you adjust the trade; re-enter after any adjustment. Alert levels assume the move happens today with IVs unchanged; refresh marks to update them. ${go("risk", "Trade plan", "Trade plan")}</p>`;
+    ${none.length ? `<p class="small"><b>${none.length} open trade${none.length > 1 ? "s" : ""} without card rules</b>, so no target or alerts here: ${none.map((t) => `${esc(t.name)} <span class="muted">(${esc(t.strategy)}, ${esc(t.acctLabel || "")})</span>`).join(" · ")}.</p>` : ""}
+    <p class="note">Target orders are valid until you adjust the trade; re-enter after any adjustment. Alert levels assume the move happens today with IVs unchanged; refresh marks to update them. Card rules exist for A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal and Flyagonal. ${go("risk", "Trade plan", "Trade plan")}</p>`;
 }
 
 function coming(Rk, Rd) {
-  const items = [];
-  const byDay = {};  // one line per day of high-impact releases
-  (Rd && Rd.events || []).forEach((e) => { const d = new Date(e.date).toDateString(); (byDay[d] = byDay[d] || {when: e.date, t: []}).t.push(e.title); });
-  Object.values(byDay).forEach((d) => items.push({when: d.when, txt: `<b>${esc([...new Set(d.t)].join(", "))}</b> <span class="small muted">high-impact: no new calendars into it</span>`}));
+  const items = [], H = window.HEADS, end = H && H.coming_to ? Date.parse(H.coming_to) : Date.now() + 3 * 864e5, future = (e) => { const t = Date.parse(e.date); return t >= Date.now() && t <= end; };
+  const rule = new Set((Rd && Rd.events || []).map((e) => e.title));  // the releases the calendar step-down reads
+  const nyDay = (iso) => new Date(iso).toLocaleDateString("en-CA", {timeZone: "America/New_York"});
+  const byDay = {};  // one line per US day: high-impact in bold, medium after it
+  (H ? H.macro : (Rd && Rd.events || []).map((e) => ({...e, importance: 1}))).filter(future).forEach((e) => { const d = byDay[nyDay(e.date)] = byDay[nyDay(e.date)] || {when: e.date, hi: [], med: [], rule: false};
+    (e.importance >= 1 ? d.hi : d.med).push(e.title.replace(" (schedule)", "")); if (rule.has(e.title)) d.rule = true; });
+  Object.values(byDay).forEach((d) => items.push({when: d.when, txt: `${d.hi.length ? `<b>${esc([...new Set(d.hi)].join(", "))}</b> ` : ""}${d.med.length ? `<span class="small muted" title="${esc([...new Set(d.med)].join(", "))}">${d.hi.length ? "and " : ""}${[...new Set(d.med)].length} medium</span> ` : ""}${d.rule ? `<span class="small muted">no new calendars into it</span>` : ""}`}));
+  if (H) H.earnings.filter((e) => e.top && Date.parse(e.when) <= end).forEach((e) => items.push({when: e.when, txt: `<b>${esc(e.sym)}</b> <span class="small muted">reports ${esc(e.session)}${e.firm ? "" : " (est.)"}, ${fmt(e.weight, 1)}% of SPX</span>`}));
   if (Rk) Rk.trades.forEach((t) => { const q = t.plan; if (!q || !ok(q.dte)) return;
     const left = ok(q.timeDte) ? q.dte - q.timeDte : null;
     if (ok(left) && left >= 0 && left <= 3) items.push({when: new Date(Date.now() + left * 864e5).toISOString(), txt: `${esc(t.name)} <span class="small muted">reaches its ${q.timeDte} DTE time stop ${left === 0 ? "today" : `in ${left} day${left > 1 ? "s" : ""}`}</span>`});
     else if (q.dte <= 3) items.push({when: new Date(Date.now() + q.dte * 864e5).toISOString(), txt: `${esc(t.name)} <span class="small muted">first expiry in ${q.dte} days</span>`}); });
   items.sort((a, b) => String(a.when).localeCompare(String(b.when)));
-  $("acComing").innerHTML = items.length ? `<ul class="small" style="margin:0;padding-left:18px">${items.map((i) => `<li><span class="mono muted">${esc(new Date(i.when).toLocaleDateString([], {weekday: "short", day: "numeric", month: "short"}))}</span> ${i.txt}</li>`).join("")}</ul>`
-    : `<div class="state">No high-impact releases or time stops in the next 3 days.</div>`;
+  const note = H ? H.feed_note : Rd && Rd.events_feed ? Rd.events_feed.note : "Calendar feed unavailable.";
+  $("acComing").innerHTML = (note ? `<div class="state err" style="margin-bottom:6px">${esc(note)}</div>` : "") + (items.length ? `<ul class="small" style="margin:0;padding-left:18px">${items.map((i) => `<li><span class="mono muted">${esc(new Date(i.when).toLocaleDateString([], {weekday: "short", day: "numeric", month: "short", timeZone: "America/New_York"}))}</span> ${i.txt}</li>`).join("")}</ul>`
+    : note ? "" : `<div class="state">No medium or high-impact releases or time stops in the next 3 trading days.</div>`);
 }
 
 function checks(Rk, Fr, Sn) {
@@ -233,6 +240,10 @@ function checks(Rk, Fr, Sn) {
   if (Rk && !Rk.marks_ts) bad.push("<b>No TWS marks yet</b>: press Refresh in the Risk grid with TWS running");
   if (Rk && Rk.missing && Rk.missing.length) bad.push(`<b>${Rk.missing.length} legs</b> had no TWS quote at the last refresh`);
   if (Rk && !Rk.detail_exported) bad.push("<b>No ONE Detail Report</b>: adjustment counts (used by the adjustment gates) are unknown");
+  const H = window.HEADS;
+  if (H) { Object.values(H.feeds).filter((f) => !f.ok).forEach((f) => bad.push(`<b>${esc(f.name)}</b>: ${f.note ? esc(f.note) : `feed unavailable, last good copy in use${f.err ? ` <span class="muted">(${esc(f.err)})</span>` : ""}`}`));
+    if (H.known_to && Date.parse(H.known_to) - Date.now() < 60 * 864e5) bad.push(`<b>Known-events list</b> ends ${esc(H.known_to)}: add next year's CPI, payrolls and FOMC dates to KNOWN in desk/market.py`); }
+  else bad.push("<b>Heads-up feeds</b> could not be read: event risk is unknown");
   if (Sn && !Sn.key_set) bad.push(`<b>Cloud snapshot passphrase not set</b>: your trades aren't on the GitHub copy yet ${go("rec", "Recorder")}`);
   if (Sn && Sn.error) bad.push(`<b>Cloud snapshot</b>: ${esc(Sn.error)}`);
   $("acChkMeta").textContent = bad.length ? `${bad.length} to look at` : "all current";
@@ -248,6 +259,7 @@ document.addEventListener("click", (e) => {
   if (a.dataset.ready) { const b = document.getElementById("rdOpen"); if (b) b.click(); return; }
   if (a.dataset.go) { showTab(a.dataset.go); if (a.dataset.go === "rec") { const p = $("snapPanel"); if (p) setTimeout(() => p.scrollIntoView({behavior: "smooth"}), 200); } if (a.dataset.sub) { const host = document.querySelector(`#tab-${a.dataset.go} [data-subs]`); if (host && host._showSub) host._showSub(a.dataset.sub); } }
 });
+window.addEventListener("heads", () => { if (L) coming(pick(L.Rk), L.Rd); });
 const rf = () => { const b = $("acReload"); if (b) b.addEventListener("click", load); };
 document.addEventListener("DOMContentLoaded", rf);
 window.loadActions = load;

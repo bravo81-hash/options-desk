@@ -16,7 +16,7 @@ import numpy as np
 
 from . import db, load_config
 from .history import series
-from .trades import _newest, classify
+from .trades import _newest, classify, fix_name
 
 SYD = dt.timezone(dt.timedelta(hours=10))  # ONE times are Sydney local; -14h gives the US session date (AEDT)
 
@@ -61,7 +61,7 @@ def parse(path=None):
                     cur = None
                     continue
                 cur = {"key": f"{r[1]}#{r[6]}", "group": r[1], "status": r[2], "underlying": r[3], "expiry": r[4], "trade_id": r[6],
-                       "name": r[7], "open": _dt(r[8]), "close": _dt(r[9]), "dte": _num(r[10]), "dit": _num(r[11]), "margin": _num(r[12]),
+                       "name": fix_name(r[7]), "open": _dt(r[8]), "close": _dt(r[9]), "dte": _num(r[10]), "dit": _num(r[11]), "margin": _num(r[12]),
                        "comms": _num(r[13]), "pnl": _num(r[14]), "ret": _num(r[15]), "legs": [], "strategy": classify(r[1], r[7])}
                 trades.append(cur)
             elif cur is not None and len(r) > 17 and r[0] == "" and r[1] == "" and r[3] == cur["trade_id"] and r[5] in ("Buy", "Sell"):

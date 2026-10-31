@@ -36,7 +36,7 @@ CONDITIONS = [
      "A complacent sell-off. Not a dip to sell puts into."),
     ("front_inv", "caution", "VIX9D at or above VIX (near-term fear)",
      "Wait for VIX9D to drop back below VIX before opening A14s."),
-    ("rvx_narrow", "caution", "RVX less than 3 pts above VIX (thin RUT premium)",
+    ("rvx_narrow", "caution", "RVX 3 pts or less above VIX (thin RUT premium)",
      "RUT premium barely pays: prefer SPX over RUT for new trades."),
     ("back_end", "take", "Backwardation just ended (VIX/VIX3M back below 0.97)",
      "Historically the best re-entry after a scare: sell put premium (A14) as the curve normalises."),

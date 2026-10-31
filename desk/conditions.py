@@ -18,12 +18,12 @@ IN_SIZE = {
     "ivpct": "no",
     "skew_b": "no: note on RUT A14s in a normal term structure",
     "vvix_b": "at the extreme: VVIX 110+ with VIX under 18 is a VIX condition (caution)",
-    "rvxs": "yes: RUT A14 one step down under 3",
+    "rvxs": "yes: RUT A14 one step down at 3 or less",
     "vrp_b": "at the extremes: under 0 is a caution condition, 8+ an opportunity",
     "season": "no",
 }
 FMT = {"vix": "VIX {:.1f}", "spx200_pct": "{:+.1f}% vs 200-day", "front_r": "{:.3f}", "vix_pct": "{} percentile",
-       "skew": "SKEW {:.0f}", "vvix": "VVIX {:.0f}", "rvx_spread": "{:+.1f} pts", "vrp": "{:+.1f} pts", "season_up": "{:.0f}% of years up"}
+       "skew": "SKEW {:.0f}", "vvix": "VVIX {:.0f}", "rvx_spread": "{:+.2f} pts", "vrp": "{:+.1f} pts", "season_up": "{:.0f}% of years up"}
 FIELD = {k: f for k, (_, _, f, _, _) in backtest.COND.items()}
 
 
@@ -87,7 +87,7 @@ def now():
     except Exception:
         pass
     return {"date": T["date"], "rows": rows, "odds": odds, "base_dd5": rd["base"], "size": rd["size"], "why": rd["why"],
-            "strategies": {s["name"]: s for s in rd["strategies"]}, "events": rd["events"], "season": season,
+            "strategies": {s["name"]: s for s in rd["strategies"]}, "events": rd["events"], "events_feed": rd.get("events_feed"), "season": season,
             "rules": {"min_n": MIN_N, "edge": EDGE},
             "basis": {"A14": "45 DTE, your median shape, revised exits; % of max loss",
                       "Calendar": "15/22 DTE ATM put calendar, target 5% stop −15%; % of the debit"}}

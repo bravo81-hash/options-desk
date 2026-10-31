@@ -194,7 +194,7 @@ select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </section>
 
     <section class="panel c6" id="pCal" data-sub="Cross-asset &amp; calendar">
-      <header><h2>US economic calendar</h2><span class="small muted">Forex Factory feed</span><div class="row"><span class="small muted">next 7 days</span><div class="toggle" role="group" aria-label="Importance" id="calToggle"><button type="button" data-f="medium">Medium</button><button type="button" data-f="high">High</button><button type="button" data-f="both">Both</button></div></div></header>
+      <header><h2>US economic calendar</h2><span class="small muted">Forex Factory, TradingView, official schedules</span><div class="row"><span class="small muted">next 7 days</span><div class="toggle" role="group" aria-label="Importance" id="calToggle"><button type="button" data-f="medium">Medium</button><button type="button" data-f="high">High</button><button type="button" data-f="both">Both</button></div></div></header>
       <div id="calBody"><div class="state loading">Loading calendar…</div></div>
     </section>
 
@@ -751,7 +751,7 @@ function renderCal() {
   const isHigh = (x) => x.importance >= 1;
   const ev = calEvents.filter((x) => calFilter === "both" ? true : calFilter === "high" ? isHigh(x) : !isHigh(x));
   const label = calFilter === "both" ? "medium or high importance" : calFilter + " importance";
-  if (!ev.length) { $("calBody").innerHTML = `<div class="state">No ${label} US events in the next 7 days.</div>`; return; }
+  if (!ev.length) { $("calBody").innerHTML = `<div class="state">${calNote ? esc(calNote) : `No ${label} US events in the next 7 days.`}</div>`; return; }
   const dayF = new Intl.DateTimeFormat(undefined, {weekday: "short", month: "short", day: "numeric"}), timeF = new Intl.DateTimeFormat(undefined, {hour: "numeric", minute: "2-digit"});
   const byDay = new Map(); ev.forEach((x) => { const k = dayF.format(new Date(x.date)); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); });
   $("calBody").innerHTML = `<div class="tbl"><table><thead><tr><th>Time</th><th>Event</th><th class="n">Forecast</th><th class="n">Previous</th><th class="n">Actual</th></tr></thead><tbody>${

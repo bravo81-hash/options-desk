@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, backtest, conditions, flex, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
+from desk import ROOT, a14, accounts, backtest, conditions, flex, heads, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -155,6 +155,18 @@ def api_md_ohlcv():
 @app.get("/api/md/calendar")
 def api_md_calendar():
     return ok(market.calendar(request.args.get("date_from"), request.args.get("date_to")))
+
+
+@app.get("/api/heads")
+def api_heads():
+    if not os.environ.get("DESK_CLOUD"):
+        heads.kick()
+    return ok(heads.payload())
+
+
+@app.post("/api/heads/refresh")
+def api_heads_refresh():
+    return ok(heads.refresh(now=True))
 
 
 @app.get("/api/md/account")
@@ -293,6 +305,7 @@ def api_freshness():
         ("Chain", d_of(meta_ts("a14_chain")), "A14 scanner and Today's pick option chain"),
         ("Expected moves", d_of(meta_ts("em_cache")), "Expected moves tab"),
         ("Marks", d_of(meta_ts("risk_marks")), "Risk grid marks, positions, NAV"),
+        ("Event risk and overnight", d_of(heads._box("scan").get("ts")), "earnings dates, futures, leaders"),
     ]
     try:
         src.append(("Market conditions", backtest.data()["days"][-1], "Actions: Market conditions, Evidence: Since 2009"))

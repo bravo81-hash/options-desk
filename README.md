@@ -26,6 +26,28 @@ strip in the header shows each source's date against the last US close; missed r
 chains catch up when the laptop wakes. yfinance downloads run one at a time (concurrent downloads were
 swapping rows between symbols).
 
+## Heads-up warnings
+
+Information only: nothing here feeds the size call, gates, rankings or Today's pick (`desk/heads.py`, `web/heads.js`,
+updated by the **heads** step of Update all and by the cloud build).
+
+* **Event risk** in the ribbon: green, amber or red from index-weighted earnings and macro releases in the next 24 and 48
+  trading hours (weekends and market holidays skipped). Red: over 15% of the S&P 500 reports inside 24, or payrolls, CPI,
+  FOMC or an election falls inside it. A feed that's down reads Unknown, never green.
+* **Actions sub-tabs**: Event risk (top 10 SPX, top 5 RUT, SMH and XLK leaders); Overnight (ES, NQ, RTY against the cash
+  close, VIX futures, after-hours moves, leader spillover); Stress (11 signals, counted apart from the "of 6" warnings);
+  Pre-close (14:30–16:00 ET checklist: event risk, net gamma, ±2σ overnight, and a put-spread reference price when red).
+* **Risk grid, Gap what-if**: the book at the next open at ±1.5% and ±2.5% gaps and the live futures level, with VIX −3 to +6,
+  in total and per account.
+* **Economic calendar**: Forex Factory for its own week, TradingView beyond it, and a built-in schedule (`KNOWN` in
+  `desk/market.py`: FOMC, CPI, payrolls, election dates) for anything missing. It says "feed unavailable", not "no events",
+  when a feed is down. Extend `KNOWN` each December: the Data check tab warns when it's about to run out.
+
+Limits: VIX futures are CBOE's end-of-day settlements (no free overnight quote). ES, NQ and RTY come from yfinance, about
+10 minutes late, and stop at Friday's 17:00 ET close until Sunday evening. NYSE and Nasdaq advance/decline aren't free, so
+breadth uses S&P 500 members. S&P 500 weights come from State Street's SPY file; if it's unreachable they fall back to
+market-cap share.
+
 ## Tabs
 
 | Tab | What it answers |
@@ -63,8 +85,8 @@ swapping rows between symbols).
   TradingView and the Pine scripts use; IBKR's SMART volume runs ~35% lower and would skew OBV and
   Force Index); breadth computed from the
   S&P 500 and Nasdaq-100 member lists (Wikipedia) — % above 20/50/200-day SMA, overall and per
-  GICS sector, standing in for TradingView's S5FI / NDFI / SKFI…; Forex Factory weekly calendar
-  (US, high/medium impact); TWS account summary and fills.
+  GICS sector, standing in for TradingView's S5FI / NDFI / SKFI…; Forex Factory and TradingView
+  calendars (US, high/medium impact) with a built-in schedule as the fallback; TWS account summary and fills.
 
 * **Your own surface history** — the recorder stores ~300 option quotes per symbol per day
   (`data/desk.db`). IV is solved from mids against each expiry's put-call-parity forward,

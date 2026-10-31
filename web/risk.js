@@ -350,6 +350,29 @@ function whatIf(T, G) {
     <p class="note">Each cell reprices every open leg on that date, so time decay is in it; a trade that expires sooner is frozen at its first expiry, as on the graph. σ is SPX's implied move over the horizon from the VIX; RUT moves ${fmt(+$("rkBeta").value, 1)} × that (set above) and stocks the same %. IV shifts every leg by the same points with each strike's IV held, so a change in skew or a move in only one expiry is not in here. A down row need not improve steadily with IV: once the index is past the shorts, more IV stops helping and the longer-dated trades start to lose from it. Margin comes from the last TWS read, in each account's own currency, with USD results converted at its rate. <b>Excess left is a best case</b>: the requirement rises in a real move as well, and this holds it at today's level.</p>`;
 }
 
+/* ---------- gap what-if: the book at the next open (desk/risk.py gap_grid), in total and per account ---------- */
+function gapView() {
+  const G = R.gaps;
+  if (!G || !G.total.length || !G.accounts.length) return `<div class="state">No marked trades to reprice: refresh marks with TWS running.</div>`;
+  const full = Math.max(...G.total.flat().map(Math.abs), 1);
+  const iv = (v) => v ? `VIX ${v > 0 ? "+" : "−"}${Math.abs(v)}` : "VIX flat";
+  const fut = G.futures ? Object.entries(G.futures).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v.toFixed(2)}%`).join(" · ") : null;
+  $("rkGapMeta").textContent = `priced at the next open, ${new Date(G.at).toLocaleString([], {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit"})} ET${fut ? ` · futures now: ${fut}` : " · no futures quote"}`;
+  const grid = (name, cells) => `<div><h3>${esc(name)}</h3><div class="tbl"><table class="wi"><thead><tr><th>Gap</th>${G.vols.map((v) => `<th class="n">${iv(v)}</th>`).join("")}</tr></thead><tbody>${cells.map((row, i) => `<tr><td>${G.rows[i] === "Futures now" ? "<b>Futures now</b>" : esc(G.rows[i].replace("-", "−"))}</td>${row.map((v) => `<td class="n ${cls(v)}" style="${heat(v, full)}">${money(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+  return `<div class="hgrid">${grid("Total", G.total)}${G.accounts.map((a) => grid(a.label, a.cells)).join("")}</div>
+    <p class="note">Change from P&amp;L now, USD, with time decay to the open included. ± rows are SPX gaps with RUT at ${fmt(G.beta, 1)} × that and stocks the same %; this table stays at beta ${fmt(G.beta, 1)} whatever the beta box above says. The Futures row uses ES for SPX and stocks, RTY for RUT and NQ for NDX, each against its own cash-close price. VIX shifts move every leg's IV by the same points with each strike's IV held, so a change in skew isn't in here. A trade that expires before the open is frozen at its expiry. Colour is scaled to the worst Total cell, so accounts compare directly.</p>`;
+}
+
+/* twin trades in two accounts can read differently: each has its own fills and P&L, and the gates work per trade */
+function twinNote(P) {
+  const acct = new Set(Object.values(R.labels).map((s) => s.toUpperCase()));
+  const key = (t) => [t.underlying, t.strategy, dexp(t.firstExp), t.name.toUpperCase().replace(/\s*-\s*\d+\s*LOTS?\s*$/, "").split(/[.\s]+/).filter((w) => !acct.has(w)).join(" ")].join("|");
+  const by = {}; P.forEach((t) => { (by[key(t)] = by[key(t)] || []).push(t); });
+  const pairs = Object.values(by).filter((g) => new Set(g.map(label)).size > 1 && new Set(g.map((t) => t.plan.adj.ok)).size > 1);
+  if (!pairs.length) return "";
+  return `<p class="small"><b>Twin trades with different Adjust? flags.</b> The gates read each trade's own P&amp;L and fills, so accounts can sit on opposite sides of a line: ${pairs.map((g) => g.map((t) => `${esc(t.name)} ${esc(label(t))} ${pctS(t.totalPct)} → <b>${esc(t.plan.adj.ok)}</b> (${esc(t.plan.adj.why)})`).join("; ")).join(" · ")}.</p>`;
+}
+
 function planView(T) {
   const P = T.filter((t) => t.plan).sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   if (!P.length) return `<div class="state">No open trade has card rules (A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal, Flyagonal).</div>`;
@@ -372,6 +395,7 @@ function planView(T) {
         <td><span class="chip ${ADJ_CLS[q.adj.ok]}" title="${esc(q.adj.why + (q.how ? " → " + q.how : ""))}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span><br><span class="small muted">${t.adjustments ?? "–"} so far</span></td>
         <td class="n small" title="${esc(q.order ? `combo ${q.order.ratio} × ${q.order.units}${ok(q.order.now) ? `, now ${q.order.now.toFixed(2)} at mid` : ""}` : "")}">${orderTxt(q.order, true)}</td>
         <td class="n small">${lvTxt(q.at.decide, t.underlying)}<br>${lvTxt(q.at.stop, t.underlying)}</td></tr>`; }).join("")}</tbody></table></div>
+    ${twinNote(P)}
     <p class="note">Checked in this order every day: hard stop → target → time stop → slow (under ${fmt(SPEED().slow, 2)}%/day after 3+ weeks, or 25% past your usual hold) → decide line → otherwise hold.
     <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
     How: market up → roll the shorts up or add a call side; market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
@@ -420,6 +444,7 @@ function render() {
     tile("Vega / vol pt", money(sumG("vega")), "all legs +1 IV point", cls(sumG("vega"))) +
     tile("Worst in range", money(total("dated")[worstIdx]), `at ${fxp(xsPct[worstIdx], true)} on the chosen date · margin ${money(T.reduce((s, t) => s + (t.margin || 0), 0))}`, "neg");
   $("rkWi").innerHTML = whatIf(T, G);
+  $("rkGap").innerHTML = gapView();
   $("rkTable").innerHTML = tradesTable(T);
   $("rkPlan").innerHTML = planView(T);
   $("rkCapital").innerHTML = capitalView(T);
@@ -508,7 +533,7 @@ window.riskActions = async () => {
   if (!R) await load();
   if (!R || !R.trades) return null;
   R.trades.forEach((t) => { t.beta = 1; paceOf(t); planOf(t); t.acctLabel = label(t); });
-  return {trades: R.trades, marks_ts: R.marks_ts, one_fresh: R.one_fresh, detail_exported: R.detail_exported, missing: R.missing || []};
+  return {trades: R.trades, marks_ts: R.marks_ts, one_fresh: R.one_fresh, detail_exported: R.detail_exported, missing: R.missing || [], overnight: R.overnight, hedge: R.hedge};
 };
 window.riskOpen = (id) => openDetail(id);
 window.riskChart = riskChart;

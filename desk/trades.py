@@ -27,6 +27,13 @@ STRATS = [  # (label, patterns matched against group + name, upper-case)
 CALENDAR_FAMILY = {"TimeEdge", "TimeZone", "Triple Cal", "Flyagonal"}
 
 
+def fix_name(name):
+    """Corrections from config.local.json (risk.name_fixes: {"MNG": "MGN"}): whole words, display only. Trade ids don't use the name."""
+    for wrong, right in (load_config().get("risk", {}).get("name_fixes") or {}).items():
+        name = re.sub(rf"\b{re.escape(wrong)}\b", right, name)
+    return name
+
+
 def classify(group, name):
     text = f"{group or ''} | {name or ''}".upper().replace(".", " ")
     for label, pats in STRATS:
@@ -81,7 +88,7 @@ def load_one(path=None):
                 acct = r[1]
                 if acct.lower().startswith("backtest"):
                     continue
-                out.append(dict(source="ONE", group=acct, name=r[7], underlying=r[3], status=r[2],
+                out.append(dict(source="ONE", group=acct, name=fix_name(r[7]), underlying=r[3], status=r[2],
                                 opened=_one_dt(r[8]), closed=_one_dt(r[9]), pnl=_f(r[14]), ret_pct=_f(r[15]),
                                 margin=_f(r[12]), strategy=classify(acct, r[7])))
     return out, path

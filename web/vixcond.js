@@ -26,7 +26,7 @@ function render(el, V, compact) {
   const chip = (lab, val, warn) => `<span class="vcr ${warn ? "w" : ""}"><span>${lab}</span><b>${val}</b></span>`;
   const readings = [
     chip("VIX", f(R.vix, 2), R.vix >= 25), chip("VIX − RV20", sg(R.vrp, 1), R.vrp < 0),
-    chip("VVIX", f(R.vvix, 0), R.vvix >= 110), chip("VIX9D/VIX", f(R.r9, 2), R.r9 >= 1), chip("RVX − VIX", sg(R.rvx_spread, 1), R.rvx_spread <= 3),
+    chip("VVIX", f(R.vvix, 0), R.vvix >= 110), chip("VIX9D/VIX", f(R.r9, 2), R.r9 >= 1), chip("RVX − VIX", sg(R.rvx_spread, 2), R.rvx_spread <= 3),
     chip("Long-term trend (200d)", sg(R.vs200, 1) + "%", R.vs200 < 0), chip("SPX today", sg(R.spx_r, 2) + "%", R.spx_r <= -1), chip("HYG today", sg(R.hyg_r, 2) + "%", R.hyg_r <= -1),
   ].join("");
   const active = V.conditions.filter((c) => c.active);
@@ -36,7 +36,7 @@ function render(el, V, compact) {
     <div>${e(c.advice)}</div><div class="small">${statLine(c.stats, base)}</div>${c.stats && window.oddsBar ? window.oddsBar(c.stats.dd5, base.dd5) : ""}</div>`;
   const B = V.bucket.stats;
   const bucket = `<div class="vcc" style="border-left-color:var(--line)"><div><span class="vck">VIX level</span> <b>VIX ${e(V.bucket.range)}</b> — the risk band you are in</div><div class="small">${statLine(B, base)}</div>${B && window.oddsBar ? window.oddsBar(B.dd5, base.dd5) : ""}</div>`;
-  const prefer = V.prefer ? `<div class="small">Index: <b>${V.prefer}</b> has the better premium right now (RVX − VIX ${sg(R.rvx_spread, 1)}).</div>` : "";
+  const prefer = V.prefer ? `<div class="small">Index: <b>${V.prefer}</b> has the better premium right now (RVX − VIX ${sg(R.rvx_spread, 2)}).</div>` : "";
   const timing = V.timing.length ? `<div class="small muted">${V.timing.map((t) => e(t)).join("<br>")}</div>` : "";
   const all = `<details><summary class="small muted">All ${V.conditions.length} conditions and their history</summary><div class="tbl"><table><thead><tr><th>Condition</th><th>Type</th><th class="n">Now</th><th class="n">Cases</th><th class="n">SPX 21d</th><th class="n">Up</th><th class="n">5% drop</th><th class="n">VIX 10d</th><th class="n">RUT 21d</th></tr></thead><tbody>${
     V.conditions.map((c) => { const s = c.stats || {}; return `<tr><td class="small">${e(c.label)}</td><td class="small" style="color:${KIND[c.kind][1]}">${KIND[c.kind][0]}</td><td class="n">${c.active ? "<b>●</b>" : ""}</td><td class="n">${s.n ?? "–"}</td><td class="n">${sg(s.ret21, 2)}%</td><td class="n">${okv(s.up21) ? Math.round(s.up21) + "%" : "–"}</td><td class="n">${okv(s.dd5) ? Math.round(s.dd5) + "%" : "–"}</td><td class="n">${sg(s.vix10, 1)}</td><td class="n">${sg(s.rut21, 2)}%</td></tr>`; }).join("")}

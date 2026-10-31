@@ -26,6 +26,8 @@ from .a14 import stats as a14_stats, trend
 
 STEPS = ["Stand aside", "Quarter size", "Half size", "Three-quarter size", "Full size"]
 BIG = ("CPI", "FOMC", "Federal Funds", "Fed Chair", "Non-Farm", "Nonfarm", "PCE", "GDP", "Powell")
+BIG_KINDS = ("CPI", "FOMC", "Payrolls", "PCE", "GDP")  # the same set under TradingView's titles ("Non Farm Payrolls", "Inflation Rate YoY")
+NOT_BIG = ("GDPNow", "Productivity")  # TradingView titles holding a BIG word that aren't those releases
 
 
 def size_for(p):
@@ -113,7 +115,20 @@ def _events():
         ev = calendar(now.date().isoformat(), (now.date() + dt.timedelta(days=3)).isoformat(), widen=False).get("result", [])
     except Exception:
         return []
-    return [e for e in ev if e["date"] >= now.isoformat(timespec="seconds").replace("+00:00", "Z") and any(k.lower() in e.get("title", "").lower() for k in BIG)]
+    return [e for e in ev if e["date"] >= now.isoformat(timespec="seconds").replace("+00:00", "Z")
+            and not any(k.lower() in e.get("title", "").lower() for k in NOT_BIG)
+            and (e.get("kind") in BIG_KINDS or any(k.lower() in e.get("title", "").lower() for k in BIG))]
+
+
+def _feed_note():
+    """What the release list is worth: empty only means quiet when the feeds are up."""
+    from .market import calendar
+    d = dt.datetime.now(dt.timezone.utc).date()
+    try:
+        c = calendar(d.isoformat(), (d + dt.timedelta(days=3)).isoformat(), widen=False, fetch=False)
+        return {"state": c["feed"], "note": c.get("note") or ""}
+    except Exception:
+        return {"state": "unavailable", "note": "Calendar feed unavailable."}
 
 
 def now():
@@ -149,6 +164,7 @@ def now():
     ivts = V["readings"].get("ivts")
     band = ivts_band(ivts)
     events = _events()
+    feed = _feed_note()
     rvx = V["readings"].get("rvx_spread")
     front = V["readings"].get("r9")  # VIX9D / VIX
     strat = []
@@ -169,7 +185,7 @@ def now():
                          if band["band"] != "normal" else "no step down with a normal term structure: the model's best A14 cell since 2009"))
         if sym == "RUT" and rvx is not None and rvx <= 3:
             sz = step_down(sz)
-            notes.append(f"RVX only {rvx:+.1f} over VIX: thin RUT premium, SPX preferred")
+            notes.append(f"RVX only {rvx:+.2f} over VIX (3 or less): thin RUT premium, SPX preferred")
         if sym == "RUT" and rvx is not None and rvx >= 8:
             notes.append(f"RVX {rvx:+.1f} over VIX: rich RUT premium")
         if sym == "RUT" and band["band"] == "normal":
@@ -192,6 +208,6 @@ def now():
         strat.append({"name": f"Calendar {sym}", "size": sz, "notes": notes or ["no strategy-specific flags"]})
     opps = [c["label"] for c in V["conditions"] if c["active"] and c["kind"] == "take"]
     return {"size": size, "why": why, "risk": risk, "base": base, "inputs": inputs, "strategies": strat, "opportunities": opps,
-            "ivts": ivts, "ivts_band": band, "trends": trends, "matrix": matrix(front), "front": front, "events": events, "date": V["readings"]["date"],
+            "ivts": ivts, "ivts_band": band, "trends": trends, "matrix": matrix(front), "front": front, "events": events, "events_feed": feed, "date": V["readings"]["date"],
             "warnings": {"total5": W["total5"], "total6": W["total6"], "stats": W["total_stats"], "all": W["all_totals"]},
             "rotation": R}

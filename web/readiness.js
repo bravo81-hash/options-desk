@@ -34,6 +34,7 @@ function detail(R) {
     <div class="tbl"><table><thead><tr><th>Input</th><th>Reading now</th><th class="n">5% drop</th><th title="teal full size · blue ¾ · amber ½ · red stand aside · grey tick = normal">On the size scale</th><th class="n">History</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${R.opportunities.length ? `<p class="small"><b style="color:var(--up)">Opportunities active:</b> ${R.opportunities.map(esc).join(" · ")}</p>` : ""}
     ${R.events.length ? `<p class="small"><b style="color:var(--warn)">Releases in the next 3 days:</b> ${R.events.map((e) => esc(e.title + " " + e.date.slice(5, 16).replace("T", " "))).join(" · ")}</p>` : ""}
+    ${R.events_feed && R.events_feed.note ? `<p class="small"><b style="color:var(--warn)">${esc(R.events_feed.note)}</b></p>` : ""}
     <p class="note">Each input gives its own historical odds; the verdict uses the highest one (they overlap, so adding them would double count): under 17% full size, 17–23% three-quarter, 23–30% half, 30%+ or any sit-out condition (HYG −1.5% day, VIX 40+) stand aside. Structures then step down for your own rules and the 2009–2026 backtest: A14 below the 20-day average (except with VIX/VIX3M 0.834–0.90), VIX9D/VIX 0.90+ in a steep or normal term structure, at VIX/VIX3M 0.90+ (backwardation: stand aside), thin RUT premium; calendars stand aside at VIX/VIX3M 0.90+ and step down below the 20-day average or into CPI / FOMC / payrolls / PCE / GDP. Market warnings: the five with history since 2010 (breadth has only a year of computed data, so it is shown on the Market tab but not used here). Data to the ${esc(R.date)} close.</p>`;
 }
 /* sidebar: the headline number of each view, without repeating it on the page */
@@ -55,6 +56,7 @@ async function load() {
     $("readyBar").innerHTML = `<span class="lbl">Trade readiness</span><b class="rdsize" style="color:${COL[R.size]}">${esc(R.size)}</b>${sizeMeter(R.size)}
       <span class="small muted rdwhy" title="${esc(R.why)}">${esc(R.why)}</span>
       ${R.strategies.map((s) => `<button type="button" class="rdchip" title="${esc(s.notes.join(" · "))}">${esc(s.name)} <b style="color:${COL[s.size]}">${SHORT[s.size]}</b></button>`).join("")}
+      <span id="rdHeads"></span>
       <button type="button" class="ghost" id="rdOpen">Why</button>`;
     detail(R);
     const why = () => { $("rdPanel").hidden = false; if (window.renderMatrix) window.renderMatrix(R); };

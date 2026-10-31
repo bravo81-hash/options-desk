@@ -205,7 +205,7 @@ def calendar_scan(symbol="SPX", front_min=3, front_max=45, gap_min=5, gap_max=60
             k, debit = _put_calendar_debit(snap["id"], f["expiry"], b["expiry"], snap["spot"])
             pairs.append({"front": f["expiry"], "back": b["expiry"], "fdte": int(f["dte"]), "bdte": int(b["dte"]),
                           "front_iv": round(fv * 100, 2), "back_iv": round(bv * 100, 2), "contango": round(cont, 2),
-                          "z": None if z is None else round(z, 2), "zsrc": zsrc,
+                          "z": None if z is None else round(z, 2), "zsrc": zsrc, "z_prov": zsrc == "CBOE matched",
                           "fwd_vol": None if fwd is None else round(fwd * 100, 2),
                           "fwd_premium": None if fwd is None else round(fwd * 100 - fv * 100, 2),
                           "fwd_vs_rv": None if fwd is None or not rv20 else round(fwd * 100 - rv20, 2),

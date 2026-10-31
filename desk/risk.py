@@ -14,8 +14,9 @@ import re
 import threading
 
 from . import db, load_config
-from .trades import CALENDAR_FAMILY, _newest, classify
-from .volmath import forward_vol, implied_vol
+from .recorder import ET
+from .trades import CALENDAR_FAMILY, _newest, classify, fix_name
+from .volmath import bs_price, forward_vol, implied_vol
 
 logging.getLogger("ib_async").setLevel(logging.CRITICAL)
 _lock = threading.Lock()
@@ -78,7 +79,7 @@ def load_open_trades(path=None):
                     continue
                 grp = _one_group(r[1])
                 cur = {"id": f"{r[1]}#{r[6]}", "account": r[1], "group": grp, "ib_account": amap.get(grp),
-                       "underlying": r[3], "expiration": r[4], "trade_id": r[6], "name": r[7],
+                       "underlying": r[3], "expiration": r[4], "trade_id": r[6], "name": fix_name(r[7]),
                        "opened": r[8], "dte": _f(r[10]), "dit": _f(r[11]), "margin": _f(r[12]),
                        "comms": _f(r[13]), "one_pnl": _f(r[14]), "one_pnl_pct": _f(r[15]),
                        "realized": 0.0, "legs": []}
@@ -433,6 +434,114 @@ def calendar_checks(t, rel, rv20):
     return {"rv20": rv20 and round(rv20, 2), "pairs": sorted(out.values(), key=lambda p: (p["front"], p["strike"]))}
 
 
+# ------------------------------------------------------------------ gap what-if (same pricing as value() in web/risk.js)
+GAPS, VOL_SHIFTS = (-2.5, -1.5, 1.5, 2.5), (-3, 0, 3, 6)
+RUT_BETA = 1.2  # the Risk grid's default
+
+
+def next_open(now=None):
+    """The next 09:30 ET on a trading day: the moment an overnight gap is priced at."""
+    from .accounts import US_HOLIDAYS
+    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ET)
+    d = now.date()
+    while True:
+        t = dt.datetime.combine(d, dt.time(9, 30), tzinfo=ET)
+        if t > now and d.weekday() < 5 and d.isoformat() not in US_HOLIDAYS:
+            return t
+        d += dt.timedelta(days=1)
+
+
+def _legs(t):
+    """[(qty, strike, right, vol, expiry)] for a trade with a spot; a leg without a usable IV takes its expiry's average, then 20%."""
+    by_exp = {}
+    for lg in t["legs"]:
+        iv = (lg.get("mark") or {}).get("iv")
+        if iv and 0.01 < iv < 3:
+            by_exp.setdefault(lg["expiry_iso"], []).append(iv)
+    out = []
+    for lg in t["legs"]:
+        iv = (lg.get("mark") or {}).get("iv")
+        alt = by_exp.get(lg["expiry_iso"])
+        vol = iv if iv and 0.01 < iv < 3 else (sum(alt) / len(alt) if alt else 0.2)
+        out.append((lg["qty"], lg["strike"], lg["right"], vol, dt.datetime.fromisoformat(lg["expiry_iso"])))
+    return out
+
+
+def _value(legs, spot, at, dv=0.0):
+    yr = 365 * 86400.0
+    return sum(q * 100 * bs_price(spot, k, max(0.0, (x - at).total_seconds() / yr), max(0.01, v + dv), r) for q, k, r, v, x in legs)
+
+
+def _change(t, legs, x, dv, at, now):
+    """P&L change from now: spot moved by x, vols by dv, on `at` (a trade expiring sooner is frozen at its first expiry)."""
+    return _value(legs, t["spot"] * (1 + x), min(at, min(lg[4] for lg in legs)), dv) - _value(legs, t["spot"], now)
+
+
+def gap_grid(trades, labels, futures=None, now=None, beta=RUT_BETA):
+    """Book at the next open for each gap and IV shift, in total and per account. Rows ±1.5% and ±2.5% are SPX gaps with RUT at
+    beta × that; the `Futures` row uses each index's own overnight move (None when there's no quote)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    at = next_open(now)
+    book = [(t, labels.get(t["ib_account"]) or t["group"], _legs(t)) for t in trades if t.get("spot") and t["legs"]]
+    fut = (futures or {}).get("chg") or {}
+
+    def rows():
+        for g in GAPS[:2]:
+            yield {"label": f"{g:+.1f}%", "gap": g, "live": False}
+        if fut:
+            yield {"label": "Futures now", "gap": None, "live": True}
+        for g in GAPS[2:]:
+            yield {"label": f"{g:+.1f}%", "gap": g, "live": False}
+
+    def move(t, r):
+        if r["live"]:
+            return fut.get(t["underlying"], fut.get("SPX", 0.0)) / 100
+        return r["gap"] / 100 * (beta if t["underlying"] == "RUT" else 1)
+
+    R = list(rows())
+    cells = lambda tt: [[sum(_change(t, lg, move(t, r), v / 100, at, now) for t, _, lg in tt) for v in VOL_SHIFTS] for r in R]  # noqa: E731
+    names = sorted({a for _, a, _ in book})
+    return {"at": at.isoformat(), "rows": [r["label"] for r in R], "vols": list(VOL_SHIFTS), "beta": beta, "futures": fut or None, "futures_ts": (futures or {}).get("ts"),
+            "total": cells(book), "accounts": [{"label": a, "cells": cells([b for b in book if b[1] == a])} for a in names]}
+
+
+def overnight_risk(trades, vix, now=None):
+    """Book gamma and the ±2σ overnight P&L: a one-day move from the VIX, repriced at the next open with IVs unchanged."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    at = next_open(now)
+    book = [(t, _legs(t)) for t in trades if t.get("spot") and t["legs"]]
+    if not book or not vix:
+        return None
+    sd = vix / 100 / 365 ** 0.5
+    gamma = 0.0  # $ the book loses (short gamma) or makes to a 1% move, beyond its delta: ½Γ(1% of spot)²
+    for t, lg in book:
+        s, h = t["spot"], t["spot"] * 0.001
+        gamma += 0.5 * (_value(lg, s + h, now) - 2 * _value(lg, s, now) + _value(lg, s - h, now)) / (h * h) * (0.01 * s) ** 2
+    out = lambda k: sum(_change(t, lg, k * sd * (RUT_BETA if t["underlying"] == "RUT" else 1), 0.0, at, now) for t, lg in book)  # noqa: E731
+    return {"gamma_1pct": gamma, "sd_pct": 100 * sd, "down2": out(-2), "up2": out(2), "at": at.isoformat(), "vix": vix}
+
+
+def hedge_reference(spot=None):
+    """A reference price for a short-dated SPX put spread, 2% and 4% under spot, from the last recorded surface: the first
+    expiry 3+ days out. Asks on the long, bids on the short. A price to look at, with no size and no recommendation."""
+    snap = db.query("SELECT id, spot, ts FROM snaps WHERE symbol='SPX' ORDER BY date DESC, id DESC LIMIT 1")
+    if not snap:
+        return None
+    s = spot or snap[0]["spot"]
+    rows = db.query("SELECT expiry, dte, strike, bid, ask, mid FROM quotes WHERE snap_id=? AND right='P' AND dte>=3 AND dte<=21 ORDER BY dte, strike", (snap[0]["id"],))
+    if not rows or not s:
+        return None
+    exp = rows[0]["expiry"]
+    q = [r for r in rows if r["expiry"] == exp and r["bid"] is not None and r["ask"] is not None and r["ask"] > 0]
+    if len(q) < 2:
+        return None
+    near = lambda x: min(q, key=lambda r: abs(r["strike"] - x))  # noqa: E731
+    lng, sht = near(s * 0.98), near(s * 0.96)
+    if lng["strike"] <= sht["strike"]:
+        return None
+    return {"expiry": exp, "dte": round(lng["dte"]), "long": lng["strike"], "short": sht["strike"], "cost": lng["ask"] - sht["bid"], "mid": (lng["mid"] or 0) - (sht["mid"] or 0), "ts": snap[0]["ts"]}
+
+
 def _book(m, spots, labels):
     """Inputs for the book what-if: vol indexes, and margin per account from the last TWS read, keyed by label."""
     from .history import series
@@ -494,9 +603,11 @@ def payload():
         for t in cal:
             t["calendar"] = calendar_checks(t, rel, realized(t["underlying"]))
     labels = load_config()["risk"]["account_labels"]
+    book = _book(m, spots, labels)
+    from . import heads
     return {"trades": trades, "one_file": path, "one_fresh": one_freshness(path), "marks_ts": m.get("ts"), "spots": spots, "stocks": m.get("stocks", []),
             "missing": m.get("missing", []), "recon": recon, "status": status, "detail_exported": adj_ts,
-            "labels": labels, "book": _book(m, spots, labels)}
+            "labels": labels, "book": book, "gaps": gap_grid(trades, labels, heads.gaps_now()), "overnight": overnight_risk(trades, book["vix"]), "hedge": hedge_reference(book["spx"])}
 
 
 def recon_view():
