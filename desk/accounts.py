@@ -2,7 +2,8 @@
 
 * account_daily: one row per US session and account: NAV and IBKR's own daily P&L (reqPnL).
   Seeded once from TWS Matcher's nav_history.json, then recorded by this app. IBKR's official NAV replaces a day
-  once its Flex statement is out (flex.py).
+  once its Flex statement is out (flex.py); the capture moves to nav_captures, because a statement marks options at
+  IBKR's closing prices, which can swing a single day and reverse, so today's change stays capture against capture.
 * executions: every fill TWS returns, de-duplicated by IBKR execution id, kept indefinitely.
 * pnl_today: IBKR daily P&L per contract (reqPnLSingle), aggregated by ticker.
 * ONE import CSV per account in the IBKR Flex format ONE reads (same format TWS Matcher wrote).
@@ -21,6 +22,7 @@ from . import db, load_config
 ET = ZoneInfo("America/New_York")
 LOCAL_TZ = ZoneInfo("Australia/Sydney")
 NAV_HISTORY = os.path.expanduser("~/Downloads/TWS Matcher/nav_history.json")
+FLEX = "IBKR Flex"  # account_daily.source of a statement's NAV
 
 
 def init():
@@ -30,6 +32,7 @@ def init():
                 local_symbol TEXT, sec_type TEXT, symbol TEXT, trading_class TEXT, expiry TEXT, strike REAL,
                 right TEXT, side TEXT, qty REAL, price REAL, mult REAL, commission REAL, order_id INTEGER, perm_id INTEGER)""")
     db.write("CREATE TABLE IF NOT EXISTS flex_flows (id TEXT PRIMARY KEY, date TEXT, account TEXT, amount REAL, kind TEXT)")
+    db.write("CREATE TABLE IF NOT EXISTS nav_captures (date TEXT, account TEXT, nav REAL, PRIMARY KEY (date, account))")
 
 
 def _num(x):
@@ -129,6 +132,7 @@ def collect(ib, positions_raw, marks=None):
     if rows:
         db.write("""INSERT INTO executions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(exec_id) DO UPDATE SET commission=COALESCE(excluded.commission, executions.commission)""", rows, many=True)
+        drop_corrected_fills()
     # per-contract market value (reqPnLSingle.value), so the day's P&L by ticker can be marked to market:
     # value now - value at the last session's close + cash from today's fills. IBKR's own per-contract
     # daily P&L is kept for reference only (outside the session it reports nonsense, e.g. +$22k on a Sunday).
@@ -218,7 +222,7 @@ def collect(ib, positions_raw, marks=None):
     else:
         # overnight/weekend: nothing trades, but IBKR keeps settling the closing marks, so refresh that
         # session's NAV (never its IBKR daily figure, which resets overnight)
-        db.write("UPDATE account_daily SET nav=?, updated=? WHERE date=? AND account=? AND source<>'IBKR Flex'",
+        db.write(f"UPDATE account_daily SET nav=?, updated=? WHERE date=? AND account=? AND source<>'{FLEX}'",
                  [(nav[a], now, sdate, a) for a in accounts if nav.get(a) is not None], many=True)
         if sdate not in US_HOLIDAYS:  # session missed entirely (laptop asleep): record its closing NAV now
             db.write("INSERT OR IGNORE INTO account_daily VALUES (?,?,?,?,?,?,?)",
@@ -352,12 +356,27 @@ def todays_fills(ib):
     return ib.fills()
 
 
+def fill_base(exec_id):
+    """The id of a fill without its last part, which IBKR raises when it corrects the fill (….02.01 becomes ….02.02)."""
+    return exec_id.rsplit(".", 1)[0]
+
+
+def drop_corrected_fills():
+    """TWS reports a corrected fill as a new one, under its new id: only the newest version stands."""
+    fills = {}
+    for r in db.query("SELECT exec_id FROM executions"):
+        fills.setdefault(fill_base(r["exec_id"]), []).append(r["exec_id"])
+    db.write("DELETE FROM executions WHERE exec_id=?", [(e,) for ids in fills.values() for e in sorted(ids)[:-1]], many=True)
+
+
 def last_close_nav(before):
-    """NAV per account at the last recorded session before `before` (ISO date)."""
+    """NAV per account at the last recorded session before `before` (ISO date), as the desk captured it where it did:
+    today's NAV is a capture, and a statement's closing marks can sit thousands away from one on a single day."""
     init()
     out = {}
-    for r in db.query("""SELECT account, nav, date FROM account_daily a WHERE date = (SELECT MAX(date) FROM account_daily b
-                         WHERE b.account = a.account AND b.date < ?)""", (before,)):
+    for r in db.query("""SELECT a.account, COALESCE(c.nav, a.nav) nav, a.date FROM account_daily a
+                         LEFT JOIN nav_captures c ON c.date = a.date AND c.account = a.account
+                         WHERE a.date = (SELECT MAX(date) FROM account_daily b WHERE b.account = a.account AND b.date < ?)""", (before,)):
         out[r["account"]] = {"nav": r["nav"], "date": r["date"]}
     return out
 

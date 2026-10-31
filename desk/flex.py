@@ -5,8 +5,8 @@ with the token and query id the user pastes into the Recorder tab. The token sta
 receives it, and no API, log or snapshot shows it. A statement can only be read, never trade.
 
 A day's statement appears the next morning, so TWS still supplies today. Once it does, the official figures win: its NAV
-replaces the desk's capture of that day, and its commission the fill's. Fills are matched by execution id; older fills
-the journal never held are not added to it.
+replaces the desk's capture of that day in the history, and its commission the fill's. Fills are matched by execution id
+without the part that counts corrections; older fills the journal never held are not added to it.
 """
 import datetime as dt
 import json
@@ -19,14 +19,13 @@ import xml.etree.ElementTree as ET
 import requests
 
 from . import DATA, db
-from .accounts import _num, init
+from .accounts import FLEX, _num, drop_corrected_fills, fill_base, init
 
 log = logging.getLogger("desk.flex")
 
 KEYFILE = DATA / "flex_key.json"
 BASE = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
 HEADERS = {"User-Agent": "Java"}  # IBKR turns away the default python-requests agent
-SOURCE = "IBKR Flex"
 WAIT_S, TRIES = 10, 18  # a year of statements can take a couple of minutes to build (limit: 10 requests a minute)
 RETRY_H = 3  # today's statement isn't out yet: ask again this much later, not on every update
 LATER = {"1001", "1004", "1005", "1006", "1007", "1008", "1009", "1018", "1019", "1021"}  # "try again shortly"
@@ -118,7 +117,7 @@ def parse(root):
     for t in root.iter("Trade"):
         c = _num(t.get("ibCommission"))
         if t.get("ibExecID") and c is not None:
-            comm[t.get("ibExecID")] = -c  # a charge is negative here, positive in TWS and in the journal
+            comm[fill_base(t.get("ibExecID"))] = -c  # a charge is negative here, positive in TWS and in the journal
     for c in root.iter("CashTransaction"):
         if (c.get("type") or "").startswith("Deposits") and (c.get("levelOfDetail") or "").upper() != "SUMMARY" and c.get("currency") != "BASE_SUMMARY":
             _flow(flows, c, (_num(c.get("amount")) or 0.0) * (_num(c.get("fxRateToBase")) or 1.0), "deposit")
@@ -140,12 +139,15 @@ def store(p):
     init()
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     held = {(r["date"], r["account"]) for r in db.query("SELECT date, account FROM account_daily")}
+    db.write(f"""INSERT OR REPLACE INTO nav_captures SELECT date, account, nav FROM account_daily
+                 WHERE date=? AND account=? AND nav IS NOT NULL AND source<>'{FLEX}'""", list(p["nav"]), many=True)
     db.write("""INSERT INTO account_daily (date, account, nav, currency, source, updated) VALUES (?,?,?,?,?,?)
                 ON CONFLICT(date, account) DO UPDATE SET nav=excluded.nav, currency=excluded.currency, source=excluded.source,
-                updated=excluded.updated""", [(d, a, v, c, SOURCE, now) for (d, a), (v, c) in p["nav"].items()], many=True)
+                updated=excluded.updated""", [(d, a, v, c, FLEX, now) for (d, a), (v, c) in p["nav"].items()], many=True)
     db.write("INSERT OR REPLACE INTO flex_flows VALUES (?,?,?,?,?)", [(k, *v) for k, v in p["flows"].items()], many=True)
-    fills = {r["exec_id"] for r in db.query("SELECT exec_id FROM executions")}
-    hits = [(c, e) for e, c in p["comm"].items() if e in fills]
+    drop_corrected_fills()
+    fills = {fill_base(r["exec_id"]): r["exec_id"] for r in db.query("SELECT exec_id FROM executions")}
+    hits = [(c, fills[b]) for b, c in p["comm"].items() if b in fills]
     db.write("UPDATE executions SET commission=? WHERE exec_id=?", hits, many=True)
     return {"ts": now, "from": p["from"], "to": p["to"], "through": max((d for d, _ in p["nav"]), default=None),
             "nav_days": len({d for d, _ in p["nav"]}), "new_days": len(set(p["nav"]) - held), "flows": len(p["flows"]),

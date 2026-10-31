@@ -90,8 +90,9 @@ P&L = change in net liquidation value (account base currency, AUD) between recor
 deposits, withdrawals and transfers. The TWS API reports neither those nor any past NAV or commission,
 so with IBKR Flex connected (Recorder tab: a token and an Activity Flex Query) the desk reads them from
 IBKR's official statements each morning, up to a year back (`desk/flex.py`), and a statement's NAV
-replaces the desk's capture of that day. Without it, list deposits under `risk.cash_flows` in
-config.json. IBKR's own daily P&L (`reqPnL`) is stored for reference only: summed over a week it overstated
+replaces the desk's capture of that day in the history. A statement marks options at IBKR's closing
+prices, so one day can swing and reverse: the capture is kept in `nav_captures`, and today's change
+compares capture with capture. Without Flex, list deposits under `risk.cash_flows` in config.json. IBKR's own daily P&L (`reqPnL`) is stored for reference only: summed over a week it overstated
 this book's growth about threefold, because it values each day against the previous official option
 closes, which are often stale for far-OTM index puts.
 

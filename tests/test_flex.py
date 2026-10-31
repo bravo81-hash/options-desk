@@ -188,3 +188,55 @@ def test_the_one_file_writes_charges_negative_like_a_real_flex_file(desk, monkey
     row = accounts.one_import_rows("U1111111", "2026-10-31")[0]
     assert row[6] == "-5.4"
     assert float(row[8]) == pytest.approx(-(4 * 114.95 * 100) - 5.4)
+
+
+def test_a_corrected_fill_is_one_fill_and_takes_the_statements_commission(desk):
+    fill("aaa.bbb.02.01", 0.0)  # TWS reported both versions
+    fill("aaa.bbb.02.02", 0.0)
+    fill("ccc.ddd.03.01", 0.0)  # the journal only saw the first version: the statement has the correction
+    fill("eee.fff.04.02", 0.0)  # a different leg of nothing in the statement
+    flex.store({**parsed(), "comm": {"aaa.bbb.02": 1.7, "ccc.ddd.03": 3.5}})
+    got = {r["exec_id"]: r["commission"] for r in db.query("SELECT exec_id, commission FROM executions")}
+    assert got == {"aaa.bbb.02.02": 1.7, "ccc.ddd.03.01": 3.5, "eee.fff.04.02": 0.0}
+
+
+def test_a_statement_is_matched_past_the_correction_count():
+    root = ET.fromstring('<FlexQueryResponse><Trades><Trade ibExecID="aaa.bbb.02.03" ibCommission="-1.9" /></Trades></FlexQueryResponse>')
+    assert flex.parse(root)["comm"] == {"aaa.bbb.02": 1.9}
+
+
+def test_legs_of_one_combo_are_different_fills(desk):
+    fill("aaa.bbb.02.01", 0.0)
+    fill("aaa.bbb.03.01", 0.0)
+    accounts.drop_corrected_fills()
+    assert db.query("SELECT COUNT(*) n FROM executions")[0]["n"] == 2
+
+
+def test_todays_change_is_measured_from_the_capture_not_the_statements_marks(desk):
+    nav_row("2026-10-29", 257931.0)
+    flex.store({**parsed(), "nav": {("2026-10-29", "U1111111"): (251068.0, "AUD")}})
+    nav_row("2026-10-30", 253550.0)
+    assert accounts.last_close_nav("2026-10-30")["U1111111"] == {"nav": 257931.0, "date": "2026-10-29"}
+    assert db.query("SELECT nav FROM account_daily WHERE date='2026-10-29'")[0]["nav"] == 251068.0
+
+
+def test_the_weekly_grid_still_adds_up_to_the_change_in_nav(desk):
+    nav_row("2026-10-28", 258477.0)
+    nav_row("2026-10-29", 257931.0)
+    flex.store({**parsed(), "nav": {("2026-10-28", "U1111111"): (258477.0, "AUD"), ("2026-10-29", "U1111111"): (251068.0, "AUD")}, "flows": {}})
+    nav_row("2026-10-30", 253550.0)
+    week = accounts.weekly()["weeks"][0]["acct"]["U1111111"]
+    assert week["pnl"] == 253550.0 - 258477.0
+
+
+def test_a_capture_survives_a_second_import(desk):
+    nav_row("2026-10-29", 257931.0)
+    p = {**parsed(), "nav": {("2026-10-29", "U1111111"): (251068.0, "AUD")}}
+    flex.store(p)
+    flex.store(p)
+    assert db.query("SELECT nav FROM nav_captures")[0]["nav"] == 257931.0
+
+
+def test_with_no_capture_of_the_day_before_the_official_nav_is_the_base(desk):
+    flex.store({**parsed(), "nav": {("2026-10-29", "U1111111"): (251068.0, "AUD")}})
+    assert accounts.last_close_nav("2026-10-30")["U1111111"]["nav"] == 251068.0
