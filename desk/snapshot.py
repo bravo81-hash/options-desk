@@ -177,7 +177,7 @@ def fingerprint():
     files = load_config()["trade_files"]
     parts = [db.get_meta("risk_marks") and json.loads(db.get_meta("risk_marks")).get("ts"),
              q("SELECT MAX(ts) v FROM snaps"), db.get_meta("a14_chain") and json.loads(db.get_meta("a14_chain")).get("ts"),
-             db.get_meta("em_cache") and json.loads(db.get_meta("em_cache")).get("ts")]
+             db.get_meta("em_cache") and json.loads(db.get_meta("em_cache")).get("ts"), db.get_meta("flex_last")]
     for g in (files.get("one_glob", []), files.get("one_detail_glob", [])):
         f = _newest(g)
         parts.append(f and f"{f}:{os.path.getmtime(f)}")

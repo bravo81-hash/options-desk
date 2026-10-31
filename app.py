@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, backtest, conditions, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
+from desk import ROOT, a14, accounts, backtest, conditions, flex, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -304,6 +304,13 @@ def api_freshness():
     rel = market.releases()
     out.append({"name": "Release dates", "date": rel["ts"][:10] if rel["ts"] else None, "stale": not rel["ok"],
                 "what": "Calendar checks: FOMC from the Fed, data releases from TradingView" + (f" to {rel['to']}" if rel["to"] else "")})
+    fx = flex.info()
+    if fx["configured"]:  # a day's statement comes the next morning, so one session behind is on time
+        prev = sess - dt.timedelta(days=1)
+        while prev.weekday() >= 5 or prev.isoformat() in US_HOLIDAYS:
+            prev -= dt.timedelta(days=1)
+        out.append({"name": "IBKR Flex", "date": fx["through"], "stale": bool(fx["error"]) or (fx["through"] or "") < prev.isoformat(),
+                    "what": fx["error"] or "official NAV, deposits and commissions; a day's statement comes the next morning"})
     return ok({"last_close": sess.isoformat(), "sources": out, "marks_ts": pl.get("marks_ts")})
 
 
@@ -353,7 +360,7 @@ def api_a14_history():
 # ------------------------------------------------------------------ P&L and reconciliation (ex TWS Matcher)
 @app.get("/api/pnl/weekly")
 def api_pnl_weekly():
-    return ok(accounts.weekly(int(request.args.get("weeks", 26))))
+    return ok(accounts.weekly(int(request.args.get("weeks", 53))))
 
 
 @app.get("/api/pnl/today")
@@ -399,6 +406,24 @@ def api_snapshot_key():
 @app.post("/api/snapshot/publish")
 def api_snapshot_publish():
     threading.Thread(target=snapshot.publish, kwargs={"force": True}, daemon=True).start()
+    return ok({"started": True})
+
+
+# ------------------------------------------------------------------ IBKR Flex statements
+@app.get("/api/flex")
+def api_flex():
+    return ok(flex.info())
+
+
+@app.post("/api/flex/key")
+def api_flex_key():
+    body = request.get_json(silent=True) or {}
+    return ok(flex.set_key(body.get("token"), body.get("query_id")))
+
+
+@app.post("/api/flex/run")
+def api_flex_run():
+    threading.Thread(target=flex.run, daemon=True).start()
     return ok({"started": True})
 
 

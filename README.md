@@ -86,9 +86,12 @@ recorded surface IV at that strike instead of TWS's model IV.
 
 ## P&L history
 
-P&L = change in net liquidation value (account base currency, AUD) between recorded sessions,
-less deposits/withdrawals listed under `risk.cash_flows` in config.json (the TWS API doesn't report
-them). IBKR's own daily P&L (`reqPnL`) is stored for reference only: summed over a week it overstated
+P&L = change in net liquidation value (account base currency, AUD) between recorded sessions, less
+deposits, withdrawals and transfers. The TWS API reports neither those nor any past NAV or commission,
+so with IBKR Flex connected (Recorder tab: a token and an Activity Flex Query) the desk reads them from
+IBKR's official statements each morning, up to a year back (`desk/flex.py`), and a statement's NAV
+replaces the desk's capture of that day. Without it, list deposits under `risk.cash_flows` in
+config.json. IBKR's own daily P&L (`reqPnL`) is stored for reference only: summed over a week it overstated
 this book's growth about threefold, because it values each day against the previous official option
 closes, which are often stale for far-OTM index puts.
 

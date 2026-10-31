@@ -32,15 +32,16 @@ function weekly() {
     const tip = c.daily.map((d) => `${dlabel(d.date)}: ${money(d.pnl)}`).join("\n");
     return `<td class="n mono" style="${heat(pct ? c.pct : c.pnl, pct ? 3 : 10000)}" title="${esc(tip)}">${pct ? pctS(v) : money(v)}</td>`; };
   let rows = "";
-  W.weeks.forEach((w) => {
+  W.weeks.forEach((w, i) => {
     const tot = A.reduce((s, a) => s + ((w.acct[a.id] || {}).pnl || 0), 0);
     const navs = A.reduce((s, a) => s + (((w.acct[a.id] || {}).end_nav || 0) - ((w.acct[a.id] || {}).pnl || 0)), 0);
     const totPct = navs ? 100 * tot / navs : null;
     const note = (w.notes || []).join(" · ");
-    rows += `<tr><td>Week of ${dlabel(w.week)} ${note ? `<span class="small ${w.notes.some((n) => n.includes("not captured")) ? "wrn" : "muted"}" title="${esc(note)}">${esc(note.length > 70 ? note.slice(0, 68) + "…" : note)}</span>` : ""}</td>${A.map((a) => cell(w.acct[a.id])).join("")}
+    rows += `<tr${i >= 13 ? ` class="xrow"` : ""}><td>Week of ${dlabel(w.week)} ${note ? `<span class="small ${w.notes.some((n) => n.includes("not captured")) ? "wrn" : "muted"}" title="${esc(note)}">${esc(note.length > 70 ? note.slice(0, 68) + "…" : note)}</span>` : ""}</td>${A.map((a) => cell(w.acct[a.id])).join("")}
       <td class="n mono" style="${heat(pct ? totPct : tot, pct ? 3 : 20000)}"><b>${pct ? pctS(totPct) : money(tot)}</b></td></tr>`;
   });
-  $("plWeekly").innerHTML = `<div class="chart" id="plWeekChart"></div><div class="tbl"><table><thead><tr><th>Week (US dates)</th>${A.map((a) => `<th class="n">${esc(a.label)}</th>`).join("")}<th class="n">All accounts</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const F = W.flex || {};
+  $("plWeekly").innerHTML = `${F.error ? `<div class="state err" style="margin-bottom:6px"><b>IBKR Flex import failed:</b> ${esc(F.error)}</div>` : ""}<div class="chart" id="plWeekChart"></div><div class="capped"><div class="tbl"><table><thead><tr><th>Week (US dates)</th>${A.map((a) => `<th class="n">${esc(a.label)}</th>`).join("")}<th class="n">All accounts</th></tr></thead><tbody>${rows}</tbody></table></div>${W.weeks.length > 13 ? `<button type="button" class="ghost" data-cap="Show all ${W.weeks.length}">Show all ${W.weeks.length}</button>` : ""}</div>`;
   const wk = W.weeks.slice().sort((a, b) => a.week.localeCompare(b.week)).map((w) => {
     const tot = A.reduce((s, a) => s + ((w.acct[a.id] || {}).pnl || 0), 0), navs = A.reduce((s, a) => s + (((w.acct[a.id] || {}).end_nav || 0) - ((w.acct[a.id] || {}).pnl || 0)), 0);
     return {label: dlabel(w.week), v: pct ? (navs ? 100 * tot / navs : null) : tot / 1000,
@@ -59,7 +60,7 @@ function weekly() {
       return `<tr><td>${lab} <span class="small muted">${Math.max(...A.map((a) => (o[a.id] || {}).days || 0))} days</span></td>${A.map((a) => { const c = o[a.id]; if (!c) return `<td class="n muted">–</td>`;
         const base = c.first && c.first.nav ? c.first.nav - (c.first.pnl || 0) : null, p = base ? 100 * c.pnl / base : null;
         return `<td class="n mono" style="${heat(pct ? p : c.pnl, pct ? 5 : 20000)}">${pct ? pctS(p) : money(c.pnl)}</td>`; }).join("")}
-        <td class="n mono"><b>${money(tot)}</b></td></tr>`; }).join("")}</tbody></table></div><p class="note">P&amp;L is the change in each account's net liquidation value (base currency, AUD), so it includes the AUD/USD move on USD holdings. A day that was not captured folds into the next captured day; deposits and withdrawals are not reported by the TWS API, so add them under <span class="mono">risk.cash_flows</span> in config.json. History starts ${dlabel(W.first)}.</p>`;
+        <td class="n mono"><b>${money(tot)}</b></td></tr>`; }).join("")}</tbody></table></div><p class="note">P&amp;L is the change in each account's net liquidation value (base currency, AUD), so it includes the AUD/USD move on USD holdings. ${F.through ? `Days to ${dlabel(F.through)} use IBKR's official NAV from Flex, less its deposits, withdrawals and transfers; later days are the desk's own capture.` : `A day that was not captured folds into the next captured day, and a deposit counts as profit until you connect IBKR Flex (Recorder tab) or list it under <span class="mono">risk.cash_flows</span> in config.json.`} History starts ${dlabel(W.first)}.</p>`;
   barChart($("plMonthChart"), {label: "monthly P&L, all accounts ($k)", h: 130, unit: "k", items: mkeys.slice().reverse().map((m) => { const tot = A.reduce((s, a) => s + ((months[m][a.id] || {}).pnl || 0), 0);
     return {label: new Date(m + "-15T12:00:00Z").toLocaleDateString([], {month: "short", timeZone: "UTC"}), v: tot / 1000, title: `${m}: <b>${money(tot)}</b>` + A.map((a) => `<div>${esc(a.label)} ${money((months[m][a.id] || {}).pnl)}</div>`).join("")}; })});
   const pal = ["var(--s2)", "var(--s3)", "var(--s1)", "var(--s4)"];
@@ -114,7 +115,7 @@ function recon() {
     <span class="small muted">IBKR Flex format that ONE imports (fills on that Sydney date). ONE's "link trades into positions" step is still manual.</span>`;
   $("oiDate").addEventListener("change", () => document.querySelectorAll("#oneImport a[data-acct]").forEach((a) => { a.href = `/api/one-import/${encodeURIComponent(a.dataset.acct)}.csv?date=${$("oiDate").value}`; }));
   const df = new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
-  $("rcFills").innerHTML = R.fills.length ? `<div class="chart" id="rcFillChart"></div><div class="capped"><div class="tbl"><table><thead><tr><th>Time (yours)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n" title="TWS reports commissions only for the current day's fills, and they reach this table from Oct 31: earlier fills show –, the trade totals still include them from ONE">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
+  $("rcFills").innerHTML = R.fills.length ? `<div class="chart" id="rcFillChart"></div><div class="capped"><div class="tbl"><table><thead><tr><th>Time (yours)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n" title="From TWS on the day (since Oct 31) and from IBKR Flex the next morning, once it is connected in the Recorder tab. A fill with neither shows –; the trade totals still include it from ONE">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
     R.fills.map((f, i) => `<tr${i >= 30 ? ` class="xrow"` : ""}><td class="mono small">${f.time_utc ? df.format(new Date(f.time_utc)) : "–"}</td><td>${esc(f.label)}</td><td class="mono small">${esc(f.local_symbol || f.symbol)}</td><td>${f.side === "BOT" ? "Buy" : "Sell"}</td>
       <td class="n">${f.qty}</td><td class="n">${fmt(f.price)}</td><td class="n">${f.commission ? fmt(f.commission) : "–"}</td>
       <td><span class="chip ${f.status === "in ONE" ? "pos" : f.status === "not in ONE" ? "neg" : "muted"}">${esc(f.status)}</span></td><td class="small">${esc(f.one_trades.join(", ") || "–")}</td></tr>`).join("")}</tbody></table></div>${R.fills.length > 30 ? `<button type="button" class="ghost" data-cap="Show all ${R.fills.length}">Show all ${R.fills.length}</button>` : ""}</div>`

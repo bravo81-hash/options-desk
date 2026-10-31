@@ -140,7 +140,7 @@ window.DESK_CLOUD = true;
   document.addEventListener("DOMContentLoaded", async () => {
     const isDesk = !!document.getElementById("readyBar");
     const css = document.createElement("style"); // laptop-only controls
-    css.textContent = "#jnSave,#jnAuto,#oneImport,#snapPanel{display:none!important} #jnNote{pointer-events:none;opacity:.8}";
+    css.textContent = "#jnSave,#jnAuto,#oneImport,#snapPanel,#flexPanel{display:none!important} #jnNote{pointer-events:none;opacity:.8}";
     document.head.appendChild(css);
     document.querySelectorAll("#rkRefresh,#plRefresh,#emRefresh,#a14Fetch,#pkFetch,#btnRecord,#btnTws,#btnHist").forEach((b) => { b.hidden = true; });
     if (!isDesk) return;

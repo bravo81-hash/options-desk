@@ -1,7 +1,8 @@
 """Account P&L, executions and ONE-import files (folded in from TWS Matcher).
 
 * account_daily: one row per US session and account: NAV and IBKR's own daily P&L (reqPnL).
-  Seeded once from TWS Matcher's nav_history.json, then recorded by this app.
+  Seeded once from TWS Matcher's nav_history.json, then recorded by this app. IBKR's official NAV replaces a day
+  once its Flex statement is out (flex.py).
 * executions: every fill TWS returns, de-duplicated by IBKR execution id, kept indefinitely.
 * pnl_today: IBKR daily P&L per contract (reqPnLSingle), aggregated by ticker.
 * ONE import CSV per account in the IBKR Flex format ONE reads (same format TWS Matcher wrote).
@@ -28,6 +29,7 @@ def init():
     db.write("""CREATE TABLE IF NOT EXISTS executions (exec_id TEXT PRIMARY KEY, account TEXT, time_utc TEXT,
                 local_symbol TEXT, sec_type TEXT, symbol TEXT, trading_class TEXT, expiry TEXT, strike REAL,
                 right TEXT, side TEXT, qty REAL, price REAL, mult REAL, commission REAL, order_id INTEGER, perm_id INTEGER)""")
+    db.write("CREATE TABLE IF NOT EXISTS flex_flows (id TEXT PRIMARY KEY, date TEXT, account TEXT, amount REAL, kind TEXT)")
 
 
 def _num(x):
@@ -216,7 +218,7 @@ def collect(ib, positions_raw, marks=None):
     else:
         # overnight/weekend: nothing trades, but IBKR keeps settling the closing marks, so refresh that
         # session's NAV (never its IBKR daily figure, which resets overnight)
-        db.write("UPDATE account_daily SET nav=?, updated=? WHERE date=? AND account=?",
+        db.write("UPDATE account_daily SET nav=?, updated=? WHERE date=? AND account=? AND source<>'IBKR Flex'",
                  [(nav[a], now, sdate, a) for a in accounts if nav.get(a) is not None], many=True)
         if sdate not in US_HOLIDAYS:  # session missed entirely (laptop asleep): record its closing NAV now
             db.write("INSERT OR IGNORE INTO account_daily VALUES (?,?,?,?,?,?,?)",
@@ -229,20 +231,37 @@ def collect(ib, positions_raw, marks=None):
 
 # ------------------------------------------------------------------ weekly grid
 US_HOLIDAYS = {  # NYSE full-day closures
-    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
+    "2025-11-27", "2025-12-25", "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
     "2026-11-26", "2026-12-25", "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18",
     "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"}
 
 def _cash_flows():
-    """Deposits/withdrawals from config (risk.cash_flows: [{date, account, amount}]); the TWS API does not report them."""
+    """Deposits/withdrawals in base currency. The TWS API does not report them: they come from IBKR Flex wherever a
+    statement covers the date, otherwise from config (risk.cash_flows: [{date, account, amount}])."""
+    from . import flex
+    lo, hi = flex.covered()
     out = {}
     for f in load_config()["risk"].get("cash_flows", []):
-        k = (f["date"], f["account"])
-        out[k] = out.get(k, 0.0) + float(f["amount"])
+        if not lo <= f["date"] <= hi:
+            k = (f["date"], f["account"])
+            out[k] = out.get(k, 0.0) + float(f["amount"])
+    for r in db.query("SELECT date, account, amount FROM flex_flows"):
+        k = (r["date"], r["account"])
+        out[k] = out.get(k, 0.0) + r["amount"]
     return out
 
 
-def weekly(weeks=26):
+def _on_nav_days(flows, byday):
+    """A flow on a day with no NAV reading lands on the account's next reading, or it would count as profit."""
+    out, days = {}, sorted(byday)
+    for (d, a), v in flows.items():
+        nxt = next((x for x in days if x >= d and a in byday[x]), None)
+        if nxt:
+            out[(nxt, a)] = out.get((nxt, a), 0.0) + v
+    return out
+
+
+def weekly(weeks=53):
     """P&L = change in net liquidation value between recorded sessions (less any configured deposits).
 
     IBKR's own daily P&L (reqPnL) is kept for reference only: summed over days it overstated this book's
@@ -252,11 +271,11 @@ def weekly(weeks=26):
     init()
     rows = db.query("SELECT * FROM account_daily ORDER BY date")
     labels = load_config()["risk"]["account_labels"]
-    flows = _cash_flows()
     accts = sorted({r["account"] for r in rows}, key=lambda a: labels.get(a, a))
     byday = {}
     for r in rows:
         byday.setdefault(r["date"], {})[r["account"]] = r
+    flows = _on_nav_days(_cash_flows(), byday)
     days = sorted(byday)
     wk = {}
     prev = {}  # account -> (date, nav) of the last recorded session
@@ -320,8 +339,9 @@ def weekly(weeks=26):
         w["complete"] = not missing and not before and mon + dt.timedelta(days=4) < today_et
         out.append(w)
     nav_series = {a: [{"d": d, "v": byday[d][a]["nav"]} for d in days if a in byday[d] and byday[d][a]["nav"]] for a in accts}
+    from . import flex
     return {"accounts": [{"id": a, "label": labels.get(a, a)} for a in accts], "weeks": out, "nav": nav_series,
-            "first": days[0] if days else None, "last": days[-1] if days else None, "basis": "nav"}
+            "first": days[0] if days else None, "last": days[-1] if days else None, "basis": "nav", "flex": flex.info()}
 
 
 def todays_fills(ib):
@@ -356,12 +376,12 @@ def one_import_rows(account, date_local=None):
         if t.date().isoformat() != target:
             continue
         signed = abs(r["qty"]) if r["side"] == "BOT" else -abs(r["qty"])
-        comm = r["commission"] or 0.0
-        net = -(signed * r["price"] * (r["mult"] or 100)) + comm
+        comm = r["commission"] or 0.0  # a charge is positive here, negative in a real Flex file, which is what ONE reads
+        net = -(signed * r["price"] * (r["mult"] or 100)) - comm
         root, rest = r["local_symbol"][:6].strip(), r["local_symbol"][6:].strip()
         osi = f"{root:<6}{rest}"  # IBKR local symbol is the OSI symbol with the real expiration
         out.append([t.strftime("%Y%m%d,%H%M%S"), "BUY" if signed > 0 else "SELL", "OPT", osi, f"{signed:g}",
-                    f"{r['price']:g}", "" if r["commission"] is None else f"{comm:g}", r["symbol"], f"{net:g}"])
+                    f"{r['price']:g}", "" if r["commission"] is None else f"{-comm or 0:g}", r["symbol"], f"{net:g}"])
     return out
 
 

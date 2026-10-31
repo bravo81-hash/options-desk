@@ -14,7 +14,7 @@ import socket
 import threading
 import time
 
-from . import a14, db, expected, history, ibdata, load_config, market, recorder, risk
+from . import a14, db, expected, flex, history, ibdata, load_config, market, recorder, risk
 from .recorder import ET, session_date
 
 LOCK = threading.Lock()   # the scheduler's session jobs take it too, so they never overlap an update
@@ -29,6 +29,7 @@ STEPS = [  # key, label, what it feeds
     ("etfs", "ETF bars and breadth", "yfinance · Market tab"),
     ("cboe", "CBOE vol indices", "CBOE · Term structure, backtest"),
     ("calendar", "Economic calendar", "Forex Factory, TradingView, Fed · events, Coming up, calendar checks"),
+    ("flex", "IBKR statements", "IBKR Flex · official NAV, deposits, commissions"),
 ]
 
 
@@ -82,6 +83,8 @@ def _skip_reason(key, now, auto):
             return "captured after the close; quotes are frozen until the open"
         if key == "surface" and is_open and ts and now - ts < dt.timedelta(minutes=_cfg()["surface_min"] if auto else 15):
             return f"recorded {int((now - ts).total_seconds() // 60)} min ago"
+    if key == "flex":
+        return flex.skip_reason(now, close.date().isoformat())
     return None
 
 
@@ -118,6 +121,8 @@ def _run_step(key, force):
         market.calendar()
         bad = market.refresh_releases()
         return {"ok": True, "detail": f"release dates not refreshed ({', '.join(bad)})" if bad else ""}
+    if key == "flex":
+        return flex.run()
 
 
 def run(source="manual"):

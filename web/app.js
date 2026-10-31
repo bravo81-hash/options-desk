@@ -339,7 +339,7 @@ async function loadRec() {
       inv.snapshots.map((r) => `<tr><td><b>${esc(r.symbol)} surface snapshots</b></td><td class="n">${r.n}</td><td class="mono small">${r.a}</td><td class="mono small">${r.b}</td></tr>`).join("") +
       inv.history.map((r) => `<tr><td>${esc(r.symbol)}</td><td class="n">${r.n.toLocaleString()}</td><td class="mono small">${r.a}</td><td class="mono small">${r.b}</td></tr>`).join("")}</tbody></table></div>`;
     $("recLog").textContent = (s.recorder.log || []).join("\n") || "No activity yet.";
-    if (!window.DESK_CLOUD) loadSnap();
+    if (!window.DESK_CLOUD) { loadSnap(); loadFlex(); }
     $("btnRecord").disabled = s.recorder.running;
     if (s.recorder.running) setTimeout(loadRec, 3000);
   } catch (e) { $("recKv").innerHTML = errBox(e); }
@@ -362,6 +362,25 @@ $("snapKeyForm").addEventListener("submit", async (e) => {
   await api("/api/snapshot/publish", {method: "POST"}); setTimeout(loadSnap, 1500);
 });
 $("snapPub").addEventListener("click", async () => { $("snapMsg").textContent = "Publishing…"; await api("/api/snapshot/publish", {method: "POST"}); setTimeout(loadSnap, 1500); });
+async function loadFlex() {
+  const f = await api("/api/flex").catch(() => null); if (!f) return;
+  const L = f.last || {}, day = (d) => d ? new Date(d + "T12:00:00Z").toLocaleDateString([], {day: "numeric", month: "short", year: "numeric", timeZone: "UTC"}) : "–";
+  $("flexKv").innerHTML = `<div><span class="lbl">Connection</span><b class="${f.error ? "neg" : f.configured ? "pos" : "wrn"}">${f.error ? "failing" : f.configured ? "connected" : "not set up"}</b><span class="small muted">${f.running ? "importing…" : f.error ? esc(f.error) : f.tried ? "last asked " + new Date(f.tried).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"}) : "nothing is imported until you save a token"}</span></div>
+    <div><span class="lbl">Official NAV</span><b>${L.through ? "to " + day(L.through) : "–"}</b><span class="small muted">${L.nav_days ? `${L.nav_days} days from ${day(L.from)}` : "up to a year back"}</span></div>
+    <div><span class="lbl">Commissions</span><b>${f.fills_priced.toLocaleString()} of ${f.fills.toLocaleString()} fills</b><span class="small muted">${L.flows != null ? `deposits and transfers found: ${L.flows}` : "journal fills that have one"}</span></div>`;
+  $("flexRun").disabled = !f.configured || f.running;
+  $("flexMsg").innerHTML = L.missing && L.missing.length ? `<span class="wrn">The query is missing: ${esc(L.missing.join(", "))}</span>` : "";
+  if (f.running) setTimeout(loadFlex, 3000);
+}
+const flexRun = async () => { $("flexMsg").textContent = "Importing: IBKR can take a minute or two…"; await api("/api/flex/run", {method: "POST"}); setTimeout(loadFlex, 1500); };
+$("flexKeyForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const r = await api("/api/flex/key", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({token: $("flexToken").value, query_id: $("flexQuery").value})});
+  if (r.error) { $("flexMsg").innerHTML = `<span class="neg">${esc(r.error)}</span>`; return; }
+  $("flexToken").value = $("flexQuery").value = "";
+  flexRun();
+});
+$("flexRun").addEventListener("click", flexRun);
 $("btnRecord").addEventListener("click", async () => { $("recMsg").textContent = "Starting…"; const r = await api("/api/record", {method: "POST"}); $("recMsg").textContent = r.started ? "Recording started. This takes about 2 minutes." : r.message; loadRec(); });
 $("btnHist").addEventListener("click", async () => { $("recMsg").textContent = "Downloading CBOE history…"; const r = await api("/api/refresh-history", {method: "POST"}); $("recMsg").textContent = r.error || "CBOE history refreshed."; loadRec(); });
 $("btnTws").addEventListener("click", async () => { $("recMsg").textContent = "Connecting…"; const r = await api("/api/tws"); $("recMsg").innerHTML = r.ok ? `<span class="pos">TWS connection OK (read-only).</span>` : `<span class="neg">Could not connect: ${esc(r.error || "")}. Check TWS is open and API socket clients are enabled on port 7496.</span>`; });
