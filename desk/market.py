@@ -28,6 +28,7 @@ from .history import series
 
 UA = {"User-Agent": "Mozilla/5.0"}
 ET = ZoneInfo("America/New_York")
+MELB = ZoneInfo("Australia/Melbourne")
 SECTOR_CODES = {"SKFI": "Information Technology", "SFFI": "Financials", "SLFI": "Communication Services",
                 "SYFI": "Consumer Discretionary", "SIFI": "Industrials", "SVFI": "Health Care",
                 "SPFI": "Consumer Staples", "SEFI": "Energy", "SUFI": "Utilities", "SSFI": "Real Estate",
@@ -186,7 +187,8 @@ def _members():
 
 def refresh_breadth(force=False):
     last = db.get_meta("breadth_refreshed")
-    if not force and last and dt.datetime.fromisoformat(last) > dt.datetime.now() - dt.timedelta(hours=10):
+    have = db.query("SELECT 1 FROM index_daily WHERE symbol='BR.SPX.AD' LIMIT 1")  # a cached database from before these series were added
+    if not force and have and last and dt.datetime.fromisoformat(last) > dt.datetime.now() - dt.timedelta(hours=10):
         return {"skipped": True}
     if not _lock.acquire(blocking=False):
         return {"running": True}
@@ -273,6 +275,15 @@ def _zulu(d):
     return d.astimezone(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def two_zones(when):
+    """'Tue 3 Nov 7:00 PM ET · Wed 11:00 AM Melb': the US date and time, then the same moment on the local clock."""
+    t = dt.datetime.fromisoformat(when.replace("Z", "+00:00")) if isinstance(when, str) else when
+    t = t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+    us, melb = t.astimezone(ET), t.astimezone(MELB)
+    clock = lambda x: f"{x.hour % 12 or 12}:{x.minute:02d} {'AM' if x.hour < 12 else 'PM'}"  # noqa: E731
+    return f"{us:%a} {us.day} {us:%b} {clock(us)} ET · {melb:%a} {clock(melb)} Melb"
+
+
 def known_events():
     """KNOWN as calendar rows, plus any FOMC day on the Fed's own page."""
     rows = []
@@ -354,6 +365,8 @@ def calendar(date_from=None, date_to=None, widen=True, fetch=True):
         res = calendar()
         res["note"] = note or "Nothing in this window: showing the rest of the feed."
         return res
+    for r in out:
+        r["zones"] = two_zones(r["date"])
     return {"result": out, "status": "ok", "feed": state, "live_to": live_to, "note": note}
 
 

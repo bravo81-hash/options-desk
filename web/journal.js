@@ -20,7 +20,7 @@ function overview(T) {
     tile("Win rate", T.length ? Math.round(100 * W.length / T.length) + "%" : "–", "share of closed trades in profit") +
     tile("Total P&L", money(tot), `average ${money(avg(T, (t) => t.pnl))} per trade`, cls(tot)) +
     tile("Average return", pctS(avg(T, (t) => t.ret)), `of margin · ${(avg(T, (t) => t.dit) || 0).toFixed(0)} days held on average`, cls(avg(T, (t) => t.ret))) +
-    tile("Capital pace", ok(avg(T, paceT)) ? fmt(avg(T, paceT), 2) + "% / day" : "–", `average return per day held · target ${fmt((J.speed || {}).target, 2)}%`, !J.speed ? "" : avg(T, paceT) >= J.speed.target ? "pos" : avg(T, paceT) < J.speed.slow ? "neg" : "wrn") +
+    tile("Capital pace", ok(poolPace(T)) ? fmt(poolPace(T), 2) + "% / day" : "–", `total P&L ÷ margin-days · A14 target ${fmt((J.speed || {}).target, 2)}%, a per-trade average<br><span title="each trade's return ÷ its days, then averaged: a −39% stop-out in one day counts as −39% a day">simple trade average ${fmt(avg(T, paceT), 2)}%, skewed by quick stop-outs</span>`, !J.speed || !ok(poolPace(T)) ? "" : poolPace(T) >= J.speed.target ? "pos" : poolPace(T) < J.speed.slow ? "neg" : "wrn") +
     tile("Best", best ? money(best.pnl) : "–", best ? `#${best.trade_id} ${esc(best.ticker)} ${day(best.exit_us)}` : "", "pos") +
     tile("Worst", worst ? money(worst.pnl) : "–", worst ? `#${worst.trade_id} ${esc(worst.ticker)} ${day(worst.exit_us)}` : "", "neg");
   // cumulative P&L by close date, plus each trade as a bar
@@ -53,6 +53,7 @@ function overview(T) {
 
 /* ---------- capital pace: return per day held, by close month ---------- */
 const paceT = (t) => ok(t.ret) && t.dit ? t.ret / Math.max(t.dit, 1) : null;
+const poolPace = (a) => { const days = a.reduce((s, t) => s + (t.margin || 0) * Math.max(t.dit || 1, 1), 0); return days ? 100 * a.reduce((s, t) => s + (t.pnl || 0), 0) / days : null; };
 function paceView(T) {
   const sp = J.speed || {target: 0.4, slow: 0.2};
   const grp = (t) => t.strategy === "A14" ? "A14" : "Everything else";

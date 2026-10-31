@@ -101,7 +101,7 @@ function curves(t, c, xsPct) {
 const COL = {today: "var(--s1)", dated: "var(--accent)", expiry: "var(--faint)"};
 const pctS = (v) => ok(v) ? `${v > 0 ? "+" : ""}${v.toFixed(1)}%` : "–";
 const dshort = (ms) => ok(ms) ? new Date(ms).toLocaleDateString([], {day: "numeric", month: "short"}) : "–";
-const dexp = (ms) => ok(ms) ? new Date(ms).toLocaleDateString([], {day: "numeric", month: "short", timeZone: "America/New_York"}) : "–"; // expiries are US dates
+const dexp = (ms) => { if (!ok(ms)) return "–"; const [m, d, y] = new Date(ms).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "2-digit", timeZone: "America/New_York"}).replace(",", "").split(" "); return `${m} ${d} '${y}`; }; // expiries are US dates
 const etDay = (ms) => { const p = new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"}).format(new Date(ms)); return Date.parse(p + "T00:00:00Z"); };
 const dteOf = (ms) => Math.max(0, Math.round((etDay(ms) - etDay(now())) / DAY)); // calendar days, US date, like OptionStrat
 const dteTxt = (t) => t.lastExp > t.firstExp + DAY ? `${dteOf(t.firstExp)}d / ${dteOf(t.lastExp)}d` : `${dteOf(t.firstExp)}d`;
@@ -202,6 +202,8 @@ const CARDS = {
 const PRI = {exit: 0, close: 1, decide: 2, slow: 3, hold: 4};
 /* ---------- execution aids: the combo price that closes a trade at a given total, and the index level where it gets there ---------- */
 const COMM_SIDE = 1.36, TICK = 0.05;
+window.dexp = dexp;
+const lotsOf = (t) => { const m = /(\d+)\s*LOTS?\b/i.exec(t.name); return m ? +m[1] : null; };
 const gcdAll = (a) => a.reduce((g, x) => { let p = Math.abs(g), q = Math.abs(x); while (q) [p, q] = [q, p % q]; return p; }, 0) || 1;
 function closeAt(t, pct) {
   // closing nets one_pnl + (V − Σ qty·100·open) − commissions; solve for the position value V at a total of pct % of margin.
@@ -218,7 +220,8 @@ function closeAt(t, pct) {
   const multiExp = new Set(t.legs.map((l) => l.expMs)).size > 1;
   const legs = t.legs.slice().sort((a, b) => a.expMs - b.expMs || b.strike - a.strike)
     .map((l) => `${l.qty / g > 0 ? "+" : ""}${l.qty / g} ${fmt(l.strike, 0)}${l.right}${multiExp ? " " + dexp(l.expMs) : ""}`).join(", ");
-  return {side: sell ? "Sell" : "Buy", px, units: g, ratio: legs, nLegs: t.legs.length, total: V, now: ok(now) ? (sell ? now : -now) : null};
+  const shape = t.legs.slice().sort((a, b) => a.expMs - b.expMs || b.strike - a.strike).map((l) => `${l.qty > 0 ? "+" : "−"}${Math.abs(l.qty / g)}`).join(" ");
+  return {side: sell ? "Sell" : "Buy", px, units: g, ratio: legs, shape, lots: lotsOf(t), cash: px * g * MULT, nLegs: t.legs.length, total: V, now: ok(now) ? (sell ? now : -now) : null};
 }
 function levelAt(t, pct, dv = 0) {
   // index close where the trade would be at pct % of margin if the move happened today (IVs + dv, sticky strike); [below, above]
@@ -257,7 +260,7 @@ function planOf(t) {
     : t.adjustments >= 1 ? {ok: "no", why: `${t.adjustments} adjustment${t.adjustments > 1 ? "s" : ""} made already: the card allows one, so a further breach means exit (backtest: 2+ adjustments cut the average from +8.1% to +0.9%)`}
     : {ok: "one", why: "one adjustment allowed by the card, then exit"};
   else {
-    const no = [];
+    const no = [], vs = p >= 3 ? `${pctS(p)}, at or over the +3% line` : p >= 0 && ok(move) && Math.abs(move) < 1.5 ? `${pctS(p)}, ${t.underlying} moved only ${pctS(move)}` : `${pctS(p)}, under the +3% line`;
     if (p >= 3) no.push(`up ${pctS(p)}: never adjust a winner (yours at +3 to +6% helped only 36%)`);
     if (p >= 0 && p < 3 && ok(move) && Math.abs(move) < 1.5) no.push(`green and ${t.underlying} only ${pctS(move)} from entry (small-move adjustments helped 44–47%)`);
     if (p >= 0 && p < 3 && !ok(move)) no.push("green, and the entry price is unknown");
@@ -267,6 +270,7 @@ function planOf(t) {
     else if (dte <= 10) adj = {ok: "reduce", why: `${dte} DTE: only adjustments that reduce risk; otherwise let the target, stop or time stop decide`};
     else if (dte <= 21) adj = {ok: "roll out", why: `${dte} DTE: inside 10–21, roll out to a new expiry or close; no reshaping (yours there helped 38%)`};
     else adj = {ok: "yes", why: `${p < 0 ? "red" : "moved"}${ok(move) ? `, ${t.underlying} ${pctS(move)} from entry` : ""}, ${dte} DTE`};
+    adj.vs = vs;
     if (adj.ok !== "no") how = ok(move) && move >= 1.5 ? "roll the shorts up or add a call side (+2 to +3% median)"
       : ok(move) && move <= -1.5 && dte > 21 ? "roll out in time (+6% median, 75% helped); don't roll the shorts down (−6%)"
       : "roll out in time or reduce; reshaping in the same expiry is a coin flip";
@@ -281,7 +285,10 @@ function planOf(t) {
 const PLAN_CLS = {exit: "neg", close: "pos", decide: "wrn", slow: "wrn", hold: "muted"};
 const PLAN_ICON = {exit: "⚠ ", close: "✓ ", decide: "⚠ ", slow: "◔ "}, ADJ_ICON = {"roll out": "↻ ", reduce: "↓ "};
 const planChip = (t) => t.plan ? `<span class="chip ${PLAN_CLS[t.plan.act]}" title="${esc(t.plan.why)}">${PLAN_ICON[t.plan.act] || ""}${esc(t.plan.label)}</span>` : `<span class="small muted" title="no card rules for ${esc(t.strategy || "this trade")}">–</span>`;
-const orderTxt = (o, short) => !o ? "–" : `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>${short ? "" : ` <span class="small muted">combo ${esc(o.ratio)}${ok(o.now) ? ` · now ${o.now.toFixed(2)}` : ""}</span>`}`;
+const orderHead = (o) => !o ? "–" : `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>`;
+const orderCash = (o) => `= ${money(o.cash)}${o.lots ? ` for ${o.lots} lot${o.lots > 1 ? "s" : ""}, ${money(o.cash / o.lots)} a lot` : ""}`;
+const orderTxt = (o, short) => !o ? "–" : `${orderHead(o)} <span class="small muted" title="${esc(`price per combo: ${o.ratio}`)}">${orderCash(o)} · combo ${esc(o.shape)}${!short && ok(o.now) ? ` · now ${o.now.toFixed(2)}` : ""}</span>`;
+window.orderTxt = orderTxt;
 const lvTxt = (L, u) => !L ? "–" : L.past ? "already past" : [L.dn ? `${u} ↓ ${fmt(L.dn, 0)}` : null, L.up ? `↑ ${fmt(L.up, 0)}` : null].filter(Boolean).join(" · ") || "beyond −25% / +15%";
 const ADJ_CLS = {yes: "pos", one: "pos", "roll out": "wrn", reduce: "wrn", no: "muted", "?": "muted"};
 /* where a trade's total sits between its hard stop and target (decide line dashed) */
@@ -315,8 +322,10 @@ function shortsBit(t) {
   const txt = sdWord(lo.sd) === sdWord(hi.sd) ? `${S.length > 1 ? "shorts" : "short"} ${sdWord(lo.sd)}` : lo.sd * hi.sd > 0 ? `shorts ${fmt(near, 1)}–${fmt(far, 1)}σ ${lo.sd < 0 ? "below" : "above"}` : `shorts ${sdWord(lo.sd)} to ${sdWord(hi.sd)}`;
   return `<span class="${S.some((s) => s.past) ? "wrn" : ""}" title="${esc(tip)}">${txt}</span>`;
 }
-const dayBit = (t) => ok(t.ditNow) ? `<span class="${t.overstay ? "wrn" : ""}" title="${ok(t.usualHold) ? `days in trade, against about ${Math.round(t.usualHold)} for your closed trades with this entry DTE` : "days in trade"}">day ${t.ditNow}${ok(t.usualHold) ? ` of ~${Math.round(t.usualHold)}` : ""}</span>` : "";
-const adjBit = (t) => t.plan ? `<span class="chip ${ADJ_CLS[t.plan.adj.ok]}" title="${esc(t.plan.adj.why + (t.plan.how ? " → " + t.plan.how : ""))}">${ADJ_ICON[t.plan.adj.ok] || ""}Adjust? ${esc(t.plan.adj.ok)}</span>` : "";
+const dayBit = (t) => !ok(t.ditNow) ? "" : ok(t.usualHold) && t.ditNow > t.usualHold
+  ? `<span title="days in trade, against about ${Math.round(t.usualHold)} for your closed A14s with this entry DTE">day ${t.ditNow} <span class="chip wrn">overdue</span> <span class="small muted">usual ~${Math.round(t.usualHold)}</span></span>`
+  : `<span title="${ok(t.usualHold) ? `days in trade, against about ${Math.round(t.usualHold)} for your closed A14s with this entry DTE` : "days in trade"}">day ${t.ditNow}${ok(t.usualHold) ? ` of ~${Math.round(t.usualHold)}` : ""}</span>`;
+const adjBit = (t) => t.plan ? `<span class="chip ${ADJ_CLS[t.plan.adj.ok]}" title="${esc(t.plan.adj.why + (t.plan.how ? " → " + t.plan.how : ""))}">${ADJ_ICON[t.plan.adj.ok] || ""}Adjust? ${esc(t.plan.adj.ok)}</span>${t.plan.adj.vs ? ` <span class="small muted">${esc(t.plan.adj.vs)}</span>` : ""}` : "";
 const relBit = (t) => { const P = t.calendar ? t.calendar.pairs : []; if (!P.length) return "";
   const seen = new Map(P.flatMap((p) => (p.events || []).map((e) => [e.date + e.kind, e])));
   return relChip({events: P.some((p) => !p.events) ? null : [...seen.values()].sort((a, b) => a.date.localeCompare(b.date)), beyond: P.some((p) => p.beyond)}); };
@@ -370,7 +379,7 @@ function twinNote(P) {
   const by = {}; P.forEach((t) => { (by[key(t)] = by[key(t)] || []).push(t); });
   const pairs = Object.values(by).filter((g) => new Set(g.map(label)).size > 1 && new Set(g.map((t) => t.plan.adj.ok)).size > 1);
   if (!pairs.length) return "";
-  return `<p class="small"><b>Twin trades with different Adjust? flags.</b> The gates read each trade's own P&amp;L and fills, so accounts can sit on opposite sides of a line: ${pairs.map((g) => g.map((t) => `${esc(t.name)} ${esc(label(t))} ${pctS(t.totalPct)} → <b>${esc(t.plan.adj.ok)}</b> (${esc(t.plan.adj.why)})`).join("; ")).join(" · ")}.</p>`;
+  return `<p class="small"><b>Twin trades with different Adjust? flags.</b> The gates read each trade's own P&amp;L and fills, so accounts can sit on opposite sides of a line, even with the same legs and margin. Target prices differ for the same reason: each one nets the card's target after that account's own realised P&amp;L. ${pairs.map((g) => g.map((t) => `${esc(t.name)} ${esc(label(t))} ${pctS(t.totalPct)} → <b>${esc(t.plan.adj.ok)}</b> (${esc(t.plan.adj.why)})`).join("; ")).join(" · ")}.</p>`;
 }
 
 function planView(T) {
@@ -392,7 +401,7 @@ function planView(T) {
         <td class="n ${ok(q.timeDte) && q.dte <= q.timeDte ? "wrn" : ""}">${q.dte}d${ok(q.timeDte) ? ` <span class="small muted">/ ${q.timeDte}</span>` : ""}<br><span class="small">${dayBit(t)}</span></td>
         <td class="n" title="${q.band ? esc(`entry close ${fmt(t.entry_spot, 0)} · ±1.5% = ${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}`) : ""}">${ok(q.move) ? `<span class="${Math.abs(q.move) >= 1.5 ? "wrn" : ""}">${pctS(q.move)}</span>` : "–"}</td>
         <td class="small" style="min-width:120px;white-space:normal">${shortsBit(t) || "–"}${relBit(t) ? "<br>" + relBit(t) : ""}</td>
-        <td><span class="chip ${ADJ_CLS[q.adj.ok]}" title="${esc(q.adj.why + (q.how ? " → " + q.how : ""))}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span><br><span class="small muted">${t.adjustments ?? "–"} so far</span></td>
+        <td><span class="chip ${ADJ_CLS[q.adj.ok]}" title="${esc(q.adj.why + (q.how ? " → " + q.how : ""))}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span><br><span class="small muted">${q.adj.vs ? `${esc(q.adj.vs)}<br>` : ""}${t.adjustments ?? "–"} so far</span></td>
         <td class="n small" title="${esc(q.order ? `combo ${q.order.ratio} × ${q.order.units}${ok(q.order.now) ? `, now ${q.order.now.toFixed(2)} at mid` : ""}` : "")}">${orderTxt(q.order, true)}</td>
         <td class="n small">${lvTxt(q.at.decide, t.underlying)}<br>${lvTxt(q.at.stop, t.underlying)}</td></tr>`; }).join("")}</tbody></table></div>
     ${twinNote(P)}
@@ -489,9 +498,9 @@ function openDetail(id, quiet) {
   paceOf(t); planOf(t);
   const q = t.plan;
   $("rkDetailLegs").innerHTML = healthLine(t, true) + calLine(t) + (q ? `<div class="kv mini" style="margin:8px 0">${[["Action", planChip(t), q.why], ["Target", `+${q.tp}%`, q.lv.tp], ["Decide line", ok(q.decide) ? q.decide + "%" : "–", q.lv.decide || ""], ["Hard stop", ok(q.stop) ? q.stop + "%" : "–", q.lv.stop || ""],
-    ["Adjust?", `<span class="chip ${ADJ_CLS[q.adj.ok]}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span>`, q.adj.why + (q.how ? " → " + q.how : "")], ["Adjust band (±1.5%)", q.band ? `${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}` : "–", ok(q.move) ? `${t.underlying} ${pctS(q.move)} since entry` : ""],
-    ["Target close order (GTC)", orderTxt(q.order, true), q.order ? `combo ${q.order.ratio} × ${q.order.units}${ok(q.order.now) ? ` · now ${q.order.now.toFixed(2)} at mid` : ""} · whole position worth ${money(Math.abs(q.order.total))}${q.order.nLegs > 4 ? ` · ${q.order.nLegs} legs: if TWS won't take one combo, close in pieces once the position is worth that` : ""} · re-enter after any adjustment` : ""],
-    ["Stop: close price", orderTxt(q.stopPx, true), q.stopPx ? "where the combo is worth the hard stop" : ""],
+    ["Adjust?", `<span class="chip ${ADJ_CLS[q.adj.ok]}">${ADJ_ICON[q.adj.ok] || ""}${esc(q.adj.ok)}</span>`, (q.adj.vs ? q.adj.vs + ". " : "") + q.adj.why + (q.how ? " → " + q.how : "")], ["Adjust band (±1.5%)", q.band ? `${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}` : "–", ok(q.move) ? `${t.underlying} ${pctS(q.move)} since entry` : ""],
+    ["Target close order (GTC)", orderHead(q.order), q.order ? `${orderCash(q.order)} · combo ${q.order.ratio} × ${q.order.units}${ok(q.order.now) ? ` · now ${q.order.now.toFixed(2)} at mid` : ""}${q.order.nLegs > 4 ? ` · ${q.order.nLegs} legs: if TWS won't take one combo, close in pieces once the position is worth ${money(Math.abs(q.order.total))}` : ""} · re-enter after any adjustment` : ""],
+    ["Stop: close price", orderHead(q.stopPx), q.stopPx ? `${orderCash(q.stopPx)}: where the combo is worth the hard stop` : ""],
     ["Alert: decide line", lvTxt(q.at.decide, t.underlying), "if the move happened today, IVs unchanged"],
     ["Alert: hard stop", lvTxt(q.at.stop, t.underlying), q.at.stopIv && !q.at.stopIv.past ? `with IV +3 pts: ${lvTxt(q.at.stopIv, t.underlying)}` : ""]]
     .map(([l, b, sub]) => `<div><span class="lbl">${l}</span><b>${b}</b><span class="small muted">${esc(sub)}</span></div>`).join("")}</div>` : "") + `<div class="small muted">ONE P&amp;L (realised + commissions) ${money(t.one_pnl)} · open legs at TWS mid ${money(t.unreal)} · margin ${money(t.margin)} · days in trade ${t.dit ?? "–"}${be.length ? ` · first-expiry breakevens ${be.map((b) => b.toFixed(0)).join(" / ")}` : ""}</div>

@@ -18,11 +18,14 @@ const spark = (v, label) => { if (!v || v.length < 2) return "";
 const preWindow = () => { const p = new Intl.DateTimeFormat("en-US", {...ET, weekday: "short", hour: "numeric", minute: "numeric", hour12: false}).formatToParts(new Date()), g = (t) => (p.find((x) => x.type === t) || {}).value;
   const m = +g("hour") * 60 + +g("minute"); return !["Sat", "Sun"].includes(g("weekday")) && m >= 870 && m < 960; };
 
-let H = null, RK = null, opened = false;
+let H = null, RK = null, opened = false, tried = false;
+const two = (s) => { const [a, b] = String(s || "–").split(" · "); return b ? `${esc(a)}<br><span class="muted">${esc(b)}</span>` : esc(a); };
+const NOT_SPX = `<span class="small muted">n/a (not in SPX)</span>`;
 
 async function load() {
   H = await api("/api/heads").catch(() => null);
   if (H && H.error) H = null;
+  tried = true;
   window.HEADS = H;
   ribbon(); render();
   window.dispatchEvent(new Event("heads"));
@@ -36,14 +39,14 @@ function openSub(name) {
 
 function ribbon() {
   const el = $("rdHeads"); if (!el) return;
-  if (!H) { el.innerHTML = `<button type="button" class="rdchip" id="rdHeadsBtn" title="The heads-up feeds could not be read">Event risk <b class="muted">unavailable</b></button>`; return; }
+  if (!H) { el.innerHTML = tried ? `<button type="button" class="rdchip" id="rdHeadsBtn" title="The heads-up feeds could not be read">Event risk <b class="muted">unavailable</b></button>` : `<span class="rdchip muted">Event risk loading…</span>`; return; }
   const [col, word] = LEVEL[H.score.level], st = H.stress, n = H.alerts.length;
   const tip = [...H.score.why, ...H.alerts, ok(st.n) ? `stress: ${st.n} of ${st.of} signals firing` : ""].filter(Boolean).join(" · ");
   el.innerHTML = `<button type="button" class="rdchip" id="rdHeadsBtn" title="${esc(tip)}">Event risk <b style="color:${col}">${word}</b>${ok(st.n) ? ` · Stress <b>${st.n}</b> of ${st.of}` : ""}${n ? ` · <b style="color:var(--warn)">⚠ ${n} alert${n > 1 ? "s" : ""}</b>` : ""}</button>`;
 }
 
 function render() {
-  if (!$("acEvent")) return;
+  if (!$("acEvent") || !tried) return;
   const miss = `<div class="state">Heads-up feeds unavailable: nothing here can be read as calm. Check the Data check tab.</div>`;
   if (!H) { ["acEvent", "acNight", "acStress"].forEach((id) => { $(id).innerHTML = miss; }); pre(); return; }
   eventView(); nightView(); stressView(); pre();
@@ -56,20 +59,20 @@ function eventView() {
   const bullet = (v, end) => `${bulletSvg(v, {w: 160, lo: 0, hi: 25, color: col, label: `${fmt(v, 1)}% of the S&P 500 reports by ${etTime(end)}`,
     zones: [{from: 0, to: 5, color: "var(--up)"}, {from: 5, to: 15, color: "var(--warn)"}, {from: 15, to: 25, color: "var(--down)"}], marks: [{v: 5, color: "var(--warn)", label: "amber at 5%"}, {v: 15, color: "var(--down)", label: "red over 15%"}]})}`;
   const next = H.macro.find((m) => ["Payrolls", "CPI", "FOMC", "Election"].includes(m.kind));
-  const big = H.earnings.filter((e) => e.weight >= 0.25 || e.groups.length);
-  const eRows = big.map((e) => (x) => `<tr${x ? ` class="xrow"` : ""}><td class="small">${esc(etTime(e.when).replace(/,? \d+:\d+.*$/, ""))}</td><td title="${esc(e.name || "")}"><b>${esc(e.sym)}</b></td><td class="small">${e.firm ? esc(e.session) : `<span class="chip muted" title="date not confirmed by the company">est.</span>`}</td><td class="n">${e.weight ? fmt(e.weight, 2) + "%" : "–"}</td><td class="small muted" style="white-space:normal">${esc(e.groups.join(" · "))}</td></tr>`);
+  const big = H.earnings.filter((e) => e.weight >= 0.25 || e.groups.length).sort((a, b) => b.weight - a.weight || a.when.localeCompare(b.when));
+  const eRows = big.map((e) => (x) => `<tr${x ? ` class="xrow"` : ""}><td class="small">${two(e.zones)}</td><td title="${esc(e.name || "")}"><b>${esc(e.sym)}</b></td><td class="small">${e.firm ? esc(e.session) : `<span class="chip muted" title="date not confirmed by the company">est.</span>`}</td><td class="n">${e.weight ? fmt(e.weight, 2) + "%" : NOT_SPX}</td><td class="small muted" style="white-space:normal">${esc(e.groups.join(" · "))}</td></tr>`);
   const hi = H.macro.filter((m) => m.importance >= 1);
-  const mRows = hi.map((m) => (x) => `<tr${x ? ` class="xrow"` : ""}><td class="small">${esc(etTime(m.date))}</td><td>${["Payrolls", "CPI", "FOMC", "Election"].includes(m.kind) ? "<b>" + esc(m.title) + "</b>" : esc(m.title)}${m.source === "schedule" ? ` <span class="small muted" title="from the official schedule built into the desk">schedule</span>` : ""}</td></tr>`);
+  const mRows = hi.map((m) => (x) => `<tr${x ? ` class="xrow"` : ""}><td class="small">${two(m.zones)}</td><td style="white-space:normal">${["Payrolls", "CPI", "FOMC", "Election"].includes(m.kind) ? "<b>" + esc(m.title) + "</b>" : esc(m.title)}${m.source === "schedule" ? ` <span class="small muted" title="from the official schedule built into the desk">schedule</span>` : ""}</td></tr>`);
   $("acEvent").innerHTML = `${H.feed_note ? `<div class="state err" style="margin-bottom:8px">${esc(H.feed_note)}</div>` : ""}
     <div class="kv mini" style="margin-bottom:8px">
       ${tile("Event risk", `<span class="chip ${k}">${word}</span>`, esc(S.why.join(" · ")))}
       ${tile("Reports, next 24 trading hours", fmt(S.pct24, 1) + "% of SPX", bullet(S.pct24, S.w24) + `<br>to ${esc(etTime(S.w24))}`)}
       ${tile("Reports, next 48 trading hours", fmt(S.pct48, 1) + "% of SPX", bullet(S.pct48, S.w48) + `<br>to ${esc(etTime(S.w48))}`)}
-      ${tile("Next top-tier release", next ? esc(next.title.replace(" (schedule)", "")) : "none in 2 weeks", next ? esc(etTime(next.date)) : "")}
+      ${tile("Next top-tier release", next ? esc(next.title.replace(" (schedule)", "")) : "none in 2 weeks", next ? esc(next.zones) : "")}
     </div>
-    <div class="hgrid" style="grid-template-columns:minmax(220px,.8fr) minmax(360px,1.3fr) minmax(320px,1.1fr)">
+    <div class="hgrid ev3" style="grid-template-columns:minmax(220px,.8fr) minmax(360px,1.3fr) minmax(320px,1.1fr)">
       <div><h3>Earnings by day <span class="small muted">% of the S&amp;P 500 reporting</span></h3><div class="chart" id="acEvChart"></div></div>
-      <div><h3>Earnings to watch <span class="small muted">top names and anyone over 0.25% of SPX</span></h3>${big.length ? capped("<th>When</th><th>Name</th><th>Session</th><th class=\"n\">% SPX</th><th>Watched as</th>", eRows, big.length, 6) : `<div class="state">No large name reports in the next week.</div>`}</div>
+      <div><h3>Earnings to watch <span class="small muted">largest first: top names and anyone over 0.25% of SPX</span></h3>${big.length ? capped("<th>When</th><th>Name</th><th>Session</th><th class=\"n\">% SPX</th><th>Watched as</th>", eRows, big.length, 6) : `<div class="state">No large name reports in the next week.</div>`}</div>
       <div><h3>High-impact releases <span class="small muted">next 14 days</span></h3>${hi.length ? capped("<th>When</th><th>Release</th>", mRows, hi.length, 6) : `<div class="state">${esc(H.feed_note || "No high-impact releases in the next 14 days.")}</div>`}</div>
     </div>
     <p class="note">Information only: event risk does not change the size call, gates, rankings or Today's pick. Red = over 15% of the S&amp;P 500 reports within 24 trading hours, or payrolls, CPI, FOMC or an election falls inside them. Amber = 5% or more reports, a top-10 name reports, or another high-impact release falls inside 24 trading hours; or a top-tier release or over 15% inside 48. Trading hours skip weekends and market holidays, so Friday's 24 hours reach Monday evening. Green needs both feeds up; with one down and nothing else to flag it reads Unknown, never calm. Green here doesn't mean no gap: a surprise from a mid-size name (Intel, 0.7% of SPX) can move the whole market.</p>`;
@@ -85,9 +88,9 @@ function nightView() {
     `${spark(f.spark, `${f.sym} since the cash close`)}<br>${ok(f.implied) ? `${esc(f.index)} ≈ ${Math.round(f.implied).toLocaleString()} vs close ${Math.round(f.cash).toLocaleString()}` : "no quote"}${f.at ? ` · ${esc(etTime(f.at))}` : ""}`)).join("");
   const vx = V ? tile("VIX futures, front vs second", `<span class="${V.spread < 0 ? "wrn" : ""}">${fmt(V.front.px, 2)} / ${fmt(V.second.px, 2)}</span>`,
     `${V.spread < 0 ? "inverted" : "contango"} ${sgn(V.spread, 2)} pts${ok(V.prev_spread) ? ` (was ${sgn(V.prev_spread, 2)})` : ""} · settled ${esc(V.date)}, end of day only`) : tile("VIX futures", "–", "settlements unavailable");
-  const lRows = L.rows.map((r) => (x) => { const [a, b] = r.moves;
+  const lRows = L.rows.map((r) => (x) => { const [a, b] = r.moves, ok2 = !b || !r.expired ? "" : ` <span class="chip muted" title="broke on ${esc(r.expired)}; an alert lasts until the next session's close">${esc(r.expired)}, expired</span>`;
     const day = (m) => m ? `<span class="${cls(m.ret)}">${pctS(m.ret)}</span> <span class="small muted">${ok(m.z) ? sgn(m.z, 1) + "σ" : ""}</span>` : "–";
-    return `<tr${x && !r.alert ? ` class="xrow"` : ""}><td><b>${esc(r.sym)}</b>${r.alert ? ` <span class="chip wrn">⚠ spillover</span>` : r.broke ? ` <span class="chip muted" title="broke the line, but only a top-10 name or SMH raises the alert">shown only</span>` : ""}</td><td class="small muted">${esc(r.groups.join(" · "))}</td><td class="n">${ok(r.weight) ? fmt(r.weight, 2) + "%" : "–"}</td><td class="n">${day(a)}</td><td class="n">${day(b)}</td><td>${ok(a.z) ? hBarSvg(a.z, 6, {w: 80, label: "last session in σ of its 60-day moves (full bar = 6σ)"}) : ""}</td></tr>`; });
+    return `<tr${x && !r.alert ? ` class="xrow"` : ""}><td><b>${esc(r.sym)}</b>${r.alert ? ` <span class="chip wrn">⚠ spillover</span>` : r.broke ? ` <span class="chip muted" title="broke the line, but only a top-10 name or SMH raises the alert">shown only</span>` : ok2}</td><td class="small muted">${esc(r.groups.join(" · "))}</td><td class="n">${ok(r.weight) ? fmt(r.weight, 2) + "%" : NOT_SPX}</td><td class="n">${day(a)}</td><td class="n">${day(b)}</td><td>${ok(a.z) ? hBarSvg(a.z, 6, {w: 80, label: "last session in σ of its 60-day moves (full bar = 6σ)"}) : ""}</td></tr>`; });
   $("acNight").innerHTML = `${down.length ? `<div class="state err" style="margin-bottom:8px">Feed unavailable, last good copy shown: ${esc(down.map((f) => f.name).join(", "))}.</div>` : ""}
     ${H.alerts.length ? `<div class="state" style="margin-bottom:8px"><b style="color:var(--warn)">⚠ ${esc(H.alerts.join(" · "))}</b></div>` : ""}
     <div class="kv mini" style="margin-bottom:8px">${fut}${vx}</div>
@@ -95,7 +98,7 @@ function nightView() {
       <div><h3>Top 10 names, ${esc(O.session)} <span class="small muted">alert over ±5% out of hours</span></h3><div class="chart" id="acNightMovers"></div></div>
       <div style="grid-column:span 2"><h3>Leader spillover <span class="small muted">sessions to ${esc(L.date || "–")}: a top-10 name or SMH down 3σ or 7% flags next-day risk</span></h3>${L.rows.length ? capped("<th>Name</th><th>Watched as</th><th class=\"n\">% SPX</th><th class=\"n\">Last session</th><th class=\"n\">Session before</th><th>Size</th>", lRows, L.rows.length, 6) : `<div class="state">No leader bars yet.</div>`}</div>
     </div>
-    <p class="note">Each future is compared with its own price at the 16:00 ET cash close, because futures trade at a basis to cash; the cash level is that move applied to the close. Quotes are yfinance's, about 10 minutes late, and stop at Friday's 17:00 ET futures close until Sunday evening. VIX futures are CBOE's daily settlements: no free overnight quote exists, so this shows the curve as it stood at the last close. After-hours moves come from TradingView's scanner and are thin before 16:30 ET. σ is each name's daily moves over the 60 sessions before that day.</p>`;
+    <p class="note">Each future is compared with its own price at the 16:00 ET cash close, because futures trade at a basis to cash; the cash level is that move applied to the close. Quotes are yfinance's, about 10 minutes late, and stop at Friday's 17:00 ET futures close until Sunday evening. VIX futures are CBOE's daily settlements: no free overnight quote exists, so this shows the curve as it stood at the last close. After-hours moves come from TradingView's scanner and are thin before 16:30 ET. σ is each name's daily moves over the 60 sessions before that day. A spillover alert flags the session after the break, so it drops off at that session's close; the table still shows the break.</p>`;
   barChart($("acNightMovers"), {h: 150, label: "top 10 names out of hours", items: O.movers.map((m) => ({label: m.sym, v: m.move, hi: m.alert, title: `${esc(m.sym)} <b>${pctS(m.move, 2)}</b> · ${fmt(m.weight, 2)}% of SPX`}))});
 }
 
@@ -111,7 +114,7 @@ function stressView() {
         <h3>Last 30 sessions</h3><div class="chart" id="acStressChart"></div></div>
       <div><div class="tbl"><table><thead><tr><th>Group</th><th>Signal</th><th>Now</th><th class="n">Reading</th><th>Fires when</th><th class="n" title="share of the last 252 sessions it fired">Fires</th></tr></thead><tbody>${rows}</tbody></table></div></div>
     </div>
-    <p class="note">A count, not a verdict: the signals overlap and nothing here changes the size call. NYSE and Nasdaq advance/decline and new lows aren't in a free feed, so breadth uses S&amp;P 500 members, computed here; RSP vs SPY stands for equal weight against cap weight. Cross-assets are read at each S&amp;P close, so Bitcoin's weekend moves land on Monday. The "Fires" column shows how often each signal is on: VVIX 100+ is common at this vol level, so read it with the others.${S.no_data.length ? ` No data yet for ${esc(S.no_data.join(", "))}.` : ""}</p>`;
+    <p class="note">A count, not a verdict: the signals overlap and nothing here changes the size call. NYSE and Nasdaq advance/decline and new lows aren't in a free feed, so breadth uses S&amp;P 500 members, computed here; RSP vs SPY stands for equal weight against cap weight. Cross-assets are read at each S&amp;P close, so Bitcoin's weekend moves land on Monday. The "Fires" column shows how often each signal is on: VVIX 100+ is common at this vol level, so read it with the others.${S.no_data.length ? ` No data yet for ${esc(S.no_data.join(", "))}, so they're left out of the count.` : ""}</p>`;
   barChart($("acStressChart"), {h: 130, unit: "", label: "stress signals firing, last 30 sessions", items: S.hist.map((d) => ({label: shortDate(d.d), v: d.n, color: d.n >= 5 ? "var(--down)" : d.n >= 3 ? "var(--warn)" : "var(--accent)", title: `${esc(d.d)}: <b>${d.n} of ${S.of}</b>`}))});
 }
 

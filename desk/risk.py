@@ -14,6 +14,7 @@ import re
 import threading
 
 from . import db, load_config
+from .market import two_zones
 from .recorder import ET
 from .trades import CALENDAR_FAMILY, _newest, classify, fix_name
 from .volmath import bs_price, forward_vol, implied_vol
@@ -635,6 +636,6 @@ def recon_view():
             except ValueError:
                 pass
         status = "not in ONE" if (f["account"], sym) in diff_keys else ("in ONE" if names else "closed / not open in ONE")
-        fills.append({**f, "label": labels.get(f["account"], f["account"]), "one_trades": sorted(set(names)), "status": status})
+        fills.append({**f, "label": labels.get(f["account"], f["account"]), "one_trades": sorted(set(names)), "status": status, "zones": two_zones(f["time_utc"]) if f["time_utc"] else None})
     return {"recon": pl["recon"], "stocks": pl["stocks"], "fills": fills, "labels": labels,
             "marks_ts": pl["marks_ts"], "one_file": pl["one_file"], "one_fresh": pl["one_fresh"]}

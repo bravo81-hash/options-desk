@@ -68,6 +68,8 @@ input,select{border-radius:6px}
 .hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;align-items:start}
 .hgrid h3{margin:0 0 4px}
 .hgrid table.wi th,.hgrid table.wi td{padding:3px 5px}
+.kv .chip{white-space:normal}
+@media (max-width:1240px){.ev3{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))!important}}
 @media (max-width:760px){.hgrid{grid-template-columns:minmax(0,1fr)!important}.hgrid>[style*="span 2"]{grid-column:auto!important}}
 .desk .rdwhy{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 button.rdchip{background:var(--soft);color:var(--ink);border:1px solid var(--line);border-radius:7px;font-size:13px;font-weight:500;padding:2px 8px;white-space:nowrap}

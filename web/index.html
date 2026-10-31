@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Market &amp; Options Desk</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="compact.css">
@@ -40,7 +41,7 @@
       <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
         <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
       <section class="panel c7"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
-      <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 trading days</span></header><div id="acComing"></div></section>
+      <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 trading days, plus this week's payrolls, CPI, FOMC and elections · US dates</span></header><div id="acComing"></div></section>
       <div class="c12"><div class="grid" data-subs data-closed id="acMore">
         <section class="panel c12" data-sub="Event risk"><header><h2>Event risk</h2><span class="small muted" id="acEvMeta"></span></header><div id="acEvent"><div class="state loading">Reading the calendars…</div></div></section>
         <section class="panel c12" data-sub="Overnight"><header><h2>Overnight and pre-session</h2><span class="small muted" id="acNightMeta"></span><button type="button" class="ghost" id="acHdRefresh">Refresh</button></header><div id="acNight"><div class="state loading">Reading futures…</div></div></section>
@@ -215,7 +216,7 @@
     <div class="grid" data-subs id="tab-pnl-grid">
       <section class="panel c12" data-sub="Weekly"><header><h2>Weekly P&amp;L by account · change in NAV</h2><span class="small muted">Change in each account's net liquidation value, Monday–Friday (US dates) · % of NAV at the start of the week · hover a cell for its days and IBKR's own daily figure</span></header><div id="plWeekly"></div></section>
       <section class="panel c6" data-sub="Weekly"><header><h2>Monthly</h2><span class="small muted">same daily P&amp;L, by calendar month</span></header><div id="plMonthly"></div></section>
-      <section class="panel c6" data-sub="Weekly"><header><h2>NAV</h2><span class="small muted">net liquidation per account (base currency)</span></header><div class="chart" id="plNav"></div><div id="plNavLegend"></div></section>
+      <section class="panel c6" data-sub="Weekly"><header><h2>NAV</h2><span class="small muted">at each close, from IBKR's statement where Flex has it, so it can differ from the TWS capture in the strip above</span></header><div class="chart" id="plNav"></div><div id="plNavLegend"></div></section>
       <section class="panel c12" data-sub="Today"><header><h2>Today by ticker</h2><span class="small muted">In account currency (AUD) · marked to market: each contract's value now minus its value at the last close, plus cash from today's fills · <span id="plTickerNote"></span></span></header><div class="tcards" id="plTicker"></div></section>
       <section class="panel c12" data-sub="Reconciliation"><header><h2>Reconciliation · ONE vs IBKR</h2><span class="small muted" id="rcMeta"></span></header><div id="rcBody"></div></section>
       <section class="panel c12" data-sub="Fills &amp; ONE import"><header><h2>Fills · last 7 days</h2><span class="small muted">every IBKR execution this app has seen, kept even after TWS forgets them · matched to your open ONE trades</span></header>
@@ -297,7 +298,7 @@
       <h2>Start in three steps</h2>
       <div class="steps">
         <div><b>1</b><h3>Read the size</h3><p>The ribbon at the top gives the size for new trades today. Press <i>Why</i> for the reasons and the size rules.</p></div>
-        <div><b>2</b><h3>Work through Actions</h3><p><i>Do today</i> lists the trades past a line, <i>New trades</i> says what's open, <i>Coming up</i> shows the next 3 trading days. The ribbon's <i>Event risk</i> chip opens the heads-up tabs.</p></div>
+        <div><b>2</b><h3>Work through Actions</h3><p><i>Do today</i> lists the trades past a line, <i>New trades</i> says what's open, <i>Coming up</i> shows the next 3 trading days, plus any payrolls, CPI, FOMC or election later in the week. The ribbon's <i>Event risk</i> chip opens the heads-up tabs.</p></div>
         <div><b>3</b><h3>Place orders in TWS</h3><p>You place every order yourself. The desk only reads from TWS: it never sends, changes or cancels an order.</p></div>
       </div>
       <nav class="gtoc">
@@ -344,7 +345,7 @@
         <ol>
           <li><b>Information only.</b> None of this changes the size call, the gates, the rankings or Today's pick. It's there because a calm-looking market at the close can still gap on what reports that night.</li>
           <li><b>Event risk</b>: red when over 15% of the S&amp;P 500 reports within 24 trading hours, or payrolls, CPI, FOMC or an election falls inside them. Amber at 5% or more, a top-10 name reporting, another high-impact release, or a top-tier release or over 15% inside 48 trading hours. Weekends and market holidays don't count. With a feed down and nothing else to flag it reads Unknown, never green.</li>
-          <li><b>Overnight</b>: ES, NQ and RTY against their own price at the cash close (alert over 0.75%), VIX futures front vs second month at the last settlement, and the top 10 names out of hours (alert over 5%). <b>Leader spillover</b>: a top-10 name or SMH down 3σ or 7% in a day flags next-day risk; other leaders are listed without raising an alert.</li>
+          <li><b>Overnight</b>: ES, NQ and RTY against their own price at the cash close (alert over 0.75%), VIX futures front vs second month at the last settlement, and the top 10 names out of hours (alert over 5%). <b>Leader spillover</b>: a top-10 name or SMH down 3σ or 7% in a day flags next-day risk; other leaders are listed without raising an alert. A break warns about the next session, so its alert ends at that session's close; the table keeps the row, marked expired.</li>
           <li><b>Stress</b>: how many of 11 signals are firing across the vol curve, breadth and cross-assets, with the last 30 sessions. It's a separate count from the Market warnings (of 6). Amber at 3, red at 5.</li>
           <li><b>Pre-close</b>: event risk, net gamma, the ±2σ overnight P&amp;L and, when event risk is red, a reference price for a put spread. It opens by itself from 14:30 to 16:00 ET.</li>
         </ol>
@@ -455,7 +456,7 @@
           <li><b>Today by ticker</b> — each position's value now vs the last close, plus today's fills.</li>
           <li><b>Reconciliation</b> — must say <i>Quantities match</i>. A quantity difference means ONE and IBKR disagree on what you hold: the row says what to do. <i>Cost-basis differences</i> (collapsed) are normal and need nothing.</li>
           <li><b>ONE import file</b> — pick the date and press the account's CSV button, then import it in ONE (the link-to-positions step is still manual).</li>
-          <li><b>Fills</b> — every fill the desk has seen, matched to your ONE trades.</li>
+          <li><b>Fills</b> — every fill the desk has seen, matched to your ONE trades, timed in ET and Melbourne. Rows with the same contract and time are parts of one order (<i>part 1/2</i>), each with its own execId (hover a row) and commission.</li>
         </ol>
       </section>
 

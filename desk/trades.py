@@ -28,10 +28,14 @@ CALENDAR_FAMILY = {"TimeEdge", "TimeZone", "Triple Cal", "Flyagonal"}
 
 
 def fix_name(name):
-    """Corrections from config.local.json (risk.name_fixes: {"MNG": "MGN"}): whole words, display only. Trade ids don't use the name."""
+    """A trade's name tidied for display. Trade ids don't use the name. Corrections from config.local.json
+    (risk.name_fixes: {"MNG": "MGN"}) as whole words, then months in capitals and "2LOTS", "1 LOTS" as "2 LOTS", "1 LOT"."""
+    if not name:
+        return name
     for wrong, right in (load_config().get("risk", {}).get("name_fixes") or {}).items():
         name = re.sub(rf"\b{re.escape(wrong)}\b", right, name)
-    return name
+    name = re.sub(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?=\s*'\d\d|\.)", lambda m: m[1].upper(), name)
+    return re.sub(r"(?i)\b(\d+)\s*LOTS?\b", lambda m: f"{m[1]} LOT{'' if int(m[1]) == 1 else 'S'}", name)
 
 
 def classify(group, name):

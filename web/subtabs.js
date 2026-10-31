@@ -79,11 +79,11 @@ const relDay = (d) => new Date(d + "T12:00:00Z").toLocaleDateString([], {day: "n
 const relTxt = (p) => (p.events || []).map((e) => `${e.kind} ${relDay(e.date)}`).join(", ");
 function relChip(p) {
   if (!p.events) return `<span class="small muted" title="Release dates are unavailable or over a week old: run Update all">dates unavailable</span>`;
-  const more = p.beyond ? " +?" : "", why = p.beyond ? " · runs past the known CPI and payroll dates" : "";
+  const more = p.beyond ? ` <span class="small muted">later dates unknown</span>` : "", why = p.beyond ? " · runs past the known CPI and payroll dates" : "";
   if (!p.events.length) return `<span class="small muted" title="${p.beyond ? "FOMC dates are known; CPI and payroll dates are only known about 30 days out" : "no CPI, FOMC, payrolls, PCE or GDP before the front expiry"}">${p.beyond ? "unknown" : "none"}</span>`;
   const major = p.events.filter((e) => RELEASE_MAJOR.includes(e.kind)), first = major[0] || p.events[0], rest = p.events.length - 1;
-  const txt = `${first.kind} ${relDay(first.date)}${rest ? ` +${rest}` : ""}${more}`;
-  return major.length ? `<span class="chip wrn" title="${esc(relTxt(p) + why)}">⚑ ${esc(txt)}</span>` : `<span class="small muted" title="${esc(relTxt(p) + why)}">${esc(txt)}</span>`;
+  const txt = `${first.kind} ${relDay(first.date)}${rest ? ` +${rest}` : ""}`;
+  return (major.length ? `<span class="chip wrn" title="${esc(relTxt(p) + why)}">⚑ ${esc(txt)}</span>` : `<span class="small muted" title="${esc(relTxt(p) + why)}">${esc(txt)}</span>`) + more;
 }
 
 /* 51 -> "51st" */

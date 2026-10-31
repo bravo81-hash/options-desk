@@ -416,4 +416,13 @@ def fills(days=7):
     init()
     since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
     # one row per fill: leave out each combo's own row and the FA master's copy of the sub-account fills
-    return db.query("SELECT * FROM executions WHERE time_utc>=? AND sec_type<>'BAG' AND account NOT LIKE 'F%' ORDER BY time_utc DESC", (since,))
+    rows = db.query("SELECT * FROM executions WHERE time_utc>=? AND sec_type<>'BAG' AND account NOT LIKE 'F%' ORDER BY time_utc DESC", (since,))
+    # An order often fills in parts: same contract and often the same second and price, but its own exec id and commission.
+    # exec_id is the primary key and corrections go through drop_corrected_fills, so each execution is here once.
+    parts = {}
+    for r in rows:
+        parts.setdefault((r["account"], r["perm_id"] or r["exec_id"], r["local_symbol"], r["side"]), []).append(r)
+    for group in parts.values():
+        for i, r in enumerate(reversed(group)):
+            r["part"], r["parts"] = i + 1, len(group)
+    return rows

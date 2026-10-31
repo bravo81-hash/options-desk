@@ -9,7 +9,7 @@ const SIZE_CLS = {"Full size": "pos", "Three-quarter size": "sz", "Half size": "
 const ACT = {exit: ["neg", "⚠ Exit"], decide: ["wrn", "⚠ Decide"], close: ["pos", "✓ Close"], slow: ["wrn", "◔ Exit at next green"]};
 const WORD = {"Full size": "full size", "Three-quarter size": "three-quarter size", "Half size": "half size", "Quarter size": "quarter size", "Stand aside": "stand aside"};
 const go = (tab, text, sub) => `<a href="#" class="small" data-go="${tab}"${sub ? ` data-sub="${esc(sub)}"` : ""}>${esc(text)} →</a>`;
-const order = (o) => o ? `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>` : "–";
+const order = (o) => window.orderTxt(o, true);
 const dist = (t) => { const q = t.plan, a = q && q.at, pc = (x) => ok(x) && ok(t.spot) ? 100 * (x / t.spot - 1) : null;
   if (!a || !ok(t.spot)) return "";
   const m = [[a.decide, "var(--warn)", "decide"], [a.stop, "var(--down)", "stop"]].flatMap(([L, c, nm]) => !L || L.past ? [] : [[L.dn, "↓"], [L.up, "↑"]].filter(([x]) => ok(x)).map(([x, d]) => ({v: pc(x), color: c, label: `${nm} ${d} ${Math.round(x)} (${pctS(pc(x))} from spot)`})));
@@ -23,7 +23,7 @@ let L = null, SCAN = null;
 const FK = "od.acFilt";
 let F = (() => { try { return JSON.parse(localStorage.getItem(FK)) || {}; } catch (e) { return {}; } })();
 const expKey = (t) => new Date(t.firstExp).toLocaleDateString("en-CA", {timeZone: "America/New_York"});  // expiry date in New York (16:00 ET is next morning in Sydney)
-const expTxt = (k) => new Date(k + "T12:00:00").toLocaleDateString([], {day: "numeric", month: "short", year: "2-digit"});
+const expTxt = (k) => window.dexp(Date.parse(k + "T12:00:00-05:00"));
 const KEYS = {sym: (t) => t.underlying, exp: expKey, acct: (t) => t.acctLabel};
 const pass = (t, skip) => Object.entries(KEYS).every(([k, f]) => k === skip || !F[k] || f(t) === F[k]);
 const pick = (Rk) => Rk && {...Rk, trades: Rk.trades.filter((t) => pass(t))};
@@ -210,11 +210,12 @@ function orders(Rk) {
     P.sort((a, b) => a.underlying.localeCompare(b.underlying) || a.firstExp - b.firstExp).map((t) => { const q = t.plan;
       return `<tr><td class="small">${esc(t.name)} <span class="muted">${esc(t.acctLabel || "")}</span></td><td class="n small">${order(q.order)}</td><td class="n small">${lv(q.at && q.at.decide, t.underlying)}</td><td class="n small">${lv(q.at && q.at.stop, t.underlying)}</td><td>${dist(t)}</td></tr>`; }).join("")}</tbody></table></div>
     ${none.length ? `<p class="small"><b>${none.length} open trade${none.length > 1 ? "s" : ""} without card rules</b>, so no target or alerts here: ${none.map((t) => `${esc(t.name)} <span class="muted">(${esc(t.strategy)}, ${esc(t.acctLabel || "")})</span>`).join(" · ")}.</p>` : ""}
-    <p class="note">Target orders are valid until you adjust the trade; re-enter after any adjustment. Alert levels assume the move happens today with IVs unchanged; refresh marks to update them. Card rules exist for A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal and Flyagonal. ${go("risk", "Trade plan", "Trade plan")}</p>`;
+    <p class="note">Limits are per combo: 2× at 9.45 means two of the combo shown, $1,890 for the position. Twins can show different multiples when their legs differ (one has split a short across two strikes, say), so compare the $ a lot. Target orders are valid until you adjust the trade; re-enter after any adjustment. Alert levels assume the move happens today with IVs unchanged; refresh marks to update them. Card rules exist for A14, Allantis, HV7, TimeEdge, TimeZone, Triple Cal and Flyagonal. ${go("risk", "Trade plan", "Trade plan")}</p>`;
 }
 
 function coming(Rk, Rd) {
-  const items = [], H = window.HEADS, end = H && H.coming_to ? Date.parse(H.coming_to) : Date.now() + 3 * 864e5, future = (e) => { const t = Date.parse(e.date); return t >= Date.now() && t <= end; };
+  const items = [], H = window.HEADS, end = H && H.coming_to ? Date.parse(H.coming_to) : Date.now() + 3 * 864e5, week = H && H.week_to ? Date.parse(H.week_to) : end,
+    top = ["Payrolls", "CPI", "FOMC", "Election"], future = (e) => { const t = Date.parse(e.date); return t >= Date.now() && (t <= end || (top.includes(e.kind) && t <= week)); };
   const rule = new Set((Rd && Rd.events || []).map((e) => e.title));  // the releases the calendar step-down reads
   const nyDay = (iso) => new Date(iso).toLocaleDateString("en-CA", {timeZone: "America/New_York"});
   const byDay = {};  // one line per US day: high-impact in bold, medium after it

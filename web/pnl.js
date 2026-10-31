@@ -18,11 +18,12 @@ function strip() {
   if (!accts.length) { $("plStrip").innerHTML = tile("Today", "–", "press Refresh from TWS (TWS must be running)"); return; }
   let tot = 0, totNav = 0, totIb = 0;
   const ch = T.nav_change || {}, prior = T.prior || {};
+  const stamp = T.ts ? new Date(T.ts).toLocaleString("en-US", {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York"}).replace(/,/g, "") + " ET" : "–";
   const tiles = accts.sort().map((a) => { const d = T.daily[a] || {}, nav = (T.nav || {})[a], v = ok(ch[a]) ? ch[a] : null;
     tot += v || 0; totNav += nav || 0; totIb += d.daily || 0;
     const since = prior[a] ? dlabel(prior[a].date) : "";
-    return tile(`${labels[a] || a} · change in NAV`, money(v), `NAV ${money(nav)} ${(T.currency || {})[a] || ""} · ${pctS(nav && ok(v) ? 100 * v / (nav - v) : null)} since ${since} close<br>IBKR's own day P&L ${money(d.daily)}`, cls(v)); });
-  $("plStrip").innerHTML = tile("All accounts · change in NAV", money(tot), `session ${T.session ? dlabel(T.session) : ""} · NAV ${money(totNav)}<br>IBKR's own day P&L ${money(totIb)}`, cls(tot)) + tiles.join("");
+    return tile(`${labels[a] || a} · change in NAV`, money(v), `NAV ${money(nav)} ${(T.currency || {})[a] || ""}, TWS capture ${stamp} · ${pctS(nav && ok(v) ? 100 * v / (nav - v) : null)} since ${since} close<br>IBKR's own day P&L ${money(d.daily)}`, cls(v)); });
+  $("plStrip").innerHTML = tile("All accounts · change in NAV", money(tot), `session ${T.session ? dlabel(T.session) : ""} · NAV ${money(totNav)}, TWS capture ${stamp}<br>IBKR's own day P&L ${money(totIb)}`, cls(tot)) + tiles.join("");
 }
 
 function weekly() {
@@ -66,7 +67,7 @@ function weekly() {
   const pal = ["var(--s2)", "var(--s3)", "var(--s1)", "var(--s4)"];
   lineChart($("plNav"), {label: "NAV per account", h: 220, series: A.map((a, k) => ({name: a.label, short: a.label, data: W.nav[a.id] || [], color: pal[k % 4], width: 1.8, dots: (W.nav[a.id] || []).length < 50})),
     fy: (v) => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k" : v.toFixed(0), ft: (v) => money(v)});
-  $("plNavLegend").innerHTML = legend(A.map((a, k) => [a.label, pal[k % 4]]));
+  $("plNavLegend").innerHTML = legend(A.map((a, k) => { const n = W.nav[a.id] || [], p = n[n.length - 1]; return [p ? `${a.label} ${money(p.v)}, close of ${shortDate(p.d)}` : a.label, pal[k % 4]]; }));
 }
 
 function tickers() {
@@ -114,11 +115,11 @@ function recon() {
     Object.entries(R.labels).map(([id, lab]) => `<a class="btnlink" href="/api/one-import/${encodeURIComponent(id)}.csv?date=${today}" data-acct="${esc(id)}">${esc(lab)} CSV</a>`).join("")}
     <span class="small muted">IBKR Flex format that ONE imports (fills on that Sydney date). ONE's "link trades into positions" step is still manual.</span>`;
   $("oiDate").addEventListener("change", () => document.querySelectorAll("#oneImport a[data-acct]").forEach((a) => { a.href = `/api/one-import/${encodeURIComponent(a.dataset.acct)}.csv?date=${$("oiDate").value}`; }));
-  const df = new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"});
-  $("rcFills").innerHTML = R.fills.length ? `<div class="chart" id="rcFillChart"></div><div class="capped"><div class="tbl"><table><thead><tr><th>Time (yours)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n" title="From TWS on the day (since Oct 31) and from IBKR Flex the next morning, once it is connected in the Recorder tab. A fill with neither shows –; the trade totals still include it from ONE">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
-    R.fills.map((f, i) => `<tr${i >= 30 ? ` class="xrow"` : ""}><td class="mono small">${f.time_utc ? df.format(new Date(f.time_utc)) : "–"}</td><td>${esc(f.label)}</td><td class="mono small">${esc(f.local_symbol || f.symbol)}</td><td>${f.side === "BOT" ? "Buy" : "Sell"}</td>
-      <td class="n">${f.qty}</td><td class="n">${fmt(f.price)}</td><td class="n">${f.commission ? fmt(f.commission) : "–"}</td>
-      <td><span class="chip ${f.status === "in ONE" ? "pos" : f.status === "not in ONE" ? "neg" : "muted"}">${esc(f.status)}</span></td><td class="small">${esc(f.one_trades.join(", ") || "–")}</td></tr>`).join("")}</tbody></table></div>${R.fills.length > 30 ? `<button type="button" class="ghost" data-cap="Show all ${R.fills.length}">Show all ${R.fills.length}</button>` : ""}</div>`
+  $("rcFills").innerHTML = R.fills.length ? `<div class="chart" id="rcFillChart"></div><div class="capped"><div class="tbl"><table><thead><tr><th>Time (ET · Melb)</th><th>Account</th><th>Contract</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n" title="From TWS on the day (since Oct 31) and from IBKR Flex the next morning, once it is connected in the Recorder tab. A fill with neither shows –; the trade totals still include it from ONE">Comm.</th><th>ONE</th><th>ONE trade</th></tr></thead><tbody>${
+    R.fills.map((f, i) => `<tr${i >= 30 ? ` class="xrow"` : ""} title="${esc(`execId ${f.exec_id} · order ${f.order_id}${f.parts > 1 ? ` · part ${f.part} of ${f.parts}` : ""}`)}"><td class="mono small">${esc(f.zones || "–")}</td><td>${esc(f.label)}</td><td class="mono small">${esc(f.local_symbol || f.symbol)}</td><td>${f.side === "BOT" ? "Buy" : "Sell"}</td>
+      <td class="n">${f.qty}${f.parts > 1 ? ` <span class="small muted">part ${f.part}/${f.parts}</span>` : ""}</td><td class="n">${fmt(f.price)}</td><td class="n">${f.commission ? fmt(f.commission) : "–"}</td>
+      <td><span class="chip ${f.status === "in ONE" ? "pos" : f.status === "not in ONE" ? "neg" : "muted"}">${esc(f.status)}</span></td><td class="small">${esc(f.one_trades.join(", ") || "–")}</td></tr>`).join("")}</tbody></table></div>${R.fills.length > 30 ? `<button type="button" class="ghost" data-cap="Show all ${R.fills.length}">Show all ${R.fills.length}</button>` : ""}</div>
+      <p class="note">Rows with the same contract, time and qty are parts of one order, not repeats: each has its own IBKR execId (hover a row) and its own commission. A fill is stored once per execId, and a corrected fill replaces the original.</p>`
     : `<div class="state">No fills recorded in the last 7 days yet. Fills are captured whenever the app refreshes from TWS (TWS itself only returns today's).</div>`;
   if (R.fills.length) {
     const byDay = {}, dd = new Intl.DateTimeFormat(undefined, {weekday: "short", day: "numeric", month: "short"});

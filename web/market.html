@@ -2,6 +2,7 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Market</title>
+<link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -637,7 +638,7 @@ function drawSectorRead(etfs) {
   const items = [
     [riskOn == null ? "" : riskOn ? "pos" : "wrn", "Risk appetite",
       riskOn == null ? "not enough data" : `${riskOn ? "Offense" : "Defense"} leading by ${fmt(Math.abs(od), 1)} pts over 20 days${ok(rNow) && ok(rSma) ? `, ratio ${rNow > rSma ? "above" : "below"} its 20-day average and ${rNow > r5 ? "rising" : "falling"} this week` : ""}.`,
-      riskOn == null ? "" : riskOn ? "Historically calmer weeks follow (5% drop ~15% of the time)." : "Historically rougher weeks follow (5% drop ~25% of the time vs ~15% when offense leads) — counted in Trade readiness."],
+      riskOn == null ? "" : riskOn ? "Historically calmer weeks follow." : "Historically rougher weeks follow: counted in Trade readiness."],
     [beat.length >= 6 ? "pos" : beat.length <= 3 ? "wrn" : "", "Leadership",
       `${beat.length} of ${live.length} sectors beat SPY over 20 days; ${above50.length} of ${live.length} are above their 50-day average.`,
       beat.length <= 3 ? `Narrow: only ${beat.map((r) => r.sym.split(":")[1]).join(", ") || "a few sectors"} beat SPY — the index is carried by its biggest names, so it can drop faster than breadth suggests.` : beat.length >= 6 ? "Broad: rallies are better supported, dips tend to be bought." : "Mixed leadership."],
@@ -698,7 +699,6 @@ function renderRegime() {
   else if (ok(br) && br >= 60 && ok(sct.offDef) && sct.offDef >= 0) { label = "Broad risk-on"; }
   else if (ok(sct.offDef) && sct.offDef <= -1) { label = "Defensive rotation"; }
   if (ok(br)) why.push(`S5FI ${fmt(br, 0)}%`); if (ok(sct.b20)) why.push(`SPY 20D ${sgn(sct.b20)}%`); if (ok(sct.offDef)) why.push(`offense − defense ${sgn(sct.offDef)}%`);
-  if (ODDS && ODDS.rotation && ODDS.rotation.stats) why.push(`${ODDS.rotation.state} rotation: a 5% drop followed ${Math.round(ODDS.rotation.stats.dd5)}% of the time (normally ${Math.round(ODDS.base)}%)`);
   $("regime").textContent = label; $("regimeWhy").textContent = why.join(" · ") || "waiting for breadth and sectors";
 }
 
@@ -752,11 +752,11 @@ function renderCal() {
   const ev = calEvents.filter((x) => calFilter === "both" ? true : calFilter === "high" ? isHigh(x) : !isHigh(x));
   const label = calFilter === "both" ? "medium or high importance" : calFilter + " importance";
   if (!ev.length) { $("calBody").innerHTML = `<div class="state">${calNote ? esc(calNote) : `No ${label} US events in the next 7 days.`}</div>`; return; }
-  const dayF = new Intl.DateTimeFormat(undefined, {weekday: "short", month: "short", day: "numeric"}), timeF = new Intl.DateTimeFormat(undefined, {hour: "numeric", minute: "2-digit"});
-  const byDay = new Map(); ev.forEach((x) => { const k = dayF.format(new Date(x.date)); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); });
+  const part = (x) => { const w = (x.zones || x.date).split(" "); return [w.slice(0, 3).join(" "), w.slice(3).join(" ")]; };  // "Tue 3 Nov", "7:00 PM ET · Wed 11:00 AM Melb"
+  const byDay = new Map(); ev.forEach((x) => { const k = part(x)[0]; if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); });
   $("calBody").innerHTML = `<div class="tbl"><table><thead><tr><th>Time</th><th>Event</th><th class="n">Forecast</th><th class="n">Previous</th><th class="n">Actual</th></tr></thead><tbody>${
-    [...byDay].map(([day, items]) => `<tr><td colspan="5" style="padding-top:10px"><h3>${esc(day)}</h3></td></tr>` + items.map((x) => `<tr><td class="mono small">${esc(timeF.format(new Date(x.date)))}</td><td>${isHigh(x) ? `<span class="chip acc">high</span>` : `<span class="chip muted">med</span>`} ${esc(x.title)}${x.period ? ` <span class="muted small">${esc(x.period)}</span>` : ""}</td><td class="n">${x.forecast ?? "–"}</td><td class="n">${x.previous ?? "–"}</td><td class="n">${x.actual ?? "–"}</td></tr>`).join("")).join("")
-  }</tbody></table></div><span class="small muted">${calNote ? esc(calNote) + " " : ""}${ev.length} ${label} events · times in your time zone.</span>`;
+    [...byDay].map(([day, items]) => `<tr><td colspan="5" style="padding-top:10px"><h3>${esc(day)}</h3></td></tr>` + items.map((x) => `<tr><td class="mono small">${esc(part(x)[1])}</td><td>${isHigh(x) ? `<span class="chip acc">high</span>` : `<span class="chip muted">med</span>`} ${esc(x.title)}${x.period ? ` <span class="muted small">${esc(x.period)}</span>` : ""}</td><td class="n">${x.forecast ?? "–"}</td><td class="n">${x.previous ?? "–"}</td><td class="n">${x.actual ?? "–"}</td></tr>`).join("")).join("")
+  }</tbody></table></div><span class="small muted">${calNote ? esc(calNote) + " " : ""}${ev.length} ${label} events · US dates, times in ET and Melbourne.</span>`;
 }
 
 /* ============================ Account ============================== */

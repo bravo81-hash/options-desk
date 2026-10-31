@@ -321,7 +321,9 @@ def earnings_rows(now, iss=None, nasdaq=None, watched=None):
     for s, r in pool.items():
         when, session, firm = report_time(r, nasdaq)
         if when and now <= when <= end:
-            rows.append({"sym": s, "name": r["name"], "when": _iso(when), "session": session, "firm": firm, "weight": round(r.get("weight") or 0, 2), "top": s in top, "groups": watched.get(s, [])})
+            us = when.astimezone(ET)
+            rows.append({"sym": s, "name": r["name"], "when": _iso(when), "zones": market.two_zones(when) if firm else f"{us:%a} {us.day} {us:%b}, US date", "session": session, "firm": firm,
+                         "weight": round(r.get("weight") or 0, 2), "top": s in top, "groups": watched.get(s, [])})
     return sorted(rows, key=lambda x: (x["when"], -x["weight"]))
 
 
@@ -426,8 +428,30 @@ def is_break(m):
     return m["ret"] <= -LEADER_PCT or (m["z"] is not None and m["z"] <= -LEADER_SD)
 
 
-def spillover():
-    """Each leader's last two sessions. A break by a top-10 issuer or SMH is an alert; the other leaders are shown only."""
+def last_session(now):
+    """The last session whose 16:00 ET close has passed, as an ISO date."""
+    from .accounts import US_HOLIDAYS
+    t = now.astimezone(ET)
+    d = t.date() if t.time() >= dt.time(16, 0) else t.date() - dt.timedelta(days=1)
+    while d.weekday() >= 5 or d.isoformat() in US_HOLIDAYS:
+        d -= dt.timedelta(days=1)
+    return d.isoformat()
+
+
+def live_breaks(moves, now):
+    """Breaks that still count. A break flags the next session, so it expires at that session's close."""
+    fresh = last_session(now)
+    return [m for m in moves if is_break(m) and m["date"] >= fresh]
+
+
+def _day(d):
+    d = dt.date.fromisoformat(str(d)[:10])
+    return f"{d:%a} {d.day} {d:%b}"
+
+
+def spillover(now=None):
+    """Each leader's last two sessions. A live break by a top-10 issuer or SMH is an alert; the other leaders are shown only."""
+    now = now or _now()
     who, iss = leaders(), issuers()
     names = list(who) + ["SMH"]
     last = db.query("SELECT MAX(date) d FROM bars_daily WHERE symbol='SPY'")[0]["d"] if names else None
@@ -442,11 +466,13 @@ def spillover():
         if not mv:
             continue
         counts = s == "SMH" or "SPX top 10" in who.get(s, [])
-        hit = [m for m in mv if is_break(m)]
-        rows.append({"sym": s, "groups": who.get(s, ["ETF"]), "weight": round(iss[s]["weight"], 2) if s in iss else None, "moves": mv, "alert": bool(hit) and counts, "broke": bool(hit)})
+        hit = live_breaks(mv, now)
+        old = [m for m in mv if is_break(m) and m not in hit]
+        rows.append({"sym": s, "groups": who.get(s, ["ETF"]), "weight": round(iss[s]["weight"], 2) if s in iss else None, "moves": mv, "alert": bool(hit) and counts, "broke": bool(hit),
+                     "expired": _day(old[0]["date"]) if old else None})
         if hit and counts:
             m = hit[0]
-            alerts.append(f"{s} {m['ret']:+.1f}% on {m['date']}" + (f" ({m['z']:+.1f}σ)" if m["z"] is not None else ""))
+            alerts.append(f"{s} {m['ret']:+.1f}% on {_day(m['date'])}" + (f" ({m['z']:+.1f}σ)" if m["z"] is not None else ""))
     rows.sort(key=lambda r: (not r["alert"], r["moves"][0]["z"] if r["moves"][0]["z"] is not None else 0))
     return {"date": last, "rows": rows, "alerts": alerts}
 
@@ -506,7 +532,7 @@ STRESS_AMBER, STRESS_RED = 3, 5
 def stress():
     fired, read = stress_frame()
     if not len(fired):
-        return {"n": None, "of": len(SIGNALS), "signals": [], "hist": []}
+        return {"n": None, "of": len(SIGNALS), "signals": [], "hist": [], "no_data": []}
     last = read.iloc[-1]
     sig = []
     for k, (group, name, rule, f) in SIGNALS.items():
@@ -519,7 +545,7 @@ def stress():
     for s in sig:
         s["rate"] = round(float(rate[s["id"]]), 1)
     now_n = int(n.iloc[-1])
-    return {"n": now_n, "of": len(SIGNALS), "date": str(fired.index[-1]), "signals": sig, "level": "red" if now_n >= STRESS_RED else "amber" if now_n >= STRESS_AMBER else "calm",
+    return {"n": now_n, "of": sum(1 for s in sig if s["on"] is not None), "date": str(fired.index[-1]), "signals": sig, "level": "red" if now_n >= STRESS_RED else "amber" if now_n >= STRESS_AMBER else "calm",
             "pct": round(100.0 * float((year < now_n).mean())), "hist": [{"d": str(d), "n": int(v)} for d, v in n.iloc[-30:].items()], "no_data": [s["name"] for s in sig if s["on"] is None]}
 
 
@@ -536,6 +562,14 @@ def feeds(cal):
     return out
 
 
+def week_end(now):
+    """The end of the ET week being traded: from Saturday on, the week ahead."""
+    d = now.astimezone(ET).date()
+    if d.weekday() >= 5:
+        d += dt.timedelta(days=7 - d.weekday())
+    return dt.datetime.combine(d + dt.timedelta(days=6 - d.weekday()), dt.time(23, 59), tzinfo=ET)
+
+
 def payload(now=None):
     """Reads cached copies only, so any request can call it."""
     now = now or _now()
@@ -545,9 +579,9 @@ def payload(now=None):
     earn = earnings_rows(now)
     f = feeds(cal)
     score = event_score(now, macro, earn, {"macro": f["calendar"]["ok"], "earnings": f["scan"]["ok"]})
-    sp = spillover()
+    sp = spillover(now)
     st = stress()
     night = overnight(now)
     return {"ts": _box("futures").get("ts") or _box("scan").get("ts"), "now": _iso(now), "score": score, "macro": macro, "earnings": earn, "sessions": by_session(earn), "overnight": night, "leaders": sp,
-            "stress": st, "feeds": f, "feed_note": cal.get("note") or "", "live_to": cal.get("live_to"), "known_to": market.known_to(), "coming_to": window_end(now, 72).isoformat(), "weights_asof": (_data("weights") or {}).get("spy_asof"),
+            "stress": st, "feeds": f, "feed_note": cal.get("note") or "", "live_to": cal.get("live_to"), "known_to": market.known_to(), "coming_to": window_end(now, 72).isoformat(), "week_to": week_end(now).isoformat(), "weights_asof": (_data("weights") or {}).get("spy_asof"),
             "alerts": night["alerts"] + sp["alerts"]}
