@@ -40,8 +40,9 @@
     <div class="grid" id="acGrid">
       <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div><div id="acJournal"></div>
         <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
-      <section class="panel c7"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
+      <section class="panel c7"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div></section>
       <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 trading days, plus this week's payrolls, CPI, FOMC and elections · US dates</span></header><div id="acComing"></div></section>
+      <section class="panel c12"><header><h2>A14 ladder</h2><span class="small muted" id="acLadMeta"></span></header><div id="acLadder"></div></section>
       <div class="c12"><div class="grid" data-subs data-closed id="acMore">
         <section class="panel c12" data-sub="Event risk"><header><h2>Event risk</h2><span class="small muted" id="acEvMeta"></span></header><div id="acEvent"><div class="state loading">Reading the calendars…</div></div></section>
         <section class="panel c12" data-sub="Overnight"><header><h2>Overnight and pre-session</h2><span class="small muted" id="acNightMeta"></span><button type="button" class="ghost" id="acHdRefresh">Refresh</button></header><div id="acNight"><div class="state loading">Reading futures…</div></div></section>
@@ -183,7 +184,7 @@
     <div class="panel">
       <form class="row" id="a14Form">
         <label class="lbl" for="a14Sym">Underlying</label><select id="a14Sym"><option value="SPX,RUT">SPX + RUT</option><option>SPX</option><option>RUT</option></select>
-        <label class="lbl" for="a14Dmin">DTE</label><input id="a14Dmin" type="number" value="14" min="1" max="200"> – <input id="a14Dmax" type="number" value="45" min="1" max="200">
+        <label class="lbl" for="a14Dmin">DTE</label><input id="a14Dmin" type="number" value="42" min="1" max="200"> – <input id="a14Dmax" type="number" value="56" min="1" max="200">
         <label class="lbl" for="a14Exit" title="days until you plan to close or roll; blank = your typical hold for that entry DTE, from your closed A14s">Exit after</label><input id="a14Exit" type="number" value="" placeholder="your hold" min="1" max="120"> days
         <label class="lbl" for="a14Vol" title="volatility for the odds at the exit date">Odds from</label><select id="a14Vol"><option value="rv20">realised 20d</option><option value="iv">implied (ATM)</option><option value="custom">custom %</option></select><input id="a14VolC" type="number" value="15" min="3" max="80" hidden>
         <label class="lbl" for="a14Cr" title="minimum net credit per lot in points; -1 allows up to a 1-point debit">Min credit</label><input id="a14Cr" type="number" value="-1" step="0.5">
@@ -194,7 +195,7 @@
       </form>
       <div class="small muted note" id="a14Meta" style="margin-top:6px"></div>
       <div class="small muted note" id="a14DteNote">DTE defaults to 14–45: your closed A14s earned far more per day held there than at 46+ DTE (per-day numbers below, from the Journal). Widen it to compare: the per-day column uses your real holding period for each entry DTE.
-        Ranked by default on <b>Since 2009 %/day</b>: each candidate's strikes, in units of today's implied move, rebuilt on every past Friday at the same DTE (in today's VIX/VIX3M band when it has 80+ entries) and managed with your Trade plan exits (+5/+7% target, −20% stop, 2 DTE, slow exit), after costs. The E/risk columns are today's one-path model odds; history is the better guide to how a shape behaves when the market moves.</div>
+        Ranked by default on <b>Since 2009 %/day</b>: each candidate's strikes, in units of today's implied move, rebuilt on every past Friday at the same DTE (in today's VIX/VIX3M band when it has 80+ entries) and managed with your Trade plan exits (+5/+7% target, −20% stop, 7 DTE, slow exit), after costs. The E/risk columns are today's one-path model odds; history is the better guide to how a shape behaves when the market moves.</div>
       <div id="a14Trend" style="margin-top:10px"></div>
     </div>
     <div class="grid" data-subs id="tab-a14-grid">
@@ -217,6 +218,7 @@
       <section class="panel c12" data-sub="Weekly"><header><h2>Weekly P&amp;L by account · change in NAV</h2><span class="small muted">Change in each account's net liquidation value, Monday–Friday (US dates) · % of NAV at the start of the week · hover a cell for its days and IBKR's own daily figure</span></header><div id="plWeekly"></div></section>
       <section class="panel c6" data-sub="Weekly"><header><h2>Monthly</h2><span class="small muted">same daily P&amp;L, by calendar month</span></header><div id="plMonthly"></div></section>
       <section class="panel c6" data-sub="Weekly"><header><h2>NAV</h2><span class="small muted">at each close, from IBKR's statement where Flex has it, so it can differ from the TWS capture in the strip above</span></header><div class="chart" id="plNav"></div><div id="plNavLegend"></div></section>
+      <section class="panel c12" data-sub="13-week target"><header><h2>1% a week · 13-week average</h2><span class="small muted">Each account's whole NAV change, finished weeks only</span></header><div id="plTarget"></div></section>
       <section class="panel c12" data-sub="Today"><header><h2>Today by ticker</h2><span class="small muted">In account currency (AUD) · marked to market: each contract's value now minus its value at the last close, plus cash from today's fills · <span id="plTickerNote"></span></span></header><div class="tcards" id="plTicker"></div></section>
       <section class="panel c12" data-sub="Reconciliation"><header><h2>Reconciliation · ONE vs IBKR</h2><span class="small muted" id="rcMeta"></span></header><div id="rcBody"></div></section>
       <section class="panel c12" data-sub="Fills &amp; ONE import"><header><h2>Fills · last 7 days</h2><span class="small muted">every IBKR execution this app has seen, kept even after TWS forgets them · matched to your open ONE trades</span></header>
@@ -340,7 +342,7 @@
       </div>
       <nav class="gtoc">
         <a href="#g-start">Set-up</a><a href="#g-daily">Daily routine</a><a href="#g-ready">Trade readiness</a><a href="#g-heads">Event risk &amp; overnight</a><a href="#g-market">Market</a><a href="#g-vol">Term structure, Calendar scanner, Skew</a>
-        <a href="#g-risk">Risk grid</a><a href="#g-em">Expected moves</a><a href="#g-a14">A14 scanner</a><a href="#g-pnl">P&amp;L &amp; Recon</a><a href="#g-journal">Journal</a>
+        <a href="#g-risk">Risk grid</a><a href="#g-em">Expected moves</a><a href="#g-a14rules">A14 rules</a><a href="#g-a14">A14 scanner</a><a href="#g-pnl">P&amp;L &amp; Recon</a><a href="#g-journal">Journal</a>
         <a href="#g-evid">Evidence &amp; Recorder</a><a href="#g-gloss">Glossary</a><a href="#g-trouble">If something looks wrong</a>
       </nav>
     </div>
@@ -457,12 +459,38 @@
         </ol>
       </section>
 
+      <section class="panel c6" id="g-a14rules" data-sub="A14 rules"><header><h2>The A14 rules</h2><span class="small muted">SPX and RUT, from 2 Nov 2026</span></header>
+        <ul class="gl">
+          <li><b>Size:</b> 1.5% of NAV lost at the −20% stop, so 7.5% of NAV worst case an id. Only the readiness bar scales it.</li>
+          <li><b>Lots:</b> The same lots in every account, worked out on the smallest NAV, so none goes over 1.5%.</li>
+          <li><b>Exit:</b> +7% target, −20% stop, out by 7 DTE. Watched every day.</li>
+          <li><b>Adds:</b> None. New risk is always a new id.</li>
+          <li><b>Ladder:</b> At most 4 ids per ticker and account. Adjustment days are Monday, Wednesday and Friday in New York.</li>
+          <li><b>Entry:</b> Friday, one id per ticker, the Friday expiry nearest 49 DTE (42–56). Skip it with 4 open.</li>
+          <li><b>Regime:</b> One structure. The tent sits 0.2 sd higher with the index more than 1% above its 20-day average, 0.2 sd lower more than 1% below, centred otherwise.</li>
+          <li><b>Strikes:</b> The desk's sd shape, shown in Actions → New trades. No hand-picking.</li>
+          <li><b>Adjust:</b> Reshapes only on a window day, on the Trade plan's gates. None at 21 DTE or less.</li>
+          <li><b>Target:</b> 1% of NAV a week per account, read on a 13-week average in P&amp;L → 13-week target.</li>
+        </ul>
+        <p class="note">Ids entered before 2 Nov keep their own lots and strikes and aren't scored against this page, though the Trade plan applies the 7 DTE exit and the windows to them from now on. The Journal shows how older trades would have scored only with hindsight switched on. Flags, not orders.</p>
+      </section>
+      <section class="panel c6" id="g-a14why" data-sub="A14 rules"><header><h2>What the numbers said</h2><span class="small muted">model, every Friday since 2009</span></header>
+        <ul class="gl">
+          <li><b>Exit at 7 DTE:</b> beat 2 DTE at every entry DTE and halved the losses over 50% of margin.</li>
+          <li><b>Entry at 42–56 DTE:</b> beat entries at 35 DTE or less. A −5% and +10 vol shock costs about $3,100 per $10k of worst case at 45 DTE, against $6,000 at 14 and $8,500 at 7.</li>
+          <li><b>Cap of 4:</b> cost almost nothing against no cap, with less swing.</li>
+          <li><b>Daily stops:</b> checking stops only on window days raised losses over 50% of margin from 0.6% to 1.8% of trades, so targets and stops aren't on the window timetable.</li>
+          <li><b>Vega and gamma:</b> vega is about 2–3% of worst case at every DTE, so capping worst case caps vega. A 1% index move costs about a day's theta; the 7 DTE exit keeps gamma out of the last week.</li>
+          <li><b>One structure:</b> three regime versions added under a point a trade. Regime pays through size, which is the readiness bar's job.</li>
+        </ul>
+        <p class="small"><b>Read this with the target.</b> The long-run model earns far less than recent live months did, which had no big market shock: about +0.02% of NAV a week per 1% of NAV of worst case an id, positive in 13 of 18 years. At this size that's about +0.15% a week, with a worst week near −10% and a worst drawdown near −53%. Four ids per ticker on two tickers is about 60% of NAV worst case. A 5-day SPX fall of 5% or more has come about 2.5 times a year since 2009.</p>
+      </section>
       <section class="panel c12" id="g-a14" data-sub="A14 scanner"><header><h2>A14 scanner (put BWBs on SPX and RUT)</h2></header>
         <div class="two">
           <ol>
             <li><b>Fresh chain:</b> <i>Update all</i> refreshes it, and it also runs by itself after the close. Outside market hours it uses Friday's / yesterday's closing quotes.</li>
-            <li><b>Check the trend panel first.</b> Your own A14s entered above the 20-day average made more than those entered below it, but both made money. In the 2009–2026 model, below the average with VIX/VIX3M between 0.834 and 0.90 was the best A14 cell, so the readiness bar doesn't step down for it there; in steep contango (rare) or a flat term structure it still does. See the size rules in the ribbon's <i>Why</i> pop-up.</li>
-            <li><b>Set the filters:</b> Underlying, DTE window (default 14–45, where your A14s earned the most per day held), <i>Exit after</i> (leave blank to use your typical hold for each entry DTE, from your closed A14s), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
+            <li><b>Check the trend panel first.</b> Your own A14s entered above the 20-day average made more than those entered below it, but both made money. In the 2009–2026 model, below the average with VIX/VIX3M between 0.834 and 0.90 was among the best A14 cells, so the readiness bar doesn't step down for it there; in steep contango (rare) or a flat term structure it still does. See the size rules in the ribbon's <i>Why</i> pop-up.</li>
+            <li><b>Set the filters:</b> Underlying, DTE window (default 42–56, the rule's entry window; widen it to look around), <i>Exit after</i> (leave blank to use your typical hold for each entry DTE, from your closed A14s), <i>Odds from</i> (realised 20-day vol is the default), <i>Min credit</i> (−1 allows up to a 1-point debit), <i>Upper long</i> range in % from spot. Press <b>Scan</b>.</li>
             <li><b>Read the heatmap</b> ("Where the edge is"): rows = expiries, columns = short strike % below spot, greener = better expected return. Click a cell to filter the table to it.</li>
             <li><b>Pick from the table.</b> Rank by <i>E/risk per day</i> (default; rows tagged <b>fast</b> meet your pace target, <b>slow</b> earn under half of it), E/risk (capital use — divides by your real holding period, so it compares short and long expiries fairly), <i>Stress loss</i> (smallest loss in a −5%, IV +5 sell-off first), θ/risk, P(profit) or profit/risk. Tick <i>your usual shapes only</i> to match how you normally build them. <b>Hover the # badge</b> for why a setup ranks there: what it is ranked on, its strengths (For) and what to check (Watch).</li>
             <li><b>Click a row</b> for its risk graph: today, after your exit days, and at expiry, with the ±1σ zone shaded. Check the <b>−1σ at exit</b> and <b>Stress at exit</b> losses before placing it (red dashed line = the exit curve with IV 5 points higher). A setup marked <i>fragile</i> loses more than half its risk in the stress.</li>

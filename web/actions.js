@@ -19,7 +19,7 @@ const dist = (t) => { const q = t.plan, a = q && q.at, pc = (x) => ok(x) && ok(t
 const lv = (L, u) => !L ? "–" : L.past ? "already past" : [L.dn ? `${u} ↓ <b class="mono">${Math.round(L.dn).toLocaleString()}</b>` : null, L.up ? `↑ <b class="mono">${Math.round(L.up).toLocaleString()}</b>` : null].filter(Boolean).join(" · ") || "beyond −25% / +15%";
 
 /* ---------- filters: ticker, first expiry, account (remembered on this browser) ---------- */
-let L = null, SCAN = null;
+let L = null, LAD = null;
 const FK = "od.acFilt";
 let F = (() => { try { return JSON.parse(localStorage.getItem(FK)) || {}; } catch (e) { return {}; } })();
 const expKey = (t) => new Date(t.firstExp).toLocaleDateString("en-CA", {timeZone: "America/New_York"});  // expiry date in New York (16:00 ET is next morning in Sydney)
@@ -39,7 +39,7 @@ function filters() {
     return `<label class="small">${label} <select data-f="${k}"><option value="">All</option>${Object.keys(n).sort().map((v) => `<option value="${esc(v)}"${F[k] === v ? " selected" : ""}>${esc(txt(v))} (${n[v]})</option>`).join("")}</select></label>`;
   };
   el.innerHTML = `${box("sym", "Ticker")}${box("exp", "Expiry", expTxt)}${box("acct", "Account")}
-    ${active() ? `<button type="button" class="ghost" id="acFClear">Clear filters</button><span class="small muted">showing ${pick(L.Rk).trades.length} of ${T.length} open trades · releases and data checks are not filtered</span>` : `<span class="small muted">filters apply to the trade lists and the A14 shapes (ticker)</span>`}`;
+    ${active() ? `<button type="button" class="ghost" id="acFClear">Clear filters</button><span class="small muted">showing ${pick(L.Rk).trades.length} of ${T.length} open trades · releases and data checks are not filtered</span>` : `<span class="small muted">filters apply to the trade lists and the A14 ladder (ticker)</span>`}`;
   el.querySelectorAll("select").forEach((s) => s.addEventListener("change", () => { F[s.dataset.f] = s.value || undefined; save(); render(); }));
   const c = $("acFClear"); if (c) c.addEventListener("click", () => { F = {}; save(); render(); });
 }
@@ -48,7 +48,7 @@ const save = () => { try { localStorage.setItem(FK, JSON.stringify(F)); } catch 
 function render() {
   filters();
   const V = pick(L.Rk);
-  doToday(V); orders(V); coming(V, L.Rd); ideasRender();
+  doToday(V); orders(V); coming(V, L.Rd); ladder();
 }
 
 async function load() {
@@ -59,11 +59,11 @@ async function load() {
     window.riskActions ? window.riskActions().catch(() => null) : null,
     api("/api/readiness").catch(() => null), api("/api/freshness").catch(() => null),
     window.DESK_CLOUD ? null : api("/api/snapshot").catch(() => null), window.loadHeads ? window.loadHeads().catch(() => null) : null]);
-  L = {Rk, Rd}; SCAN = null;
+  L = {Rk, Rd}; LAD = null;
   headline(Rd); render(); entries(Rd); checks(Rk, Fr, Sn); conditions(); matrix(Rd);
   if (window.renderHeads) window.renderHeads(Rk);
   logPlans(Rk); api("/api/journal/due").then(journalLine).catch(() => {});  // apart from the rest: the first build takes a few seconds
-  ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
+  api("/api/a14/rules").catch(() => ({error: "A14 rules unavailable"})).then((d) => { LAD = d; ladder(); });
 }
 
 /* what Trade plan said today, for Journal > Discipline: without this, no fill can be scored against the call. Laptop only. */
@@ -191,29 +191,31 @@ function entries(Rd) {
   const open = Rd.strategies.filter((s) => s.size !== "Stand aside");
   $("acNewMeta").innerHTML = `market size: <b class="${SIZE_CLS[Rd.size] || ""}">${esc(Rd.size)}</b>`;
   $("acNew").innerHTML = `<div class="kv mini">${Rd.strategies.map((s) => `<div><span class="lbl">${esc(s.name)}</span><b class="${SIZE_CLS[s.size] || ""}">${esc(s.size)}</b>${sizeMeter(s.size)}<span class="small muted">${esc(s.notes[0] || "")}</span></div>`).join("")}</div>
-    <p class="small">${open.length ? `Open for new trades: <b>${open.map((s) => esc(s.name)).join(", ")}</b>. Best shapes below.` : `<b>No new entries today.</b> ${esc(Rd.why)}.`} <a href="#" class="small" data-ready="1">why →</a></p>`;
+    <p class="small">${open.length ? `Open for new trades: <b>${open.map((s) => esc(s.name)).join(", ")}</b>. ` : `<b>No new entries today.</b> ${esc(Rd.why)}.`} <a href="#" class="small" data-ready="1">why →</a></p>`;
 }
 
-async function ideas(Rd) {
-  const want = Rd && !Rd.error ? Rd.strategies.filter((x) => x.name.startsWith("A14") && x.size !== "Stand aside").map((x) => x.name.split(" ")[1]) : [];
-  $("acIdeas").innerHTML = `<div class="state">Ranking A14 shapes on history…</div>`;
-  const A = await api("/api/a14/scan?sym=SPX,RUT&vol=rv20").catch(() => null);
-  SCAN = {A, want}; ideasRender();
-}
-
-function ideasRender() {
-  const el = $("acIdeas"); if (!SCAN) return;
-  const {A, want} = SCAN;
-  if (!A || A.error || !A.candidates) { el.innerHTML = `<div class="state">${esc((A && A.error) || "No A14 chain yet.")} ${go("a14", "A14 scanner", "Scanner")}</div>`; return; }
-  const pickN = (u) => A.candidates.filter((c) => c.sym === u && ok(c.hist_day)).sort((a, b) => b.hist_day - a.hist_day).slice(0, 2);
-  const syms = ["SPX", "RUT"].filter((u) => !F.sym || F.sym === u);
-  if (!syms.length) { el.innerHTML = `<div class="state small">No A14 scan for ${esc(F.sym)}.</div>`; return; }
-  const rows = syms.flatMap((u) => pickN(u).map((c) => ({...c, live: want.includes(u)})));
-  el.innerHTML = `<div class="tbl"><table><thead><tr><th>Best A14 shape on history</th><th class="n">Credit</th><th class="n">Risk</th><th class="n">Since 2009</th><th class="n">Target / stop</th></tr></thead><tbody>${
-    rows.map((c) => `<tr class="${c.live ? "" : "muted"}"><td>${c.sym} ${esc(String(c.expiry).slice(4, 6) + "/" + String(c.expiry).slice(6))} <span class="small muted">${c.dte}d</span> <span class="mono">${Math.round(c.upper)}/${Math.round(c.short)}/${Math.round(c.lower)}</span>${c.live ? "" : ` <span class="chip">stand aside</span>`}</td>
-      <td class="n mono ${cls(c.credit)}">${c.credit > 0 ? "+" : ""}${c.credit.toFixed(2)}</td><td class="n">${money(c.risk)}</td><td class="n ${cls(c.hist_avg)}">${pctS(c.hist_avg)} <span class="small muted">${c.hist_day.toFixed(2)}%/d</span></td>
-      <td class="n small">${Math.round(100 * c.hist_ptgt)}% / ${Math.round(100 * c.hist_pstop)}%</td></tr>`).join("")}</tbody></table></div>
-    <p class="note">Top two per index by return per day held since 2009 in today's term structure, with your exits. Greyed = the readiness bar says stand aside for that index. ${go("a14", "A14 scanner", "Scanner")}</p>`;
+/* the A14 ladder: ids open per ticker and account against the cap, today's window, and the id the rules open next */
+function ladder() {
+  const el = $("acLadder"); if (!LAD) { el.innerHTML = `<div class="state small">Reading the A14 ladder…</div>`; return; }
+  if (LAD.error) { el.innerHTML = `<div class="state">${esc(LAD.error)}</div>`; return; }
+  const P = LAD.rule, accts = Object.keys(LAD.navs), known = !!(L.Rk && L.Rk.trades), day = window.nyDay(), syms = ["SPX", "RUT"].filter((u) => !F.sym || F.sym === u);
+  const openIn = (u, a) => (known ? L.Rk.trades : []).filter((t) => t.strategy === "A14" && t.underlying === u && t.acctLabel === a).map((t) => window.dteOf(t.firstExp)).sort((x, y) => y - x);
+  const strip = (D, n) => bulletSvg(n ? n.dte : null, {w: 190, lo: 0, hi: Math.max(60, ...D), color: "var(--accent)", label: `${D.length} open: ${D.join(", ")} DTE · entry band ${P.dte_lo}–${P.dte_hi} · out at ${P.time_dte}`,
+    zones: [{from: P.dte_lo, to: P.dte_hi, color: "var(--accent)"}], marks: [{v: P.time_dte, color: "var(--warn)", label: `out at ${P.time_dte} DTE`}, ...D.map((v) => ({v, color: "var(--ink)", width: 1.5, label: `${v} DTE`}))]});
+  const expiry = (e) => new Date(Date.UTC(+e.slice(0, 4), +e.slice(4, 6) - 1, +e.slice(6))).toLocaleDateString("en-AU", {day: "numeric", month: "short", timeZone: "UTC"});
+  const row = (u) => { const n = LAD.next[u], D = accts.map((a) => openIn(u, a)), most = Math.max(0, ...D.map((x) => x.length));
+    const size = ((L.Rd && L.Rd.strategies) || []).find((s) => s.name === `A14 ${u}`), step = size ? size.size : null, lots = n && step ? n.lots[step] : null;
+    const state = !known ? ["", "Ids unknown"] : most > P.cap ? ["wrn", "⚠ Over the cap"] : most === P.cap ? ["muted", "At the cap"] : step === "Stand aside" ? ["muted", "Stand aside"] : day === P.entry_day + 1 ? ["pos", "✓ Entry today"] : ["muted", "◔ Entry Friday"];
+    const shift = n && n.tilt ? `tilt ${n.tilt > 0 ? "+" : "−"}${Math.abs(n.tilt)} sd, index ${pctS(n.vs20)} vs 20-day` : "centred";
+    return `<tr><td><b>${u}</b><br><span class="chip ${state[0]}">${state[1]}</span></td>
+      ${accts.map((a, k) => `<td><b class="mono ${D[k].length > P.cap ? "wrn" : ""}">${known ? D[k].length : "–"}</b> <span class="small muted">of ${P.cap}</span> ${strip(D[k], n)}</td>`).join("")}
+      <td>${n ? `${expiry(n.expiry)} <span class="small muted">${n.dte}d</span> <span class="mono">${Math.round(n.upper)}/${Math.round(n.short)}/${Math.round(n.lower)}</span><br><span class="small muted">${esc(shift)}</span>` : `<span class="small muted">No Friday expiry in ${P.dte_lo}–${P.dte_hi} DTE on the fetched chain</span>`}</td>
+      <td class="n">${n ? `${money(n.risk)}<br><span class="small muted">${Math.abs(n.credit).toFixed(2)} ${n.credit >= 0 ? "credit" : "debit"}</span>` : "–"}</td>
+      <td class="n">${ok(lots) ? `<b class="${lots ? "" : "wrn"}">${lots}</b> <span class="small muted">at ${esc(WORD[step] || step)}</span><br><span class="small muted">full size ${n.lots["Full size"]}</span>` : "–"}</td>
+      <td class="n small">${n && lots ? accts.map((a) => `${esc(a)} ${(100 * lots * n.risk * P.stop / 100 / LAD.navs[a]).toFixed(2)}%`).join("<br>") : "–"}</td></tr>`; };
+  $("acLadMeta").textContent = `${window.DAYS[day]} in New York: ${P.windows.includes((day + 6) % 7) ? "a window day for adjustments" : "no adjustments today; targets and stops still count"}${LAD.chain_ts ? ` · next id priced on the ${new Date(LAD.chain_ts).toLocaleString([], {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"})} chain` : ""}`;
+  el.innerHTML = `<div class="tbl"><table><thead><tr><th>Ticker</th>${accts.map((a) => `<th>${esc(a)} ids</th>`).join("")}<th>Next id</th><th class="n">Risk a lot</th><th class="n">Lots</th><th class="n">Loss at −${P.stop}%</th></tr></thead><tbody>${syms.map(row).join("")}</tbody></table></div>
+    <p class="note">Bars are open ids by DTE, the dot is the next id, the shaded band the ${P.dte_lo}–${P.dte_hi} DTE entry window and the amber line the ${P.time_dte} DTE exit. Same lots in every account, sized on the smallest NAV: ${money(LAD.worst)} of worst case an id at full size, ${money(LAD.stop_usd)} at the stop. ${go("guide", "A14 rules", "A14 rules")} ${go("a14", "A14 scanner", "Scanner")}</p>`;
 }
 
 function orders(Rk) {

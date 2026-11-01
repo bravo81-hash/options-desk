@@ -31,7 +31,8 @@ from .readiness import ivts_band
 
 START = "2009-10-01"
 INDEX_NAME = {"^GSPC": "SPX", "^RUT": "RUT"}
-VERSION = 8
+VERSION = 9
+TIME_DTE = 7  # the A14 card's time stop
 SKEW = {"SPX": (0.798, -1.102, 1.584), "RUT": (0.875, -0.735, 1.174)}  # fitted on your ONE fills, Jun-Oct 2026
 GEOM = {"SPX": (0.0, 0.29, 0.38), "RUT": (0.05, 0.33, 0.44)}  # upper offset, upper wing, lower wing (sd units)
 COMM, SLIP = 1.36, {"SPX": 0.25, "RUT": 0.15}
@@ -202,7 +203,7 @@ def a14_paths(D, u, dte, lag=0):
     return out
 
 
-def a14_managed(D, u, dte, tp=None, sl=None, time_dte=2, decide=-6, recenter=1.5, max_adj=9, min_dte=11, pace=None):
+def a14_managed(D, u, dte, tp=None, sl=None, time_dte=TIME_DTE, decide=-6, recenter=1.5, max_adj=9, min_dte=11, pace=None):
     """A14 with mechanical re-centering, the way the trade plan gates it: when the trade is red (or past the
     decide line) and the index has moved `recenter` % from the tent's centre, or it is at the decide line, close
     the BWB and open the same shape around today's close, same expiry. Allowed while more than `min_dte` days
@@ -331,7 +332,7 @@ def _cond(D, u, i):
 
 
 # ------------------------------------------------------------------ exits
-def exit_at(p, tp=None, sl=None, time_dte=2, pace=None):
+def exit_at(p, tp=None, sl=None, time_dte=TIME_DTE, pace=None):
     """First close where a rule fires: (return %, days held, reason). Checked like the trade plan: stop, target,
     time stop, then pace = (from day held, % per day): a trade under that pace is closed at a close at or above 0."""
     r, dl, held = p["ret"], p["dleft"], p["held"]
@@ -365,10 +366,10 @@ def _tp(dte):
 
 # exit rules compared (levels are % of risk; pace = from day 21, close a trade under 0.2%/day at the next close >= 0)
 RULES = {
-    "card": ("Card: stop −10%", lambda d: {"tp": _tp(d), "sl": 10, "time_dte": 2, "pace": (21, 0.2)}),
-    "plan": ("Revised: stop −20%", lambda d: {"tp": _tp(d), "sl": 20, "time_dte": 2, "pace": (21, 0.2)}),
-    "nostop": ("No stop", lambda d: {"tp": _tp(d), "sl": None, "time_dte": 2, "pace": (21, 0.2)}),
-    "hold": ("Hold to 2 DTE", lambda d: {"tp": None, "sl": None, "time_dte": 2}),
+    "card": ("Card: stop −10%", lambda d: {"tp": _tp(d), "sl": 10, "time_dte": TIME_DTE, "pace": (21, 0.2)}),
+    "plan": ("Revised: stop −20%", lambda d: {"tp": _tp(d), "sl": 20, "time_dte": TIME_DTE, "pace": (21, 0.2)}),
+    "nostop": ("No stop", lambda d: {"tp": _tp(d), "sl": None, "time_dte": TIME_DTE, "pace": (21, 0.2)}),
+    "hold": ("Hold to 7 DTE", lambda d: {"tp": None, "sl": None, "time_dte": TIME_DTE}),
 }
 CAL_RULE = {"tp": 5, "sl": 15, "time_dte": 1}  # TimeEdge card exits
 CAL_GATES = {
@@ -582,7 +583,7 @@ def shape_score(D, u, dte, x, rule=None):
     pnl[first] += c
     r = 100 * pnl / risk[E]
     held = (o[I] - o[i0][E]).astype(float)
-    tp, sl, tdte, pace = rule.get("tp"), rule.get("sl"), rule.get("time_dte", 2), rule.get("pace")
+    tp, sl, tdte, pace = rule.get("tp"), rule.get("sl"), rule.get("time_dte", TIME_DTE), rule.get("pace")
     hit = days <= tdte
     if tp is not None:
         hit |= r >= tp

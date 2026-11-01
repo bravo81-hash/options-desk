@@ -126,6 +126,17 @@ Friday's), and is written by every TWS refresh during a US session, with a final
 `contract_values` keeps each position's value at every capture, so P&L by ticker is
 value now − value at the last close + cash from today's fills. Fills go into `executions`.
 
+## A14 rules
+
+`desk/a14rules.py` is the rule page, from 2 Nov 2026: 1.5% of NAV lost at the −20% stop (7.5% worst case an id), the same lots in
+every account sized on the smallest NAV, +7% target, out by 7 DTE, no added size, 4 ids at most per ticker and account, entry on a
+Friday at the Friday expiry nearest 49 DTE (42–56), adjustments on Monday, Wednesday and Friday only and none at 21 DTE or less, and
+the tent shifted 0.2 sd with the index more than 1% from its 20-day average. Only the readiness bar scales the size.
+
+`/api/a14/rules` serves the rule, the next id per ticker priced off the fetched chain, and the 13-week target. Actions shows the
+ladder, P&L shows the target, the Trade plan applies the exit and the windows, and the Journal scores each rule from its start date.
+Ids entered earlier keep the old time stop in the Journal and count only in hindsight. Nothing here places an order.
+
 ## Expected moves and A14 scanner data
 
 Both pull a focused chain from TWS (client id 43; live in market hours, frozen closing quotes

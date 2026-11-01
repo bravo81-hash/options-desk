@@ -145,7 +145,7 @@ def today(exit_days=14, vol_basis="rv20"):
         bt = st["by_trend"]["above" if up else "below"]
         calm = ivts is not None and 0.834 < ivts < 0.90  # below the 20-day average doesn't count against an A14 in a normal term structure
         checks_b = [{"ok": up or calm, "text": f"Short-term trend (20-day): {sym} {'above' if up else 'below'} its average ({tr.get('vs_sma20', 0):+.1f}%): your A14s averaged {bt['ret']:.1f}% ({bt['n']} trades) entered like this"
-                     + ("" if up else "; with VIX/VIX3M 0.834–0.90 this was the model's best A14 cell since 2009" if calm else "; outside a normal term structure (0.834–0.90) the model lost on average")}]
+                     + ("" if up else "; with VIX/VIX3M 0.834–0.90 this was among the model's best A14 cells since 2009" if calm else "; outside a normal term structure (0.834–0.90) the model lost on average")}]
         if front is not None:
             hot = front >= 0.90 and ivts is not None and ivts < 0.90
             checks_b.append({"ok": not hot, "text": f"VIX9D/VIX {front:.3f}: " + ("front of the curve elevated (0.90+): A14s entered like this did worse in every split since 2011 (model); readiness steps A14 down one"

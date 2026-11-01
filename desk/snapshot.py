@@ -34,7 +34,7 @@ _lock = threading.Lock()
 # query parameters that select a snapshot entry; anything else the UI sends is ignored (keep in step with cloud.js)
 KEEP = {"calendar": ["symbol"], "pair": ["symbol", "front", "back"], "pair/curve": ["symbol", "front", "back", "strike"],
         "skew": ["symbol", "tenor"], "pick": ["vol"], "a14/scan": ["sym", "vol"], "a14/curve": ["sym", "expiry", "u", "s", "l"]}
-PLAIN = ["risk", "a14/stats", "a14/history", "journal", "journal/due", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
+PLAIN = ["risk", "a14/stats", "a14/history", "a14/rules", "journal", "journal/due", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
          "md/account", "freshness", "backtest", "conditions", "heads"]
 A14_CURVES = 30  # risk curves for the top candidates per underlying (default sort: since-2009 return per day)
 

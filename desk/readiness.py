@@ -9,8 +9,9 @@ inputs overlap, so adding them would double count) and names which input set it:
 Size: under 17% full, 17-23% three-quarter, 23-30% half, 30%+ (or any sit-out condition) stand aside.
 Strategy rules then step individual structures down: A14 with VIX/VIX3M at 0.90+ (flat: one step, one more below
 the 20-day average; backwardation: stand aside), thin RUT premium. Below the 20-day average with the term structure
-normal (0.834-0.90) is not a step down: it was the model's best A14 cell since 2009 (45 DTE: SPX +2.2%, RUT +2.3% a
-trade); in steep contango it still is (rare, and negative in the model: SPX -6.1% over 10 entries, RUT -0.9% over 43).
+normal (0.834-0.90) is not a step down: it's among the model's best A14 cells since 2009 and positive in the most years
+(45 DTE: SPX +2.1%, RUT +3.2% a trade); in steep contango it still is (rare, and negative in the model: SPX -5.3% over 11
+entries, RUT -0.8% over 44).
 A14 also steps down one with VIX9D/VIX at 0.90+ in a steep or normal term structure (front of the curve under stress):
 worse than below 0.90 in all 16 splits tested (SPX/RUT x 21-60 DTE x 2011-18 / 2019-26; SPX 45 DTE +4.3% vs 0.0% and
 +2.3% vs -0.5%); calendars stand aside at
@@ -182,7 +183,7 @@ def now():
             notes.append(f"VIX9D/VIX {front:.3f} (0.90+): one step down: front of the curve elevated; A14s entered like this did worse in every split since 2011 (model)")
         if not up:
             notes.append(f"{sym} below its 20-day average: " + (f"one step down with the term structure {band['band']}; {hist}"
-                         if band["band"] != "normal" else "no step down with a normal term structure: the model's best A14 cell since 2009"))
+                         if band["band"] != "normal" else "no step down with a normal term structure: among the model's best A14 cells since 2009"))
         if sym == "RUT" and rvx is not None and rvx <= 3:
             sz = step_down(sz)
             notes.append(f"RVX only {rvx:+.2f} over VIX (3 or less): thin RUT premium, SPX preferred")

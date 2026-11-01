@@ -13,13 +13,13 @@ import os
 import re
 import statistics
 
-from . import db, load_config, one
+from . import a14rules, db, load_config, one
 
 GAP = 900  # seconds: fills closer than this are one ticket
 OCC = re.compile(r"(\d{6})([CP])(\d{8})$")
 # The Trade plan cards in web/risk.js (a test keeps these equal): stop % of ONE margin, time stop in DTE, adjustments allowed.
 # Other, IF, M200, Earnings and Batman have no card; Flyagonal has no stop.
-CARDS = {"A14": {"stop": 20, "time": 2, "adjust": "gated"}, "Allantis": {"stop": 10, "time": 2, "adjust": "gated"},
+CARDS = {"A14": {"stop": 20, "time": 7, "adjust": "gated"}, "Allantis": {"stop": 10, "time": 2, "adjust": "gated"},
          "HV7": {"stop": 10, "time": 2, "adjust": "never"}, "TimeEdge": {"stop": 15, "time": 1, "adjust": "one"},
          "Triple Cal": {"stop": 15, "time": 1, "adjust": "one"}, "TimeZone": {"stop": 5, "time": 7, "adjust": "one"},
          "Flyagonal": {"stop": None, "time": None, "adjust": "one"}}
@@ -299,13 +299,16 @@ def rule_checks(r, cap_pct):
     if card.get("stop") and r["close"]:
         out.append(["stop", (r["ret"] or 0) >= -card["stop"], done >= CARD_FROM])
     if card.get("time") and r["close"] and r["dte_exit"] is not None:
-        out.append(["time", r["dte_exit"] >= card["time"], done >= CARD_FROM])
+        limit = a14rules.TIME_BEFORE if r["strategy"] == "A14" and entered < a14rules.FROM else card["time"]
+        out.append(["time", r["dte_exit"] >= limit, done >= CARD_FROM])
     if card.get("adjust") in ("one", "never"):
         out.append(["adjust", r["adj"] <= (1 if card["adjust"] == "one" else 0), entered >= CARD_FROM])
     if r["strategy"] in ("TimeEdge", "TimeZone", "Triple Cal") and r["ivts"] is not None and r["vs20"] is not None:
         out.append(["gate", r["ivts"] < 0.90 and r["vs20"] > 0, entered >= GATE_FROM])
     if r["strategy"] == "A14" and r["ivts"] is not None:
         out.append(["aside", r["ivts"] < 1, entered >= GATE_FROM])
+    if r["strategy"] == "A14":
+        out += a14rules.checks(r, entered)
     if r["plan_pct"] is not None:
         out.append(["cap", r["plan_pct"] <= cap_pct, entered >= CAP_FROM])
     return out

@@ -19,7 +19,7 @@ import threading
 
 import numpy as np
 
-from . import db, load_config
+from . import a14rules, db, load_config
 from .chain import LOCK, connect, dte, option_params, snapshot, underlying
 from .history import series
 from .recorder import ET, fit_rows
@@ -188,7 +188,7 @@ def hold_days(d, exit_days=None):
 
 
 # ------------------------------------------------------------------ scan
-def scan(symbols=("SPX", "RUT"), dte_min=14, dte_max=45, exit_days=None, vol_basis="rv20", vol_custom=None,
+def scan(symbols=("SPX", "RUT"), dte_min=a14rules.DTE_LO, dte_max=a14rules.DTE_HI, exit_days=None, vol_basis="rv20", vol_custom=None,
          min_credit=-1.0, up_lo=-1.5, up_hi=1.0, top=40):
     raw = db.get_meta("a14_chain")
     if not raw:
@@ -314,7 +314,7 @@ def _hist_scores(cands):
             if use:
                 c.update(hist_day=use["per_day"], hist_avg=use["avg"], hist_win=use["win"], hist_ptgt=use["p_target"],
                          hist_pstop=use["p_stop"], hist_days=use["days"], hist_p5=use["p5"], hist_big=use["big_loss"])
-        return {"band": band["band"], "label": band["label"], "min_n": HIST_MIN_N, "rule": "target +5% (21 DTE or less) or +7%, stop −20%, out at 2 DTE, slow trades closed at the next green close"}
+        return {"band": band["band"], "label": band["label"], "min_n": HIST_MIN_N, "rule": "target +5% (21 DTE or less) or +7%, stop −20%, out at 7 DTE, slow trades closed at the next green close"}
     except Exception as e:
         _log(f"history scores unavailable: {e}")
         return {"error": str(e)}

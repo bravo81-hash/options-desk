@@ -16,7 +16,7 @@ import re
 import threading
 import uuid
 
-from . import db, load_config, one, positions
+from . import a14rules, db, load_config, one, positions
 from .history import series
 from .trades import _newest, classify, fix_name, labels, load_optionstrat
 
@@ -208,6 +208,7 @@ def book(trades, ctxs, cfg):
     positions.resolve_twins(rows)
     positions.link_rolls(rows, cfg["roll_minutes"])
     rows = positions.chains(rows)
+    a14rules.score_fields(rows, pos)
     for r in rows:
         stop = (positions.CARDS.get(r["strategy"]) or {}).get("stop")
         r["decision"] = positions.decision_id(r["ticker"], r["strategy"], r["expiry_iso"], r["entry_us"])
@@ -346,7 +347,7 @@ def _build():
     out.sort(key=lambda x: x["close"] or "", reverse=True)
     return {"trades": out, "file": path, "book": bk["rows"], "pending": bk["pending"], "detail_exported": bk["exported"], "heat": bk["heat"],
             "avg_loss_r": bk["avg_loss_r"], "nav_now": bk["nav_now"], "streak_now": bk["streak_now"], "plan": bk["plan"], "settings": cfg, "defaults": DEFAULTS, "history": history(), "cards": positions.CARDS,
-            "rules_from": {"card": positions.CARD_FROM, "gate": positions.GATE_FROM, "cap": positions.CAP_FROM}, "manual": manual()}
+            "rules_from": {"card": positions.CARD_FROM, "gate": positions.GATE_FROM, "cap": positions.CAP_FROM, "a14": a14rules.FROM}, "a14_rule": a14rules.rule(), "manual": manual()}
 
 
 def save_note(key, note):

@@ -191,7 +191,7 @@ function capitalView(T) {
 // A14 stop: −20 (was the card's −10). In the 2009–2026 model backtest (Evidence → Since 2009) −10 was hit in 28–46% of
 // A14s (14–60 DTE), mostly on VIX pops that later reverted, and cost more than it saved at every SPX entry DTE from 14 to 60.
 const CARDS = {
-  A14: {tp: (t) => (t.entryDte <= 21 ? 5 : 7), decide: -6, stop: -20, timeDte: 2, adjust: "gated", pace: true, holdPastDecide: true},
+  A14: {tp: (t) => (t.entryDte <= 21 ? 5 : 7), decide: -6, stop: -20, timeDte: 7, adjust: "gated", pace: true, holdPastDecide: true, windows: [1, 3, 5], reshapeFrom: 21, sameLots: true},
   Allantis: {tp: () => 7, decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
   HV7: {tp: () => 5, stop: -10, timeDte: 2, adjust: "never"},
   TimeEdge: {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
@@ -234,6 +234,14 @@ function levelAt(t, pct, dv = 0) {
     return null; };
   return {dn: find(-1, 100), up: find(1, 60)};
 }
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const nyDay = () => DAYS.indexOf(new Date(now()).toLocaleDateString("en-US", {timeZone: "America/New_York", weekday: "long"}));
+function windowOf(days) {  // today in New York against a card's adjustment days
+  const d = nyDay();
+  for (let k = 1; k <= 7; k++) if (days.includes((d + k) % 7)) return {open: days.includes(d), day: DAYS[d], next: DAYS[(d + k) % 7]};
+  return null;
+}
+window.nyDay = nyDay; window.DAYS = DAYS; window.dteOf = dteOf;
 function planOf(t) {
   const c = CARDS[t.strategy];
   t.plan = null; t.planPri = null;
@@ -241,7 +249,8 @@ function planOf(t) {
   const p = t.totalPct, dte = dteOf(t.firstExp), tp = c.tp(t), usd = (pct) => money(t.margin * pct / 100);
   const move = ok(t.entry_spot) && ok(t.spot) ? 100 * (t.spot / t.entry_spot - 1) : null;
   const timeHit = ok(c.timeDte) ? dte <= c.timeDte : ok(t.entryDte) && (t.ditNow || 0) >= c.timeFrac * t.entryDte;
-  const slow = c.pace && (t.slowSoFar || t.overstay);
+  const slow = c.pace && (t.slowSoFar || t.overstay), win = c.windows ? windowOf(c.windows) : null;
+  const when = win && !win.open ? `on ${win.next}, the next window,` : "today";
   const slowWhy = t.slowSoFar ? `${fmt(t.perDay, 2)}%/day after ${t.ditNow} days, under the ${fmt(SPEED().slow, 2)}% slow line` : `held ${t.ditNow}d vs ${Math.round(t.usualHold)}d usual for this entry DTE`;
   let act, label, why;
   if (ok(c.stop) && p <= c.stop) [act, label, why] = ["exit", "Exit: hard stop", `${pctS(p)} is at or past the ${c.stop}% stop. Exit; no adjustment.`];
@@ -249,8 +258,8 @@ function planOf(t) {
   else if (timeHit) [act, label, why] = ["close", "Close: time stop", ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop.` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration.`];
   else if (slow && p >= 0) [act, label, why] = ["close", "Close: slow, green", `${slowWhy}. Free the margin while it's green.`];
   else if (ok(c.decide) && p <= c.decide) [act, label, why] = ["decide", "Decide today", c.holdPastDecide
-    ? `${pctS(p)} is past the ${c.decide}% line: adjust today if the gates pass; if you don't adjust, hold to the ${c.stop}% stop rather than exiting here (since 2009, A14 exits this early cost more than they saved; model).`
-    : `${pctS(p)} is past the ${c.decide}% line: adjust today if the gates pass, otherwise exit.`];
+    ? `${pctS(p)} is past the ${c.decide}% line: adjust ${when} if the gates pass; if you don't adjust, hold to the ${c.stop}% stop rather than exiting here (since 2009, A14 exits this early cost more than they saved; model).`
+    : `${pctS(p)} is past the ${c.decide}% line: adjust ${when} if the gates pass, otherwise exit.`];
   else if (slow) [act, label, why] = ["slow", "Slow: exit at green", `${slowWhy}. Close at the next close at or above 0%; no new adjustments.`];
   else [act, label, why] = ["hold", "Hold", `between ${ok(c.decide) ? c.decide : c.stop ?? "–"}% and +${tp}%: let it work.`];
   // adjustment gate
@@ -267,11 +276,13 @@ function planOf(t) {
     if (ok(c.stop) && p <= c.stop) no.push("past the hard stop");
     if (dte <= c.timeDte) no.push("inside the time stop");
     if (no.length) adj = {ok: "no", why: no.join(" · ")};
+    else if (ok(c.reshapeFrom) && dte <= c.reshapeFrom) adj = {ok: "no", why: `${dte} DTE: no adjustments at ${c.reshapeFrom} DTE or less; the target, the stop or the ${c.timeDte} DTE exit decides`};
+    else if (win && !win.open) adj = {ok: "wait", why: `${win.day} isn't a window day: look again on ${win.next}`};
     else if (dte <= 10) adj = {ok: "reduce", why: `${dte} DTE: only adjustments that reduce risk; otherwise let the target, stop or time stop decide`};
     else if (dte <= 21) adj = {ok: "roll out", why: `${dte} DTE: inside 10–21, roll out to a new expiry or close; no reshaping (yours there helped 38%)`};
     else adj = {ok: "yes", why: `${p < 0 ? "red" : "moved"}${ok(move) ? `, ${t.underlying} ${pctS(move)} from entry` : ""}, ${dte} DTE`};
     adj.vs = vs;
-    if (adj.ok !== "no") how = ok(move) && move >= 1.5 ? "roll the shorts up or add a call side (+2 to +3% median)"
+    if (adj.ok !== "no") how = ok(move) && move >= 1.5 ? (c.sameLots ? "roll the shorts up, same lots; new risk is a new id" : "roll the shorts up or add a call side (+2 to +3% median)")
       : ok(move) && move <= -1.5 && dte > 21 ? "roll out in time (+6% median, 75% helped); don't roll the shorts down (−6%)"
       : "roll out in time or reduce; reshaping in the same expiry is a coin flip";
   }
@@ -283,14 +294,14 @@ function planOf(t) {
   t.planPri = t.plan.pri;
 }
 const PLAN_CLS = {exit: "neg", close: "pos", decide: "wrn", slow: "wrn", hold: "muted"};
-const PLAN_ICON = {exit: "⚠ ", close: "✓ ", decide: "⚠ ", slow: "◔ "}, ADJ_ICON = {"roll out": "↻ ", reduce: "↓ "};
+const PLAN_ICON = {exit: "⚠ ", close: "✓ ", decide: "⚠ ", slow: "◔ "}, ADJ_ICON = {"roll out": "↻ ", reduce: "↓ ", wait: "◔ "};
 const planChip = (t) => t.plan ? `<span class="chip ${PLAN_CLS[t.plan.act]}" title="${esc(t.plan.why)}">${PLAN_ICON[t.plan.act] || ""}${esc(t.plan.label)}</span>` : `<span class="small muted" title="no card rules for ${esc(t.strategy || "this trade")}">–</span>`;
 const orderHead = (o) => !o ? "–" : `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>`;
 const orderCash = (o) => `= ${money(o.cash)}${o.lots ? ` for ${o.lots} lot${o.lots > 1 ? "s" : ""}, ${money(o.cash / o.lots)} a lot` : ""}`;
 const orderTxt = (o, short) => !o ? "–" : `${orderHead(o)} <span class="small muted" title="${esc(`price per combo: ${o.ratio}`)}">${orderCash(o)} · combo ${esc(o.shape)}${!short && ok(o.now) ? ` · now ${o.now.toFixed(2)}` : ""}</span>`;
 window.orderTxt = orderTxt;
 const lvTxt = (L, u) => !L ? "–" : L.past ? "already past" : [L.dn ? `${u} ↓ ${fmt(L.dn, 0)}` : null, L.up ? `↑ ${fmt(L.up, 0)}` : null].filter(Boolean).join(" · ") || "beyond −25% / +15%";
-const ADJ_CLS = {yes: "pos", one: "pos", "roll out": "wrn", reduce: "wrn", no: "muted", "?": "muted"};
+const ADJ_CLS = {yes: "pos", one: "pos", "roll out": "wrn", reduce: "wrn", wait: "muted", no: "muted", "?": "muted"};
 /* where a trade's total sits between its hard stop and target (decide line dashed) */
 function planBullet(t, w = 140) {
   const q = t.plan; if (!q) return "";
@@ -406,10 +417,11 @@ function planView(T) {
         <td class="n small">${lvTxt(q.at.decide, t.underlying)}<br>${lvTxt(q.at.stop, t.underlying)}</td></tr>`; }).join("")}</tbody></table></div>
     ${twinNote(P)}
     <p class="note">Checked in this order every day: hard stop → target → time stop → slow (under ${fmt(SPEED().slow, 2)}%/day after 3+ weeks, or 25% past your usual hold) → decide line → otherwise hold.
-    <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
-    How: market up → roll the shorts up or add a call side; market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
+    <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (Allantis at 10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
+    A14 also waits for a window day (Monday, Wednesday, Friday in New York), has no adjustments at 21 DTE or less, and never adds size: new risk is a new id. Targets and stops are watched every day. See Guide → A14 rules.
+    How: market up → roll the shorts up (Allantis can add a call side); market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
     Calendars: one adjustment, then a further breach is an exit. A14 target is +5% when entered at 21 DTE or less, +7% beyond.
-    A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.
+    A14's time stop is 7 DTE, moved from 2 on 2 Nov 2026. A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.
     <b>Target close order</b>: a GTC limit on the whole combo (legs in the ratio shown, × units) that closes the trade at the target after about $${COMM_SIDE} a contract in commissions. It uses ONE's P&amp;L and the legs' open prices, not today's marks, so it stays right until you adjust; re-enter it after every adjustment. Sell limits are rounded up and buy limits down to ${TICK.toFixed(2)}.
     <b>Alerts</b>: the index level where the trade would reach the decide line and the hard stop if the move happened today with IVs unchanged; set TWS price alerts there. Falls usually come with higher IVs, which reach the stop sooner (the detail panel shows the stop level with IV +3 pts). Stops are best worked by hand at the alert, not left as stop orders on a combo.
     <b>Shorts</b>: how far each short strike is from spot in standard deviations of the move to its expiry. Around a short is a BWB's best zone, so it only turns amber when spot is 0.5σ or more through one.

@@ -94,7 +94,8 @@ function groupBy(D, fn, order) {
   return keys.map((k) => { const v = g.get(k), R = v.map((d) => d.r); return {label: k, n: v.length, losses: v.filter((d) => d.pnl <= 0).length, win: v.filter((d) => d.pnl > 0).length / v.length, mean: mean(R), median: median(R), pnl: sum(v.map((d) => d.pnl))}; });
 }
 
-const RULES = {stop: "Closed inside the card's stop", time: "Out before the time stop", adjust: "Stayed inside the adjustment limit", gate: "Calendar entered with the gate open", aside: "A14 stood aside in backwardation", cap: "Planned loss inside the cap"};
+const RULES = {stop: "Closed inside the card's stop", time: "Out before the time stop", adjust: "Stayed inside the adjustment limit", gate: "Calendar entered with the gate open", aside: "A14 stood aside in backwardation", cap: "Planned loss inside the cap",
+  a14size: "A14 loss at the stop inside the rule", a14add: "A14 no added size", a14dte: "A14 entered in the DTE window", a14day: "A14 entered on a Friday", a14cap: "A14 inside the id cap", a14window: "A14 adjusted on window days only"};
 /* Rule accuracy against win rate. live: only rules that existed at that moment. all: as if every rule had always existed. */
 function accuracy(D, all) {
   const C = closed(D), key = all ? "followed_ever" : "followed", S = C.filter((d) => d[key] != null), F = S.filter((d) => d[key]), B = S.filter((d) => !d[key]);

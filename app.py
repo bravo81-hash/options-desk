@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, accounts, backtest, conditions, flex, heads, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
+from desk import ROOT, a14, a14rules, accounts, backtest, conditions, flex, heads, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -220,10 +220,15 @@ def api_a14_scan():
     syms = tuple(s for s in a.get("sym", "SPX,RUT").split(",") if s in a14.GRID)
     vol = a.get("vol", "rv20")
     ex = _f(a.get("exit"))
-    res = a14.scan(symbols=syms, dte_min=_f(a.get("dte_min"), 14), dte_max=_f(a.get("dte_max"), 45),
+    res = a14.scan(symbols=syms, dte_min=_f(a.get("dte_min"), a14rules.DTE_LO), dte_max=_f(a.get("dte_max"), a14rules.DTE_HI),
                    exit_days=int(ex) if ex else None, vol_basis=vol, vol_custom=_f(a.get("vol_custom")),
                    min_credit=_f(a.get("min_credit")), up_lo=_f(a.get("up_lo"), -1.5), up_hi=_f(a.get("up_hi"), 1.0))
     return ok({**res, "running": a14.status["running"], "log": a14.status["log"]})
+
+
+@app.get("/api/a14/rules")
+def api_a14_rules():
+    return ok(a14rules.state())
 
 
 @app.post("/api/a14/refresh")
