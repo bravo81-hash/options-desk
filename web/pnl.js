@@ -2,7 +2,7 @@
 "use strict";
 (() => {
 const oneStale = (R) => { const f = R.one_fresh; if (!f || !f.stale) return "";
-  return `<div class="state err" style="margin-bottom:6px"><b>ONE export is ${f.age_h != null ? Math.round(f.age_h) + "h old" : "missing"}${f.fills_since ? ` and IBKR has ${f.fills_since} fill${f.fills_since > 1 ? "s" : ""} since` : ""}</b> — differences below may just be trades not yet in the report. Export a fresh ONE Summary Report, then reload.</div>`; };
+  return `<div class="state err" style="margin-bottom:6px"><b>ONE export is ${f.age_h != null ? Math.round(f.age_h) + "h old" : "missing"}${f.fills_since ? ` and IBKR has ${f.fills_since} fill${f.fills_since > 1 ? "s" : ""} since` : ""}</b> — differences below may just be trades not yet in the report. Export a fresh ONE report, then reload.</div>`; };
 const $ = (id) => document.getElementById(id);
 const money = (v) => ok(v) ? (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString() : "–";
 const pctS = (v, d = 2) => ok(v) ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "–";

@@ -1,4 +1,4 @@
-/* Trade journal: closed trades from the ONE Summary Report, visual. */
+/* Trade journal: closed trades from the newest ONE report, visual. */
 "use strict";
 (() => {
 const $ = (id) => document.getElementById(id);
@@ -159,7 +159,7 @@ async function load() {
   $("jnList").innerHTML = `<div class="state">Reading the ONE report…</div>`;
   try {
     J = await api("/api/journal");
-    if (!J.trades || !J.trades.length) { $("jnList").innerHTML = `<div class="state">No closed trades found. Export a ONE Summary Report to Documents.</div>`; return; }
+    if (!J.trades || !J.trades.length) { $("jnList").innerHTML = `<div class="state">No closed trades found. Export a ONE report to Documents.</div>`; return; }
     $("jnMeta").textContent = `from ${String(J.file || "").split(/[\\/]/).pop()}`;
     const opts = (k) => [...new Set(J.trades.map((t) => t[k]))].sort();
     const sel = (id, k, label) => { $(id).innerHTML = `<option value="">${label}</option>` + opts(k).map((v) => `<option>${esc(v)}</option>`).join(""); };

@@ -77,7 +77,7 @@ function headline(Rd) {
 const subBtn = (n) => [...$("acMore").previousElementSibling.children].find((b) => b.dataset.n === n);
 
 function doToday(Rk) {
-  if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Your trades are locked. <button type=\"button\" class=\"unlockBtn\">Unlock snapshot</button>" : "Open trades unavailable: is the ONE Summary Report in Documents?"}</div>`; return; }
+  if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Your trades are locked. <button type=\"button\" class=\"unlockBtn\">Unlock snapshot</button>" : "Open trades unavailable: is a ONE report in Documents?"}</div>`; return; }
   const P = Rk.trades.filter((t) => t.plan && t.plan.act !== "hold").sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   const held = Rk.trades.filter((t) => t.plan && t.plan.act === "hold").length, noCard = Rk.trades.filter((t) => !t.plan).length;
   if (window.navBadge) { navBadge("actions", P.length ? String(P.length) : "", P.length ? "wrn" : ""); navBadge("risk", String(L.Rk.trades.length)); }
@@ -236,7 +236,7 @@ function coming(Rk, Rd) {
 function checks(Rk, Fr, Sn) {
   const bad = [];
   if (Fr) Fr.sources.filter((x) => x.stale).forEach((x) => bad.push(`<b>${esc(x.name)}</b> is older than the last close <span class="muted">(${esc(x.what)})</span>`));
-  if (Rk && Rk.one_fresh && Rk.one_fresh.stale) bad.push(`<b>ONE Summary Report</b> is ${Rk.one_fresh.age_h != null ? Math.round(Rk.one_fresh.age_h) + "h old" : "missing"}${Rk.one_fresh.fills_since ? ` and IBKR has ${Rk.one_fresh.fills_since} fills since` : ""}: export it so the plan sees your latest trades`);
+  if (Rk && Rk.one_fresh && Rk.one_fresh.stale) bad.push(`<b>ONE report</b> is ${Rk.one_fresh.age_h != null ? Math.round(Rk.one_fresh.age_h) + "h old" : "missing"}${Rk.one_fresh.fills_since ? ` and IBKR has ${Rk.one_fresh.fills_since} fills since` : ""}: export it so the plan sees your latest trades`);
   if (Rk && Rk.marks_ts && Date.now() - Date.parse(Rk.marks_ts) > 18 * 3600e3) bad.push(`<b>TWS marks</b> are from ${esc(new Date(Rk.marks_ts).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"}))}: refresh them in the Risk grid for current totals and alert levels`);
   if (Rk && !Rk.marks_ts) bad.push("<b>No TWS marks yet</b>: press Refresh in the Risk grid with TWS running");
   if (Rk && Rk.missing && Rk.missing.length) bad.push(`<b>${Rk.missing.length} legs</b> had no TWS quote at the last refresh`);

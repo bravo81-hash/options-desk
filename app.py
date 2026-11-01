@@ -255,6 +255,63 @@ def api_journal():
     return ok(out)
 
 
+def _journal_save(fn, *args):
+    try:
+        return ok(fn(*args))
+    except (KeyError, TypeError, ValueError) as e:
+        return ok({"ok": False, "error": str(e)})
+
+
+@app.post("/api/journal/settings")
+def api_journal_settings():
+    return _journal_save(journal.save_settings, request.get_json(force=True))
+
+
+@app.post("/api/journal/tag")
+def api_journal_tag():
+    return _journal_save(journal.save_tag, request.get_json(force=True))
+
+
+@app.post("/api/journal/ticket")
+def api_journal_ticket():
+    return _journal_save(journal.save_ticket, request.get_json(force=True))
+
+
+@app.post("/api/journal/ticket/delete")
+def api_journal_ticket_delete():
+    return _journal_save(journal.delete_ticket, request.get_json(force=True).get("id"))
+
+
+@app.post("/api/journal/override")
+def api_journal_override():
+    return _journal_save(journal.save_override, request.get_json(force=True))
+
+
+@app.post("/api/journal/override/delete")
+def api_journal_override_delete():
+    return _journal_save(journal.delete_override, request.get_json(force=True).get("id"))
+
+
+@app.post("/api/journal/review")
+def api_journal_review():
+    return _journal_save(journal.save_review, request.get_json(force=True))
+
+
+@app.post("/api/journal/plan")
+def api_journal_plan():
+    return _journal_save(journal.log_plan, request.get_json(force=True).get("items"))
+
+
+@app.get("/api/journal/export")
+def api_journal_export():
+    return ok(journal.export_manual())
+
+
+@app.post("/api/journal/import")
+def api_journal_import():
+    return _journal_save(journal.import_manual, request.get_json(force=True))
+
+
 @app.post("/api/journal/note")
 def api_journal_note():
     b = request.get_json(force=True) or {}
@@ -313,7 +370,7 @@ def api_freshness():
         src.append(("Market conditions", None, "Actions: Market conditions, Evidence: Since 2009"))
     out = [{"name": n, "date": d, "stale": (d or "") < sess.isoformat(), "what": w} for n, d, w in src]
     out.append({"name": "ONE export", "date": fr.get("exported", "")[:10] if fr.get("exported") else None, "stale": bool(fr.get("stale")),
-                "what": f"ONE Summary Report, {fr.get('age_h')}h old" + (f", {fr.get('fills_since')} fills since" if fr.get("fills_since") else "")})
+                "what": f"ONE report, {fr.get('age_h')}h old" + (f", {fr.get('fills_since')} fills since" if fr.get("fills_since") else "")})
     rel = market.releases()
     out.append({"name": "Release dates", "date": rel["ts"][:10] if rel["ts"] else None, "stale": not rel["ok"],
                 "what": "Calendar checks: FOMC from the Fed, data releases from TradingView" + (f" to {rel['to']}" if rel["to"] else "")})

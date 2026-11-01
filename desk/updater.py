@@ -14,7 +14,7 @@ import socket
 import threading
 import time
 
-from . import a14, db, expected, flex, heads, history, ibdata, load_config, market, recorder, risk
+from . import a14, db, expected, flex, heads, history, ibdata, load_config, market, positions, recorder, risk
 from .recorder import ET, session_date
 
 LOCK = threading.Lock()   # the scheduler's session jobs take it too, so they never overlap an update
@@ -31,6 +31,7 @@ STEPS = [  # key, label, what it feeds
     ("calendar", "Economic calendar", "Forex Factory, TradingView, Fed · events, Coming up, calendar checks"),
     ("heads", "Heads-up: earnings, overnight, leaders", "TradingView, Nasdaq, State Street, yfinance, CBOE · event risk, overnight, stress"),
     ("flex", "IBKR statements", "IBKR Flex · official NAV, deposits, commissions"),
+    ("fx", "AUD/USD closes", "yfinance · Journal: risk as a share of capital"),
 ]
 
 
@@ -127,6 +128,9 @@ def _run_step(key, force):
         return {"ok": True, "detail": f"not refreshed: {', '.join(r['failed'])}" if r.get("failed") else ""}
     if key == "flex":
         return flex.run()
+    if key == "fx":
+        n = positions.refresh_fx()
+        return {"ok": True, "detail": f"{n} days" if n else "already current"}
 
 
 def run(source="manual"):

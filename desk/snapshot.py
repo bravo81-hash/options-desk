@@ -17,7 +17,7 @@ import re
 import subprocess
 import threading
 
-from . import ROOT, db, load_config
+from . import ROOT, db, journal, load_config
 from .trades import _newest
 
 DATA = ROOT / "data"
@@ -181,7 +181,8 @@ def fingerprint():
     for g in (files.get("one_glob", []), files.get("one_detail_glob", [])):
         f = _newest(g)
         parts.append(f and f"{f}:{os.path.getmtime(f)}")
-    for sql in ("SELECT MAX(date) v FROM account_daily", "SELECT MAX(updated) v FROM journal_notes", "SELECT COUNT(*) v FROM executions"):
+    typed = [f"SELECT MAX(updated) v FROM {t}" for t in journal.MANUAL]  # what was typed into the journal can't be rebuilt, so it travels at once
+    for sql in ["SELECT MAX(date) v FROM account_daily", "SELECT COUNT(*) v FROM executions", *typed]:
         try:
             parts.append(q(sql))
         except Exception:

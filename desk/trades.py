@@ -1,15 +1,14 @@
-"""Unified trade journal: OptionStrat export (before ONE) + newest ONE Summary Report.
+"""Unified trade journal: OptionStrat export (before ONE) + the newest ONE export of either kind.
 
 Each trade: source, account/group, strategy, name, underlying, opened_et, closed_et, pnl, ret_pct, status.
 Dates are converted to the US/Eastern trading date the trade was entered.
 """
-import csv
 import datetime as dt
-import glob
-import os
 import re
 
-from . import expand, load_config
+from . import load_config
+from . import one
+from .one import _newest  # noqa: F401  (imported from here by the other modules)
 
 STRATS = [  # (label, patterns matched against group + name, upper-case)
     ("TimeEdge", [r"\bTE\b", r"TIMEEDGE", r"TIME EDGE", r"DUALCAL", r"DUALDIAG", r"DUALDIAL"]),
@@ -38,19 +37,14 @@ def fix_name(name):
     return re.sub(r"(?i)\b(\d+)\s*LOTS?\b", lambda m: f"{m[1]} LOT{'' if int(m[1]) == 1 else 'S'}", name)
 
 
-def classify(group, name):
+def labels(group, name):
+    """Every strategy a trade's group and name mention, in STRATS order."""
     text = f"{group or ''} | {name or ''}".upper().replace(".", " ")
-    for label, pats in STRATS:
-        if any(re.search(p, text) for p in pats):
-            return label
-    return "Other"
+    return [label for label, pats in STRATS if any(re.search(p, text) for p in pats)]
 
 
-def _newest(patterns):
-    files = []
-    for p in patterns:
-        files += glob.glob(expand(p))
-    return max(files, key=os.path.getmtime) if files else None
+def classify(group, name):
+    return (labels(group, name) or ["Other"])[0]
 
 
 def _f(x):
@@ -82,20 +76,10 @@ def _os_session(x):
 
 
 def load_one(path=None):
-    path = path or _newest(load_config()["trade_files"]["one_glob"])
-    if not path:
-        return [], None
-    out = []
-    with open(path, encoding="utf-8-sig") as fh:
-        for r in csv.reader(fh):
-            if len(r) > 15 and r[0] == "" and r[2] in ("Open", "Closed", "Expired") and r[1]:
-                acct = r[1]
-                if acct.lower().startswith("backtest"):
-                    continue
-                out.append(dict(source="ONE", group=acct, name=fix_name(r[7]), underlying=r[3], status=r[2],
-                                opened=_one_dt(r[8]), closed=_one_dt(r[9]), pnl=_f(r[14]), ret_pct=_f(r[15]),
-                                margin=_f(r[12]), strategy=classify(acct, r[7])))
-    return out, path
+    trades, path, _ = one.read(path)
+    return [dict(source="ONE", group=t["account"], name=fix_name(t["name"]), underlying=t["underlying"], status=t["status"],
+                 opened=_one_dt(t["opened"]), closed=_one_dt(t["closed"]), pnl=t["pnl"], ret_pct=t["ret"],
+                 margin=t["margin"], strategy=classify(t["account"], t["name"])) for t in trades], path
 
 
 def load_optionstrat(path=None):

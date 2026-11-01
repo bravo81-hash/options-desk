@@ -138,7 +138,7 @@
       <section class="panel modalp" id="rkDetailPanel" hidden><header><h2 id="rkDetailTitle">Trade</h2><button type="button" class="ghost" id="rkClose">Close</button></header><div class="chart" id="rkDetailChart"></div><div id="rkDetailLegend"></div><div id="rkDetailLegs"></div></section>
     </div>
 
-    <p class="note">Positions and trade grouping from your newest ONE Summary Report; marks and implied vols from TWS (read-only). P&amp;L now = ONE's realised P&amp;L and commissions + open legs at TWS mid. Curves reprice each open leg with Black-Scholes at its own IV (sticky strike), no rates or dividends; the solid line is today, dashed is the chosen date, the thin line is the trade's first expiry. Margin is ONE's figure.</p>
+    <p class="note">Positions and trade grouping from your newest ONE report, Summary or Detail; marks and implied vols from TWS (read-only). P&amp;L now = ONE's realised P&amp;L and commissions + open legs at TWS mid. Curves reprice each open leg with Black-Scholes at its own IV (sticky strike), no rates or dividends; the solid line is today, dashed is the chosen date, the thin line is the trade's first expiry. Margin is ONE's figure.</p>
   </section>
 
   <!-- P&L AND RECONCILIATION (folded in from TWS Matcher) -->
@@ -202,7 +202,7 @@
       <section class="panel c8 scrollp" data-sub="Scanner"><header><h2>Top setups</h2><span class="small muted">put BWB, 1 lot = +1 upper / −2 short / +1 lower · $ per lot · click a column to rank, a row for its risk graph</span></header><div id="a14Table"></div>
         <p class="note">Priced from a live TWS chain (frozen closing quotes outside market hours): own IV from mids off the put-call-parity forward, one smile per expiry, every leg priced from it. The exit scenario holds each strike's IV (sticky strike) and lets time pass; the odds use a lognormal with the chosen volatility, which understates crash risk, so check the −1σ and Stress columns and the risk graph too. Stress = index −5% by the exit date with every strike's IV 5 points higher, a typical sell-off. Exit date = your average days held for that entry DTE (Journal) unless you type one. "Your usual" = upper long within ±1% of spot and short 0.5–3.5% below, like your A14 entries in ONE. Risk = the loss below the lower wing (or the debit, if larger).</p></section>
       <section class="panel modalp" id="a14DetailPanel" hidden><header><h2>Selected setup</h2><button type="button" class="ghost mclose">Close</button></header><div id="a14Detail"></div></section>
-      <section class="panel c12" data-sub="Your history"><header><h2>Your A14 history</h2><span class="small muted">entries from the ONE Summary Report</span></header><div id="a14Hist"><div class="state">Loading…</div></div></section>
+      <section class="panel c12" data-sub="Your history"><header><h2>Your A14 history</h2><span class="small muted">entries from your newest ONE report</span></header><div id="a14Hist"><div class="state">Loading…</div></div></section>
     </div>
   </section>
 
@@ -314,7 +314,7 @@
           <li><b>It starts on its own</b> from login, at <span class="mono">http://127.0.0.1:8810</span>. Opening TradingView or TWS opens the page.</li>
           <li><b>TWS must be running</b> for live data. Without it the desk shows the last saved data and falls back to free sources.</li>
           <li><b>Update all</b> refreshes every source in turn. It also runs by itself every 15 minutes while the US market is open and hourly otherwise. The Data pill shows each source's date and last result.</li>
-          <li><b>ONE:</b> export the Summary Report each day to Documents. The desk reads the newest file.</li>
+          <li><b>ONE:</b> export the Summary or Detail Report each day to Documents. The desk reads whichever is newest for your book; the Journal's fill-level figures (entry risk, peak risk, adjustments) come from the newest Detail Report.</li>
           <li><b>Finding your way:</b> the sidebar badges show what's live and ⓘ notes open on a click. The sun and moon switch sets light or dark mode.</li>
           <li><b>Cloud copy:</b> market views are public. Your trades stay locked until you press the snapshot chip at the top and enter your passphrase. They are as of the snapshot, and Update all, TWS refreshes and the Recorder are laptop only.</li>
         </ol>
@@ -462,7 +462,7 @@
 
       <section class="panel c6" id="g-journal" data-sub="Tabs"><header><h2>Trade journal</h2></header>
         <ol>
-          <li>Built from your newest ONE Summary Report (the one you export for matching) — every closed trade, no extra work.</li>
+          <li>Built from your newest ONE report, Summary or Detail — every closed trade, no extra work.</li>
           <li><b>Trades</b>: the list on the left is grouped into folders by strategy (click a folder to fold it; sort by date, win, loss or return; ↑ ↓ to move). Pick a trade and the right side shows it in full: result, days in trade, expiry, P&amp;L fluctuation, entry conditions, adjustments, a large chart of the index through the trade (solid = entry strikes, dotted = strikes added later, orange = adjustment days), the marked P&amp;L path when recorded, and the legs.</li>
           <li>The note is suggested from the data (speed, adjustments, drawdown survived, entry conditions). Edit it in the box and press Save note; Use the suggestion puts the generated note back.</li>
           <li>P&amp;L fluctuation: the price swing for every trade; trades open from mid-October 2026 also get the true worst/best marked P&amp;L (the desk records each open trade at every session close).</li>
@@ -499,8 +499,8 @@
         <div class="tbl"><table><thead><tr><th>What you see</th><th>What to do</th></tr></thead><tbody>
           <tr><td>The page didn't open with TradingView / TWS</td><td>Open <span class="mono">http://127.0.0.1:8810</span> yourself. If it doesn't load, run <span class="mono">Start Options Desk.cmd</span> in the options-desk folder.</td></tr>
           <tr><td>"No marks" / "TWS not reachable"</td><td>Start TWS and log in, wait 90 seconds, then press Update all. Check TWS → API settings allow connections on port 7496.</td></tr>
-          <tr><td>Red "ONE export is …h old" banner</td><td>Export a fresh ONE Summary Report. Differences may just be trades not yet in ONE.</td></tr>
-          <tr><td>Risk grid trades out of date</td><td>Export a fresh ONE Summary Report to Documents, then reload the page.</td></tr>
+          <tr><td>Red "ONE export is …h old" banner</td><td>Export a fresh ONE report. Differences may just be trades not yet in ONE.</td></tr>
+          <tr><td>Risk grid trades out of date</td><td>Export a fresh ONE report to Documents, then reload the page.</td></tr>
           <tr><td>Recon shows quantity differences</td><td>Usually a fill not yet entered in ONE, or an expired/assigned leg. Use the ONE import CSV or fix the trade in ONE.</td></tr>
           <tr><td>A week's P&amp;L looks too big</td><td>Check for a deposit. Connect IBKR Flex in the Recorder tab, or add it under <span class="mono">risk.cash_flows</span> in config.json.</td></tr>
           <tr><td>A14 scanner / Expected moves look stale</td><td>Press Update all. The time of the data is shown next to each tab's button.</td></tr>

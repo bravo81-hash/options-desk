@@ -1,22 +1,21 @@
 """Open positions for the risk-graph grid.
 
-Trades and legs come from the newest ONE Summary Report (ONE knows which legs form a trade).
+Trades and legs come from the newest ONE export of either kind (ONE knows which legs form a trade).
 Marks (mid, IV) and underlying prices come from TWS, read-only, on their own client id.
 A reconciliation compares ONE's open legs with IBKR positions per mapped account.
 Risk curves are computed in the browser from these inputs.
 """
 import asyncio
-import csv
 import datetime as dt
 import json
 import logging
 import re
 import threading
 
-from . import db, load_config
+from . import db, load_config, one
 from .market import two_zones
 from .recorder import ET
-from .trades import CALENDAR_FAMILY, _newest, classify, fix_name
+from .trades import CALENDAR_FAMILY, classify, fix_name
 from .volmath import bs_price, forward_vol, implied_vol
 
 logging.getLogger("ib_async").setLevel(logging.CRITICAL)
@@ -66,37 +65,27 @@ def _ib_symbol(occ, one_expiry):
 
 
 def load_open_trades(path=None):
-    cfg = load_config()
-    path = path or _newest(cfg["trade_files"]["one_glob"])
+    amap = load_config()["risk"]["account_map"]
+    rows, path, _ = one.read(path)
     if not path:
         return [], None
-    amap = cfg["risk"]["account_map"]
-    trades, cur = [], None
-    with open(path, encoding="utf-8-sig") as fh:
-        for r in csv.reader(fh):
-            if len(r) > 15 and r[0] == "" and r[2] in ("Open", "Closed", "Expired") and r[1]:
-                cur = None
-                if r[2] != "Open" or r[1].lower().startswith("backtest"):
-                    continue
-                grp = _one_group(r[1])
-                cur = {"id": f"{r[1]}#{r[6]}", "account": r[1], "group": grp, "ib_account": amap.get(grp),
-                       "underlying": r[3], "expiration": r[4], "trade_id": r[6], "name": fix_name(r[7]),
-                       "opened": r[8], "dte": _f(r[10]), "dit": _f(r[11]), "margin": _f(r[12]),
-                       "comms": _f(r[13]), "one_pnl": _f(r[14]), "one_pnl_pct": _f(r[15]),
-                       "realized": 0.0, "legs": []}
-                trades.append(cur)
-            elif cur and len(r) >= 14 and r[0] == "" and r[1] == "" and r[2] == cur["account"] and r[3] == cur["trade_id"]:
-                qty = _f(r[6]) or 0
-                sign = -1 if r[5].strip().lower() == "sell" else 1
-                closed = len(r) > 14 and r[14].strip() != ""
-                if closed:
-                    cur["realized"] += _f(r[-1]) or 0.0
-                    continue
-                occ = parse_occ(r[7])
-                ib_sym = _ib_symbol(occ, r[8]) if occ else r[7].strip()
-                cur["legs"].append({"symbol": ib_sym, "one_symbol": r[7].strip(), "occ": occ, "qty": sign * qty, "open_price": _f(r[12]),
-                                    "commission": _f(r[13]) or 0.0, "one_expiry": r[8], "right": r[9][:1].upper(),
-                                    "desc": r[10], "underlying": r[11]})
+    trades = []
+    for r in rows:
+        if r["status"] != "Open":
+            continue
+        grp = _one_group(r["account"])
+        t = {"id": f"{r['account']}#{r['trade_id']}", "account": r["account"], "group": grp, "ib_account": amap.get(grp),
+             "underlying": r["underlying"], "expiration": r["expiration"], "trade_id": r["trade_id"], "name": fix_name(r["name"]),
+             "opened": r["opened"], "dte": r["dte"], "dit": r["dit"], "margin": r["margin"], "comms": r["comms"], "one_pnl": r["pnl"],
+             "one_pnl_pct": r["ret"], "realized": sum(lg["pnl"] or 0.0 for lg in r["legs"] if lg["close"]), "legs": []}
+        for lg in r["legs"]:
+            if lg["close"]:
+                continue
+            occ = parse_occ(lg["symbol"])
+            t["legs"].append({"symbol": _ib_symbol(occ, lg["expiry"]) if occ else lg["symbol"], "one_symbol": lg["symbol"], "occ": occ,
+                              "qty": (-1 if lg["side"].lower() == "sell" else 1) * lg["qty"], "open_price": lg["open_px"], "commission": lg["comm"] or 0.0,
+                              "one_expiry": lg["expiry"], "right": lg["type"][:1].upper(), "desc": lg["desc"], "underlying": lg["underlying"]})
+        trades.append(t)
     # merge duplicate open legs of the same contract (ONE lists fills separately)
     for t in trades:
         merged = {}
@@ -114,42 +103,11 @@ def load_open_trades(path=None):
     return [t for t in trades if t["legs"]], path
 
 
-_adj_cache = {}
-
-
 def adjustment_counts():
-    """{account#trade_id: adjustments} from the newest ONE Detail Report (every fill, timestamped): fills within
-    15 minutes are one event; the first event is the entry, every later one an adjustment. None if no report."""
-    import os
-    path = _newest(load_config()["trade_files"].get("one_detail_glob", []))
-    if not path:
-        return {}, None
-    key = (path, os.path.getmtime(path))
-    if key in _adj_cache:
-        return _adj_cache[key]
-    times, cur = {}, None
-    with open(path, encoding="utf-8-sig") as fh:
-        for r in csv.reader(fh):
-            if len(r) > 15 and r[0] == "" and r[2] in ("Open", "Closed", "Expired") and r[1]:
-                cur = f"{r[1]}#{r[6]}" if r[2] == "Open" else None
-                if cur:
-                    times[cur] = []
-            elif cur and len(r) > 13 and r[0] == "" and r[1] == "" and r[5] in ("Buy", "Sell"):
-                t = _local_dt(r[4])
-                if t:
-                    times[cur].append(t)
-    out = {}
-    for k, ts in times.items():
-        ev, last = 0, None
-        for t in sorted(ts):
-            if last is None or (t - last).total_seconds() >= 900:
-                ev += 1
-            last = t
-        out[k] = max(ev - 1, 0)
-    exported = dt.datetime.fromtimestamp(key[1]).isoformat(timespec="minutes")
-    _adj_cache.clear()
-    _adj_cache[key] = (out, exported)
-    return out, exported
+    """{account#trade_id: adjustments} from the newest ONE Detail Report, and when it was exported."""
+    from . import positions
+    pos, exported = positions.load()
+    return {k: v["adj"] for k, v in pos.items()}, exported
 
 
 def _entry_spot(underlying, opened):

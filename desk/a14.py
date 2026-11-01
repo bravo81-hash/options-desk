@@ -351,38 +351,17 @@ def curve(sym, expiry, upper, short, lower, exit_days=None):
 
 # ------------------------------------------------------------------ your A14 history (ONE)
 def history():
-    """Entry structure and outcome of every A14 trade in the latest ONE Summary Report."""
-    from .trades import _newest
-    path = _newest(load_config()["trade_files"]["one_glob"])
+    """Entry structure and outcome of every A14 trade in the latest ONE export."""
+    from . import one
+    rows, path, _ = one.read()
     if not path:
         return {"trades": []}
-
-    def pdt(s):
-        for f in ("%d/%m/%Y %I:%M:%S %p", "%d/%m/%Y %I:%M %p"):
-            try:
-                return dt.datetime.strptime(s, f)
-            except ValueError:
-                pass
-        return None
-
-    def num(x):
-        try:
-            return float(x)
-        except (TypeError, ValueError):
-            return None
-
-    trades, cur = [], None
-    with open(path, encoding="utf-8-sig") as fh:
-        for r in csv.reader(fh):
-            if len(r) > 15 and r[0] == "" and r[2] in ("Open", "Closed", "Expired") and r[1]:
-                cur = {"group": r[1], "status": r[2], "und": r[3], "name": r[7], "dte": num(r[10]), "dit": num(r[11]),
-                       "margin": num(r[12]), "pnl": num(r[14]), "ret": num(r[15]), "legs": []}
-                trades.append(cur)
-            elif len(r) > 17 and r[0] == "" and r[1] == "" and cur is not None and r[5] in ("Buy", "Sell"):
-                t = pdt(r[4])
-                if t and re.search(r"\d{8}$", r[7]):
-                    cur["legs"].append({"t": t, "side": r[5], "qty": num(r[6]) or 0, "k": float(r[7][-8:]) / 1000,
-                                        "right": r[7][-9], "px": num(r[12]) or 0})
+    trades = []
+    for r in rows:
+        legs = [{"t": lg["open"], "side": lg["side"], "qty": lg["qty"], "k": float(lg["symbol"][-8:]) / 1000, "right": lg["symbol"][-9], "px": lg["open_px"] or 0}
+                for lg in r["legs"] if lg["close"] and lg["open"] and re.search(r"\d{8}$", lg["symbol"])]
+        trades.append({"group": r["account"], "status": r["status"], "und": r["underlying"], "name": r["name"], "dte": r["dte"], "dit": r["dit"],
+                       "margin": r["margin"], "pnl": r["pnl"], "ret": r["ret"], "legs": legs})
     out = []
     for t in trades:
         if not re.search(r"\bA14\b", t["name"]) or not t["legs"]:
