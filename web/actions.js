@@ -62,7 +62,23 @@ async function load() {
   L = {Rk, Rd}; SCAN = null;
   headline(Rd); render(); entries(Rd); checks(Rk, Fr, Sn); conditions(); matrix(Rd);
   if (window.renderHeads) window.renderHeads(Rk);
+  logPlans(Rk); api("/api/journal/due").then(journalLine).catch(() => {});  // apart from the rest: the first build takes a few seconds
   ideas(Rd);  // last: the scanner can take a few seconds the first time after a new chain
+}
+
+/* what Trade plan said today, for Journal > Discipline: without this, no fill can be scored against the call. Laptop only. */
+let planSent = 0;
+function logPlans(Rk) {
+  if (window.DESK_CLOUD || !Rk || Date.now() - planSent < 9e5) return; planSent = Date.now();
+  const items = Rk.trades.filter((t) => t.plan).map((t) => ({key: t.id, act: t.plan.act, label: t.plan.label, adj: t.plan.adj ? t.plan.adj.ok : null, pct: t.totalPct}));
+  if (items.length) fetch("/api/journal/plan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({items})}).catch(() => {});
+}
+/* owed to the journal: losses waiting for a post-mortem, and a winning streak, which is when size tends to creep */
+function journalLine(J) {
+  const n = J.due.length, hot = J.streak >= J.streak_n;
+  if (window.navBadge) navBadge("journal", n ? String(n) : "", n ? "wrn" : "");
+  $("acJournal").innerHTML = [hot ? `<div class="small">⚠ <b>${J.streak} straight wins</b>: overconfidence shows up here. The readiness bar still sets the size.</div>` : "",
+    n ? `<div class="small">⚠ <b>${n} big ${n === 1 ? "loss needs a post-mortem" : "losses need a post-mortem"}</b> ${go("journal", "Review", "Review")}</div>` : ""].join("");
 }
 
 /* the size call as one sentence; structures that differ from it are named, since they can sit a step below */

@@ -255,6 +255,11 @@ def api_journal():
     return ok(out)
 
 
+@app.get("/api/journal/due")
+def api_journal_due():
+    return ok(journal.due())
+
+
 def _journal_save(fn, *args):
     try:
         return ok(fn(*args))

@@ -105,3 +105,22 @@ ul.checks{margin:0;padding-left:0;list-style:none;font-size:13px;display:flex;fl
 .updbox{display:flex;align-items:center;gap:6px;flex:0 0 auto}
 #updMeta{cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 #updBtn:disabled{opacity:.7;cursor:progress}
+/* journal: positions, stats and the manual layer */
+input[type=text]{font:inherit;font-size:13px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 7px}
+@media (min-width:1101px){.kv.mini.k8{grid-template-columns:repeat(8,minmax(0,1fr))}}
+.kv.mini.k8 b{font-size:14px;white-space:nowrap}
+.thsort{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-transform:inherit;letter-spacing:inherit}
+.thsort:hover{color:var(--accent)}
+.jtr{cursor:pointer} .jtr:hover td{background:var(--soft)}
+.jvrow{grid-template-columns:1.4em minmax(0,1fr) 4.4em 5.2em}
+.jvgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+.jvgrid label{display:flex;flex-direction:column;gap:3px}
+.jvgrid textarea,.jvgrid input,.jsgrid input{font:inherit;font-size:13px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 8px;resize:vertical;width:100%;box-sizing:border-box}
+.jsgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.jsgrid label{display:flex;flex-direction:column;gap:3px}
+.jsgrid input{width:90px}
+.pcchecks{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:4px 12px;margin:8px 0}
+.pcCheck{display:flex;gap:6px;align-items:center;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink)}
+.jrheat{align-items:flex-start;flex-wrap:nowrap;gap:14px}
+.jtag{margin:8px 0 2px}
+@media (max-width:760px){.jvgrid{grid-template-columns:minmax(0,1fr)}.jrheat{flex-wrap:wrap}.jrheat>div{flex-basis:100%}}

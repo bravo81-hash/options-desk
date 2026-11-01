@@ -38,7 +38,7 @@
     <div class="row" id="acFilt" style="gap:12px"></div>
     <div id="acPreLine"></div>
     <div class="grid" id="acGrid">
-      <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div>
+      <section class="panel c12"><header><h2>Do today</h2><span class="small muted" id="acDoMeta"></span><span class="small muted" id="acWhen" style="margin-left:auto"></span><button type="button" class="ghost" id="acReload">Reload</button></header><div id="acDo"></div><div id="acJournal"></div>
         <p class="note">From the Trade plan (Risk grid): only trades past a line in their card are listed. Exit = past the hard stop or the pace exit; Close = target or time stop reached; Decide = at the decide line (adjust only if the gates say yes); Exit at next green = slow trade. Flags, not orders: the desk never sends orders.</p></section>
       <section class="panel c7"><header><h2>New trades</h2><span class="small muted" id="acNewMeta"></span></header><div id="acNew"></div><div id="acIdeas"></div></section>
       <section class="panel c5"><header><h2>Coming up</h2><span class="small muted">next 3 trading days, plus this week's payrolls, CPI, FOMC and elections · US dates</span></header><div id="acComing"></div></section>
@@ -227,23 +227,60 @@
 
   <!-- JOURNAL -->
   <section class="tab" id="tab-journal" hidden>
-    <div class="panel"><div class="row">
-      <select id="jnStrategy"></select><select id="jnTicker"></select><select id="jnGroup"></select>
-      <select id="jnResult"><option value="">wins and losses</option><option value="win">wins</option><option value="loss">losses</option></select>
-      <input type="text" id="jnSearch" placeholder="search name, note or trade id" style="max-width:260px">
-      <span class="small muted" id="jnMeta"></span>
-    </div></div>
-    <div class="strip" id="jnStrip"></div>
+    <section class="panel modalp" id="jePrePanel" hidden><header><h2>Pre-commit: accept the loss first</h2><button type="button" class="ghost mclose">Close</button></header>
+      <form class="row" onsubmit="return false"><select id="pcStrategy" aria-label="Strategy"></select><input type="text" id="pcTicker" placeholder="ticker" maxlength="10" style="max-width:90px"><select id="pcAcct" aria-label="Account"></select>
+        <input type="number" id="pcWorst" min="0" step="any" placeholder="worst case, $" style="max-width:150px"><span class="small muted" id="pcStop"></span></form>
+      <div id="pcOut" style="margin-top:8px"></div>
+      <div class="pcchecks" id="pcChecks"></div>
+      <div class="row"><select id="pcMood" aria-label="Mood"><option value="">mood</option><option>calm</option><option>focused</option><option>confident</option><option>rushed</option><option>frustrated</option><option>fearful</option></select>
+        <select id="pcConf" aria-label="Confidence"><option value="">confidence</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+        <label class="lbl" for="pcTired"><input type="checkbox" id="pcTired"> tired</label><input type="text" id="pcNote" placeholder="note" maxlength="300" style="max-width:300px">
+        <button type="button" id="pcSave">Save pre-commit</button><span class="small muted" id="pcMsg"></span></div>
+      <p class="note">Information only. This records what you accepted before the trade; it never sizes, gates or sends anything.</p></section>
     <div class="grid" data-subs id="tab-journal-grid">
+      <div class="panel c12" id="jeBar" hidden><form class="row" onsubmit="return false"><select id="jeStrategy" aria-label="Strategy"></select><select id="jeAcct" aria-label="Account"></select><select id="jeVix" aria-label="VIX at entry"></select><select id="jeDte" aria-label="Entry DTE"></select>
+        <label class="lbl" for="jeFrom">from <input type="date" id="jeFrom"></label><label class="lbl" for="jeTo">to <input type="date" id="jeTo"></label><span class="small muted" id="jeCount"></span></form></div>
+      <div class="panel c12" data-sub="Trades"><div class="row">
+        <select id="jnStrategy" aria-label="Strategy"></select><select id="jnTicker" aria-label="Ticker"></select><select id="jnGroup" aria-label="Account"></select>
+        <select id="jnResult" aria-label="Result"><option value="">wins and losses</option><option value="win">wins</option><option value="loss">losses</option></select>
+        <input type="text" id="jnSearch" placeholder="search name, note or trade id" style="max-width:260px">
+        <span class="small muted" id="jnMeta"></span>
+      </div></div>
       <section class="panel c4" data-sub="Trades"><header><h2>Closed trades</h2><span class="row" style="gap:6px"><select id="jnSort" aria-label="Sort"><option value="date">newest first</option><option value="pnl">biggest win first</option><option value="worst">biggest loss first</option><option value="ret">best return first</option></select><span class="small muted" id="jnCount"></span></span></header>
         <div class="jlist" id="jnList"></div><span class="small muted">click a folder to fold it · ↑ ↓ to move through trades</span></section>
       <section class="panel c8" data-sub="Trades"><header><h2 id="jnDetailTitle">Select a trade</h2></header><div id="jnDetailBody"></div></section>
+      <section class="panel c12 scrollp" data-sub="Table"><header><h2>Every position</h2><span class="small muted">click a heading to sort · click a closed trade for its card</span></header><div id="jeTable"></div></section>
+      <div class="strip c12" id="jnStrip" data-sub="Overview"></div>
       <section class="panel c7" data-sub="Overview"><header><h2>Cumulative P&amp;L of closed trades</h2><span class="small muted">by close date (US)</span></header><div class="chart" id="jnCum"></div></section>
       <section class="panel c5" data-sub="Overview"><header><h2>Days held vs return</h2><span class="small muted">colour = strategy · size = margin · hover for the note</span></header><div class="chart" id="jnScatter"></div></section>
       <section class="panel c5" data-sub="Overview"><header><h2>By strategy</h2><span class="small muted">total P&amp;L · trades · win rate · average return</span></header><div id="jnStrat"></div></section>
       <section class="panel c7" data-sub="Overview"><header><h2>By month and strategy</h2></header><div id="jnMonths"></div></section>
       <section class="panel c12" data-sub="Overview"><header><h2>Capital pace by month closed</h2><span class="small muted">return on margin per day held · entry DTE · days held · against your pace target</span></header><div id="jnPace"></div></section>
-
+      <section class="panel c12" data-sub="Edge"><div class="kv mini k8" id="jeKpi"></div></section>
+      <section class="panel c7" data-sub="Edge"><header><h2>Cumulative R</h2><span class="small muted" id="jeCurveSub"></span></header><div class="chart" id="jeCurve"></div><p class="note" id="jeRecover"></p></section>
+      <section class="panel c5" data-sub="Edge"><header><h2>R per decision</h2><span class="small muted" id="jeHistSub"></span></header><div class="chart" id="jeHist"></div><p class="note" id="jeSkew"></p></section>
+      <section class="panel c12" data-sub="Confidence"><header><h2>What the sample can claim</h2><span class="small muted">each strategy against the rules of thumb, no overall verdict · ranges are 80%</span></header><div id="jeConf"></div><div id="jeTail"></div></section>
+      <section class="panel c3" data-sub="Confidence"><header><h2>VIX at entry</h2></header><div id="jeByVix"></div></section>
+      <section class="panel c3" data-sub="Confidence"><header><h2>VIX/VIX3M band</h2></header><div id="jeByBand"></div></section>
+      <section class="panel c3" data-sub="Confidence"><header><h2>Entry DTE</h2></header><div id="jeByDte"></div></section>
+      <section class="panel c3" data-sub="Confidence"><header><h2>Adjustments</h2></header><div id="jeByAdj"></div></section>
+      <section class="panel c12" data-sub="Discipline"><div class="kv mini" id="jdStrip"></div></section>
+      <section class="panel c7" data-sub="Discipline"><header><h2>Each rule, kept against broken</h2><label class="lbl" for="jdAll"><input type="checkbox" id="jdAll"> as if every rule had always existed</label></header><div id="jdRules"></div></section>
+      <section class="panel c5" data-sub="Discipline"><header><h2>Overrides</h2><span class="small muted">stepping outside the rules, and how it went</span></header><div id="jdOverrides"></div></section>
+      <section class="panel c12" data-sub="Risk taken"><div class="kv mini" id="jrStrip"></div></section>
+      <section class="panel c4" data-sub="Risk taken"><header><h2>Planned loss at entry</h2><span class="small muted">card stop × entry risk, % of NAV</span></header><div class="chart" id="jrCap"></div></section>
+      <section class="panel c4" data-sub="Risk taken"><header><h2>Risk added after entry</h2><span class="small muted">each dot a trade · colour = strategy</span></header><div class="chart" id="jrCreep"></div></section>
+      <section class="panel c4" data-sub="Risk taken"><header><h2>Pre-commits</h2><button type="button" id="jePre">New pre-commit</button></header><div id="jrTickets"></div></section>
+      <section class="panel c12" data-sub="Risk taken"><header><h2>Open risk, day by day</h2><span class="small muted">planned loss of everything open, % of NAV · trades with no card stop aren't in it · dashed = open positions</span></header><div class="row jrheat" id="jrHeatHost"></div></section>
+      <section class="panel c12" data-sub="Behaviour"><div class="kv mini" id="jbStrip"></div></section>
+      <section class="panel c4" data-sub="Behaviour"><header><h2>After a winning streak</h2><span class="small muted">mean R by wins before entry</span></header><div class="chart" id="jbStreak"></div></section>
+      <section class="panel c4" data-sub="Behaviour"><header><h2>After a loss</h2><span class="small muted">size of the next five entries, 1× = your usual</span></header><div class="chart" id="jbAfter"></div></section>
+      <section class="panel c4" data-sub="Behaviour"><header><h2>Mood against result</h2><span class="small muted">from your tags, from now on</span></header><div id="jbMoods"></div></section>
+      <section class="panel c12" data-sub="Behaviour"><header><h2>Entries to look at</h2><span class="small muted">revenge flags, and bigger entries on a streak</span></header><div id="jbFlags"></div></section>
+      <section class="panel c4" data-sub="Review"><header><h2>Losses to review</h2><span class="small muted" id="jvCount"></span></header><div class="jlist" id="jvList"></div></section>
+      <section class="panel c8" data-sub="Review"><header><h2 id="jvTitle">Post-mortem</h2></header><div id="jvForm"></div></section>
+      <section class="panel c8" data-sub="Settings"><header><h2>Thresholds</h2><span class="small muted">rules of thumb, yours to change · none of them touch sizing, gates or orders</span></header><div id="jsForm"></div></section>
+      <section class="panel c4" data-sub="Settings"><header><h2>Your journal data</h2></header><div id="jsBackup"></div></section>
     </div>
   </section>
 
@@ -523,6 +560,8 @@
 <script src="readiness.js"></script>
 <script src="pick.js"></script>
 <script src="season.js"></script>
+<script src="jstats.js"></script>
+<script src="jviews.js"></script>
 <script src="journal.js"></script>
 <script src="backtest.js"></script>
 <script src="heads.js"></script>

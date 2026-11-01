@@ -34,7 +34,7 @@ _lock = threading.Lock()
 # query parameters that select a snapshot entry; anything else the UI sends is ignored (keep in step with cloud.js)
 KEEP = {"calendar": ["symbol"], "pair": ["symbol", "front", "back"], "pair/curve": ["symbol", "front", "back", "strike"],
         "skew": ["symbol", "tenor"], "pick": ["vol"], "a14/scan": ["sym", "vol"], "a14/curve": ["sym", "expiry", "u", "s", "l"]}
-PLAIN = ["risk", "a14/stats", "a14/history", "journal", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
+PLAIN = ["risk", "a14/stats", "a14/history", "journal", "journal/due", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
          "md/account", "freshness", "backtest", "conditions", "heads"]
 A14_CURVES = 30  # risk curves for the top candidates per underlying (default sort: since-2009 return per day)
 
@@ -181,7 +181,7 @@ def fingerprint():
     for g in (files.get("one_glob", []), files.get("one_detail_glob", [])):
         f = _newest(g)
         parts.append(f and f"{f}:{os.path.getmtime(f)}")
-    typed = [f"SELECT MAX(updated) v FROM {t}" for t in journal.MANUAL]  # what was typed into the journal can't be rebuilt, so it travels at once
+    typed = [f"SELECT COUNT(*) || ':' || COALESCE(MAX(updated), '') v FROM {t}" for t in journal.MANUAL]  # what was typed into the journal can't be rebuilt, so it travels at once
     for sql in ["SELECT MAX(date) v FROM account_daily", "SELECT COUNT(*) v FROM executions", *typed]:
         try:
             parts.append(q(sql))

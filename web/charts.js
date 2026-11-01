@@ -134,7 +134,7 @@ function barChart(el, cfg) {
     let lo = Math.min(0, ...I.map((i) => i.v)), hi = Math.max(0, ...I.map((i) => i.v)); const pad = (hi - lo) * 0.08 || 1; lo -= lo < 0 ? pad : 0; hi += pad;
     const Y = (v) => mT + ph - (v - lo) * ph / (hi - lo), bw = pw / cfg.items.length;
     let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.label || "bar chart")}">`;
-    niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${+v.toFixed(1)}${cfg.unit ?? "%"}</text>`; });
+    niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${+v.toFixed(cfg.dp ?? 1)}${cfg.unit ?? "%"}</text>`; });
     const every = Math.ceil(cfg.items.length / Math.max(1, Math.floor(pw / (cfg.rotate ? 18 : 42))));
     cfg.items.forEach((it, k) => { const x = mL + k * bw;
       if (ok(it.v)) s += `<rect class="bc" data-k="${k}" x="${(x + bw * 0.14).toFixed(1)}" y="${Y(Math.max(it.v, 0)).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(Math.abs(Y(it.v) - Y(0)), 0.8).toFixed(1)}" rx="1.5" fill="${it.color || (it.v >= 0 ? "var(--up)" : "var(--down)")}" opacity="${it.dim || (ok(it.n) && it.n < THIN_N) ? 0.35 : 0.9}"${it.hi ? ` stroke="var(--ink)" stroke-width="1.5"` : ""}/>`;
@@ -179,6 +179,45 @@ function heatmap(el, cfg) {
     el.innerHTML = s + `</svg>`;
     bindTip(el, ".hc", (n) => cfg.cells.get(`${n.dataset.r}|${n.dataset.c}`).title);
     el.querySelectorAll(".hc").forEach((n) => n.addEventListener("click", () => cfg.onClick && cfg.onClick(n.dataset.r, n.dataset.c)));
+  });
+}
+
+/* A running total with what it has given back shaded under its peak. points: [{d, v, peak, tip}], one per closed position. */
+function ddChart(el, cfg) {
+  const P = cfg.points, n = P.length; if (!n) { el.innerHTML = `<div class="state">Nothing closed yet.</div>`; return; }
+  mount(el, (W) => {
+    const H = cfg.h || 240, mL = 44, mR = 12, mT = 8, mB = 22, pw = W - mL - mR, ph = H - mT - mB, vals = P.flatMap((p) => [p.v, p.peak]).concat(0);
+    let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+    const X = (i) => mL + (n <= 1 ? pw / 2 : i * pw / (n - 1)), Y = (v) => mT + ph - (v - lo) * ph / (hi - lo);
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.label || "running total")}">`;
+    niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${v === 0 ? "var(--line)" : "var(--grid)"}"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${+v.toFixed(1)}${cfg.unit || ""}</text>`; });
+    const xt = Math.max(2, Math.min(6, n, Math.floor(pw / 80)));
+    for (let k = 0; k < xt; k++) { const i = Math.round(k * (n - 1) / Math.max(xt - 1, 1)); s += `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="${k === 0 ? "start" : k === xt - 1 ? "end" : "middle"}">${shortDate(P[i].d)}</text>`; }
+    s += `<path d="${P.map((p, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(p.peak).toFixed(1)}`).join("")}${[...P].reverse().map((p, i) => `L${X(n - 1 - i).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}Z" fill="color-mix(in srgb, var(--down) 22%, transparent)"/>`;
+    s += `<path d="${P.map((p, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round"/>`;
+    s += `<line class="xh" x1="0" x2="0" y1="${mT}" y2="${mT + ph}" stroke="var(--muted)" visibility="hidden"/><rect class="hit" x="${mL}" y="${mT}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;
+    el.innerHTML = s;
+    const svg = el.firstChild, xh = svg.querySelector(".xh"), hit = svg.querySelector(".hit");
+    const mv = (ev) => { const r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(n - 1, Math.round((ev.clientX - r.left - mL) / pw * (n - 1))));
+      xh.setAttribute("x1", X(i)); xh.setAttribute("x2", X(i)); xh.setAttribute("visibility", "visible"); showTip(P[i].tip || "", ev.clientX, ev.clientY); };
+    hit.addEventListener("pointermove", mv); hit.addEventListener("pointerdown", mv); hit.addEventListener("pointerleave", () => { xh.setAttribute("visibility", "hidden"); hideTip(); });
+  });
+}
+
+/* Histogram on a numeric axis with marked values. bins: [{x0, x1, n}], lines: [{x, label, color}] */
+function histChart(el, cfg) {
+  const B = cfg.bins; if (!B.length) { el.innerHTML = `<div class="state">Nothing closed yet.</div>`; return; }
+  mount(el, (W) => {
+    const H = cfg.h || 240, mL = 34, mR = 12, mT = 20, mB = 22, pw = W - mL - mR, ph = H - mT - mB, x0 = B[0].x0, x1 = B[B.length - 1].x1, top = Math.max(...B.map((b) => b.n), 1);
+    const X = (x) => mL + (x - x0) * pw / ((x1 - x0) || 1), Y = (v) => mT + ph - v * ph / top;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.label || "histogram")}">`;
+    niceTicks(0, top, 3).forEach((v) => { if (v <= top && Number.isInteger(v)) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${v}</text>`; });
+    B.forEach((b, k) => { if (b.n) s += `<rect class="hb" data-k="${k}" x="${(X(b.x0) + 1).toFixed(1)}" y="${Y(b.n).toFixed(1)}" width="${Math.max(X(b.x1) - X(b.x0) - 2, 1).toFixed(1)}" height="${(Y(0) - Y(b.n)).toFixed(1)}" rx="1.5" fill="${b.x0 >= -1e-9 ? "var(--up)" : "var(--down)"}" opacity=".85"/>`; });
+    niceTicks(x0, x1, Math.max(3, Math.floor(pw / 70))).forEach((v) => { if (v >= x0 && v <= x1) s += `<text x="${X(v).toFixed(1)}" y="${H - 6}" text-anchor="middle">${+v.toFixed(2)}${cfg.unit || ""}</text>`; });
+    const L = (cfg.lines || []).filter((l) => ok(l.x)).sort((a, b) => a.x - b.x);  // the labels part left and right of their lines, so two close values stay readable
+    L.forEach((l, i) => { const left = L.length > 1 && i === 0; s += `<line x1="${X(l.x).toFixed(1)}" x2="${X(l.x).toFixed(1)}" y1="${mT - 4}" y2="${mT + ph}" stroke="${l.color}" stroke-width="2"${l.dash ? ` stroke-dasharray="${l.dash}"` : ""}/><text x="${(X(l.x) + (left ? -5 : 5)).toFixed(1)}" y="12" text-anchor="${left ? "end" : "start"}" fill="${l.color}">${esc(l.label)}</text>`; });
+    el.innerHTML = s + `</svg>`;
+    bindTip(el, ".hb", (n) => { const b = B[+n.dataset.k]; return `${b.x0.toFixed(1)} to ${b.x1.toFixed(1)}${cfg.unit || ""}: <b>${b.n}</b>`; });
   });
 }
 

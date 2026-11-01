@@ -408,3 +408,93 @@ def test_the_snapshot_fingerprint_moves_when_something_is_typed(desk, monkeypatc
 def test_the_journal_is_still_in_the_snapshot():
     from desk import snapshot
     assert "journal" in snapshot.PLAIN
+
+
+def test_the_due_list_is_in_the_snapshot():
+    from desk import snapshot
+    assert "journal/due" in snapshot.PLAIN
+
+
+def test_the_snapshot_fingerprint_moves_when_something_is_deleted(desk, monkeypatch):
+    from desk import snapshot
+    monkeypatch.setattr(snapshot, "load_config", lambda: {"trade_files": {}})
+    tid = journal.save_ticket({"strategy": "A14", "ticker": "SPX", "worst": 1000, "created": "2026-10-01T06:00:00"})["id"]
+    journal.save_ticket({"strategy": "A14", "ticker": "RUT", "worst": 1000, "created": "2026-10-01T06:00:00"})
+    a = snapshot.fingerprint()
+    journal.delete_ticket(tid)
+    assert snapshot.fingerprint() != a
+
+
+def test_a_pre_commit_goes_to_the_nearest_entry_and_says_whether_it_came_first():
+    D = [dec(0, entry=dt.datetime(2026, 10, 1, 6)), dec(1, entry=dt.datetime(2026, 10, 3, 6)), dec(2, entry=dt.datetime(2026, 10, 3, 6), ticker="RUT"), dec(3, entry=dt.datetime(2026, 10, 9, 6))]
+    out = positions.link_tickets(D, [{"id": "a", "ticker": "SPX", "strategy": "A14", "created": "2026-10-03T05:00:00"},
+                                     {"id": "b", "ticker": "SPX", "strategy": "A14", "created": "2026-10-01T07:00:00"},
+                                     {"id": "c", "ticker": "SPX", "strategy": "HV7", "created": "2026-10-09T05:00:00"},
+                                     {"id": "d", "ticker": "SPX", "strategy": "A14", "created": "2026-09-01T05:00:00"}])
+    assert out == {"d1": {"ticket": "a", "before_fill": True}, "d0": {"ticket": "b", "before_fill": False}}
+
+
+def test_each_exit_call_counts_once_and_adjustments_meet_the_last_plan():
+    pos = {"k": {"events": [at("10-01"), at("10-06"), at("10-20"), at("10-29")], "flat": False}}
+    log = [{"date": "2026-10-05", "trade_key": "k", "act": "hold", "label": "Hold", "adj": "no"},
+           {"date": "2026-10-19", "trade_key": "k", "act": "exit", "label": "Exit", "adj": "yes"},
+           {"date": "2026-10-20", "trade_key": "k", "act": "exit", "label": "Exit", "adj": "yes"}]
+    out = positions.plan_scores(log, pos, {"k": "2026-10-23"})
+    assert out["calls"] == [{"key": "k", "act": "exit", "label": "Exit", "from": "2026-10-19", "done": "2026-10-23"}]
+    assert (out["adj_against"], out["adj_allowed"], out["sessions"]) == (1, 1, 3)  # the third adjustment is too long after the last plan to judge
+
+
+def test_a_call_not_yet_acted_on_shows_as_open():
+    out = positions.plan_scores([{"date": "2026-10-05", "trade_key": "k", "act": "close", "label": "Close", "adj": None}], {}, {})
+    assert out["calls"][0]["done"] is None
+
+
+def test_an_unchanged_plan_is_not_written_again(desk):
+    item = {"key": "k", "act": "hold", "label": "Hold", "adj": "yes", "pct": -1.0}
+    assert journal.log_plan([item], "2026-10-05")["n"] == 1
+    assert journal.log_plan([{**item, "pct": -2.0}], "2026-10-05")["n"] == 0
+    assert journal.log_plan([{**item, "act": "exit"}], "2026-10-05")["n"] == 1
+    assert journal.log_plan([item], "2026-10-06")["n"] == 1
+
+
+def test_the_current_streak_stops_at_the_last_loss():
+    D = [dec(0, pnl=100), dec(1, pnl=-50), dec(2, pnl=100), dec(3, pnl=100), {**dec(4), "close": None, "pnl": None, "r": None}]
+    assert positions.streak_now(D) == 2
+    assert positions.streak_now([]) == 0
+
+
+def journal_page(monkeypatch):
+    accounts.init()
+    monkeypatch.setattr(one, "report_path", lambda: None)
+    built = []
+    book = [{"decision": "d1", "ticker": "SPX", "strategy": "A14", "extreme": ["stop"], "exit_us": "2026-10-01"}, {"decision": "d1", "ticker": "SPX", "strategy": "A14", "extreme": ["stop"], "exit_us": "2026-10-01"},
+            {"decision": "d2", "ticker": "RUT", "strategy": "A14", "extreme": [], "exit_us": "2026-10-02"}]
+    monkeypatch.setattr(journal, "_build", lambda: built.append(1) or {"book": book, "manual": journal.manual(), "streak_now": 5, "settings": journal.settings()})
+    journal._memo.clear()
+    return built
+
+
+def test_the_page_is_rebuilt_only_when_something_it_shows_changed(desk, monkeypatch):
+    built = journal_page(monkeypatch)
+    journal.closed(), journal.closed()
+    assert len(built) == 1
+    journal.save_review({"decision": "d9", "cause": "x"})
+    journal.closed()
+    assert len(built) == 2
+    tid = journal.save_ticket({"strategy": "A14", "ticker": "SPX", "worst": 1000})["id"]
+    journal.closed()
+    journal.delete_ticket(tid)  # a delete leaves the newest timestamp behind, so the count has to catch it
+    journal.closed()
+    assert len(built) == 4
+    db.write("INSERT OR REPLACE INTO fx_daily VALUES (?,?,?)", ("AUDUSD", "2026-10-01", 0.65))
+    journal.closed()
+    assert len(built) == 5
+
+
+def test_a_post_mortem_clears_what_the_journal_is_owed(desk, monkeypatch):
+    journal_page(monkeypatch)
+    out = journal.due()
+    assert [d["decision"] for d in out["due"]] == ["d1"]  # twins owe one post-mortem
+    assert (out["streak"], out["streak_n"]) == (5, 4)
+    journal.save_review({"decision": "d1", "cause": "x"})
+    assert journal.due()["due"] == []

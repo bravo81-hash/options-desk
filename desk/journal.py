@@ -231,16 +231,24 @@ def book(trades, ctxs, cfg):
         if r["plan"] is not None:
             plans[r["decision"]] = plans.get(r["decision"], 0) + r["plan"]
     extreme, avg_loss = positions.extreme_flags(decisions, plans, cfg["extreme_x"])
+    tickets = positions.link_tickets(decisions, db.query("SELECT * FROM journal_tickets"))
+    now = {}
+    for ib, label in names.items():
+        usd = nav(ib, dt.date.today().isoformat())
+        if usd:
+            now[label] = round(usd)
     for r in rows:
-        r.update(flags.get(r["decision"], {}), extreme=extreme.get(r["decision"], []))
+        r.update(flags.get(r["decision"], {}), extreme=extreme.get(r["decision"], []), ticket=tickets.get(r["decision"]))
         r["entry"], r["close"] = r["entry"].isoformat(), r["close"].isoformat() if r["close"] else None
         for k in ("labels", "ib", "group"):
             r.pop(k, None)
     rows.sort(key=lambda r: r["entry"])
-    return {"rows": rows, "pending": pending, "exported": exported, "heat": heat, "avg_loss_r": avg_loss}
+    exits = {k: r["exit_us"] for r in rows for k in r["keys"]}
+    return {"rows": rows, "pending": pending, "exported": exported, "heat": heat, "avg_loss_r": avg_loss, "nav_now": now, "streak_now": positions.streak_now(decisions),
+            "plan": positions.plan_scores(db.query("SELECT * FROM journal_planlog"), pos, exits)}
 
 
-_history = {}
+_history, _memo = {}, {}
 
 
 def history():
@@ -268,8 +276,33 @@ def manual():
     return {t: [dict(r) for r in db.query(f"SELECT * FROM {t}")] for t in MANUAL}
 
 
+def _stamp():
+    """Everything the page's payload is built from. The build takes seconds and the Actions tab asks for part of it on every load."""
+    path = one.report_path()
+    q = [f"SELECT COUNT(*) n, MAX(updated) v FROM {t}" for t in MANUAL + ("trade_pnl",)] + ["SELECT COUNT(*) n, MAX(date) v FROM account_daily", "SELECT COUNT(*) n, MAX(date) v FROM fx_daily"]
+    return str(db._PATH), path, path and os.path.getmtime(path), tuple(tuple(db.query(sql)[0].values()) for sql in q)
+
+
 def closed():
     init()
+    stamp = _stamp()
+    if _memo.get("stamp") != stamp:
+        _memo.update(stamp=stamp, out=_build())
+    return _memo["out"]
+
+
+def due():
+    """What the journal is owed, for the Actions tab and the nav badge: post-mortems not yet written, and the winning streak as it stands."""
+    J = closed()
+    done, seen, items = {r["decision"] for r in J["manual"]["journal_reviews"]}, set(), []
+    for r in J["book"]:
+        if r["extreme"] and r["decision"] not in done and r["decision"] not in seen:
+            seen.add(r["decision"])
+            items.append({"decision": r["decision"], "ticker": r["ticker"], "strategy": r["strategy"], "why": r["extreme"], "exit": r["exit_us"]})
+    return {"due": items, "streak": J["streak_now"], "streak_n": J["settings"]["streak_n"]}
+
+
+def _build():
     trades, path = parse()
     cfg = settings()
     notes = {r["trade_key"]: r["note"] for r in db.query("SELECT * FROM journal_notes")}
@@ -308,7 +341,7 @@ def closed():
                     "note": notes.get(t["key"]) or auto, "note_auto": auto, "note_edited": t["key"] in notes})
     out.sort(key=lambda x: x["close"] or "", reverse=True)
     return {"trades": out, "file": path, "book": bk["rows"], "pending": bk["pending"], "detail_exported": bk["exported"], "heat": bk["heat"],
-            "avg_loss_r": bk["avg_loss_r"], "settings": cfg, "defaults": DEFAULTS, "history": history(), "cards": positions.CARDS,
+            "avg_loss_r": bk["avg_loss_r"], "nav_now": bk["nav_now"], "streak_now": bk["streak_now"], "plan": bk["plan"], "settings": cfg, "defaults": DEFAULTS, "history": history(), "cards": positions.CARDS,
             "rules_from": {"card": positions.CARD_FROM, "gate": positions.GATE_FROM, "cap": positions.CAP_FROM}, "manual": manual()}
 
 
@@ -385,7 +418,9 @@ def log_plan(items, sess=None):
     from .recorder import session_date
     init()
     sess = sess or session_date().isoformat()
-    rows = [(sess, i["key"], i.get("act"), i.get("label"), i.get("adj"), i.get("pct"), _now()) for i in items or [] if i.get("key")]
+    have = {r["trade_key"]: (r["act"], r["label"], r["adj"]) for r in db.query("SELECT * FROM journal_planlog WHERE date=?", (sess,))}
+    rows = [(sess, i["key"], i.get("act"), i.get("label"), i.get("adj"), i.get("pct"), _now()) for i in items or []
+            if i.get("key") and have.get(i["key"]) != (i.get("act"), i.get("label"), i.get("adj"))]  # an unchanged plan changes nothing, so it doesn't rebuild the page or the snapshot
     if rows:
         db.write("INSERT OR REPLACE INTO journal_planlog VALUES (?,?,?,?,?,?,?)", rows, many=True)
     return {"ok": True, "n": len(rows)}

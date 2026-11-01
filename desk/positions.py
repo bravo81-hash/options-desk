@@ -225,6 +225,16 @@ def behaviour(decisions, cfg):
     return out
 
 
+def streak_now(decisions):
+    """Straight winning closes up to today, for the warning before the next entry."""
+    n = 0
+    for d in sorted([d for d in decisions if d["close"]], key=lambda d: d["close"], reverse=True):
+        if d["pnl"] <= 0:
+            break
+        n += 1
+    return n
+
+
 def extreme_flags(decisions, plans, multiple):
     """({decision: why it needs a post-mortem}, average loss in R): a loss over `multiple` × the average, or past what was planned at entry."""
     losses = [abs(d["r"]) for d in decisions if d["r"] is not None and d["r"] < 0]
@@ -242,6 +252,42 @@ def extreme_flags(decisions, plans, multiple):
         if why:
             out[d["decision"]] = why
     return out, avg
+
+
+def link_tickets(decisions, tickets, days=3):
+    """{decision: {ticket, before_fill}}: each pre-commit goes to the nearest entry in its ticker and strategy. The desk only sees a
+    trade after it fills, so the stamp says whether the pre-commit really came first."""
+    out = {}
+    for t in sorted(tickets, key=lambda t: t["created"]):
+        made = dt.datetime.fromisoformat(t["created"])
+        gap = lambda d: abs((d["entry"] - made).total_seconds())  # noqa: E731
+        near = [d for d in decisions if d["decision"] not in out and d["ticker"] == t["ticker"] and d["strategy"] == t["strategy"] and gap(d) <= days * 86400]
+        if near:
+            d = min(near, key=gap)
+            out[d["decision"]] = {"ticket": t["id"], "before_fill": made < d["entry"]}
+    return out
+
+
+def plan_scores(log, pos, exits):
+    """What Trade plan said at the time against what the fills then did. exits: {key: US exit session}. Each Exit or Close call counts
+    once per trade, from the first session it was shown; each adjustment is held against the last log at most three sessions before it."""
+    by, calls, against, allowed = {}, [], 0, 0
+    for r in sorted(log, key=lambda r: r["date"]):
+        by.setdefault(r["trade_key"], []).append(r)
+    for key, rows in by.items():
+        first = next((r for r in rows if r["act"] in ("exit", "close")), None)
+        if first:
+            calls.append({"key": key, "act": first["act"], "label": first["label"], "from": first["date"], "done": exits.get(key)})
+        p = pos.get(key)
+        for e in (p["events"][1:-1] if p and p["flat"] else p["events"][1:] if p else []):
+            day = (e - dt.timedelta(hours=14)).date()
+            said = [r for r in rows if dt.date.fromisoformat(r["date"]) <= day]
+            if said and (day - dt.date.fromisoformat(said[-1]["date"])).days <= 3:
+                if said[-1]["adj"] == "no":
+                    against += 1
+                else:
+                    allowed += 1
+    return {"calls": calls, "adj_against": against, "adj_allowed": allowed, "sessions": len({r["date"] for r in log})}
 
 
 def rule_checks(r, cap_pct):

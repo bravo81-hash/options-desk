@@ -128,6 +128,7 @@ function detail(key) {
       <div><span class="lbl">Entry conditions</span><b>VIX ${ok(c.vix) ? c.vix.toFixed(1) : "–"}</b><span class="small muted">VIX/VIX3M ${ok(c.ivts) ? c.ivts.toFixed(3) : "–"} (${esc(B.label)})${ok(c.vs_sma20) ? ` · ${esc(t.ticker)} ${pctS(c.vs_sma20)} vs 20-day avg` : ""}</span></div>
       <div><span class="lbl">Adjustments</span><b>${t.adjustments}</b><span class="small muted">${t.legs_n} leg rows in ONE</span></div>
     </div>
+    ${window.jCardRow ? window.jCardRow(key) : ""}
     <div class="jnedit"><span class="lbl">Learning note</span><textarea id="jnNote" rows="2" maxlength="300">${esc(t.note)}</textarea>
       <div class="row"><button type="button" id="jnSave">Save note</button><button type="button" class="ghost" id="jnAuto">Use the suggestion</button><span class="small muted" id="jnNoteMsg">${t.note_edited ? "your note" : "suggested from the data"}</span></div></div>
     <h3>${esc(t.ticker)} through the trade · solid = entry strikes · dotted = strikes added by adjustments · orange = adjustment days</h3><div class="chart" id="jnPath"></div>
@@ -139,8 +140,10 @@ function detail(key) {
     await fetch("/api/journal/note", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: t.key, note})});
     t.note = note || t.note_auto; t.note_edited = !!note; $("jnNote").value = t.note; $("jnNoteMsg").textContent = note ? "saved" : "suggestion restored";
   };
-  $("jnSave").addEventListener("click", () => save($("jnNote").value.trim()));
-  $("jnAuto").addEventListener("click", () => save(""));
+  if (window.DESK_CLOUD) { ["jnNote", "jnSave", "jnAuto"].forEach((id) => { $(id).disabled = true; }); } else {
+    $("jnSave").addEventListener("click", () => save($("jnNote").value.trim()));
+    $("jnAuto").addEventListener("click", () => save("")); }
+  if (window.jTagBind) window.jTagBind(key);
   if (t.path && t.path.length > 1) {
     const v = t.path.map((p) => p.v), lo = Math.min(...v) * 0.9, hi = Math.max(...v) * 1.1, entry = new Set(t.entry_strikes || []);
     const refs = (t.strikes || []).filter((k) => k > lo && k < hi).map((k) => entry.has(k) ? {y: k, color: "var(--warn)", label: String(k)} : {y: k, color: "color-mix(in srgb, var(--warn) 35%, transparent)"});
@@ -154,6 +157,15 @@ function detail(key) {
   if (t.marked_path && t.marked_path.length > 1) lineChart($("jnMarked"), {label: "marked P&L", h: 170, series: [{name: "Marked P&L", short: "", data: t.marked_path, color: "var(--s1)", width: 1.8}], refs: [{y: 0}], fy: (x) => (x / 1000).toFixed(1) + "k", ft: (x) => money(x)});
 }
 
+/* from a table or a post-mortem: clear the list's filters so the trade is in it, then show its card */
+function openTrade(keys) {
+  const key = [].concat(keys).find((k) => J.trades.some((t) => t.key === k)); if (!key) return;
+  F = {strategy: "", ticker: "", group: "", result: "", q: ""};
+  ["jnStrategy", "jnTicker", "jnGroup", "jnResult", "jnSearch"].forEach((id) => { $(id).value = ""; });
+  openF[J.trades.find((t) => t.key === key).strategy] = true;
+  list(); showSub($("tab-journal-grid"), "Trades"); select(key);
+}
+
 /* ---------- load ---------- */
 async function load() {
   $("jnList").innerHTML = `<div class="state">Reading the ONE report…</div>`;
@@ -164,6 +176,7 @@ async function load() {
     const opts = (k) => [...new Set(J.trades.map((t) => t[k]))].sort();
     const sel = (id, k, label) => { $(id).innerHTML = `<option value="">${label}</option>` + opts(k).map((v) => `<option>${esc(v)}</option>`).join(""); };
     sel("jnStrategy", "strategy", "all strategies"); sel("jnTicker", "ticker", "all tickers"); sel("jnGroup", "group", "all accounts");
+    window.JV.render(J, openTrade);
     overview(J.trades); paceView(J.trades); list();
   } catch (e) { $("jnList").innerHTML = `<div class="state err">${esc(e.message || e)}</div>`; }
 }
