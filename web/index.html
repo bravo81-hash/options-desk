@@ -229,7 +229,7 @@
   <section class="tab" id="tab-journal" hidden>
     <section class="panel modalp" id="jePrePanel" hidden><header><h2>Pre-commit: accept the loss first</h2><button type="button" class="ghost mclose">Close</button></header>
       <form class="row" onsubmit="return false"><select id="pcStrategy" aria-label="Strategy"></select><input type="text" id="pcTicker" placeholder="ticker" maxlength="10" style="max-width:90px"><select id="pcAcct" aria-label="Account"></select>
-        <input type="number" id="pcWorst" min="0" step="any" placeholder="worst case, $" style="max-width:150px"><span class="small muted" id="pcStop"></span></form>
+        <input type="number" id="pcWorst" min="0" step="any" placeholder="worst case, $" style="width:130px"><span class="small muted" id="pcStop"></span></form>
       <div id="pcOut" style="margin-top:8px"></div>
       <div class="pcchecks" id="pcChecks"></div>
       <div class="row"><select id="pcMood" aria-label="Mood"><option value="">mood</option><option>calm</option><option>focused</option><option>confident</option><option>rushed</option><option>frustrated</option><option>fearful</option></select>
@@ -340,7 +340,7 @@
       </div>
       <nav class="gtoc">
         <a href="#g-start">Set-up</a><a href="#g-daily">Daily routine</a><a href="#g-ready">Trade readiness</a><a href="#g-heads">Event risk &amp; overnight</a><a href="#g-market">Market</a><a href="#g-vol">Term structure, Calendar scanner, Skew</a>
-        <a href="#g-risk">Risk grid</a><a href="#g-em">Expected moves</a><a href="#g-a14">A14 scanner</a><a href="#g-pnl">P&amp;L &amp; Recon</a>
+        <a href="#g-risk">Risk grid</a><a href="#g-em">Expected moves</a><a href="#g-a14">A14 scanner</a><a href="#g-pnl">P&amp;L &amp; Recon</a><a href="#g-journal">Journal</a>
         <a href="#g-evid">Evidence &amp; Recorder</a><a href="#g-gloss">Glossary</a><a href="#g-trouble">If something looks wrong</a>
       </nav>
     </div>
@@ -351,7 +351,7 @@
           <li><b>It starts on its own</b> from login, at <span class="mono">http://127.0.0.1:8810</span>. Opening TradingView or TWS opens the page.</li>
           <li><b>TWS must be running</b> for live data. Without it the desk shows the last saved data and falls back to free sources.</li>
           <li><b>Update all</b> refreshes every source in turn. It also runs by itself every 15 minutes while the US market is open and hourly otherwise. The Data pill shows each source's date and last result.</li>
-          <li><b>ONE:</b> export the Summary or Detail Report each day to Documents. The desk reads whichever is newest for your book; the Journal's fill-level figures (entry risk, peak risk, adjustments) come from the newest Detail Report.</li>
+          <li><b>ONE:</b> export the Detail Report each day to Documents. A Summary Report still works for the book, P&amp;L &amp; Recon and the Evidence tab, whichever is newest, but the Journal's entry risk, peak risk and adjustments come from the fills only the Detail Report has.</li>
           <li><b>Finding your way:</b> the sidebar badges show what's live and ⓘ notes open on a click. The sun and moon switch sets light or dark mode.</li>
           <li><b>Cloud copy:</b> market views are public. Your trades stay locked until you press the snapshot chip at the top and enter your passphrase. They are as of the snapshot, and Update all, TWS refreshes and the Recorder are laptop only.</li>
         </ol>
@@ -497,14 +497,27 @@
         </ol>
       </section>
 
-      <section class="panel c6" id="g-journal" data-sub="Tabs"><header><h2>Trade journal</h2></header>
+      <section class="panel c6" id="g-journal" data-sub="Journal"><header><h2>Positions and R</h2></header>
         <ol>
-          <li>Built from your newest ONE report, Summary or Detail — every closed trade, no extra work.</li>
-          <li><b>Trades</b>: the list on the left is grouped into folders by strategy (click a folder to fold it; sort by date, win, loss or return; ↑ ↓ to move). Pick a trade and the right side shows it in full: result, days in trade, expiry, P&amp;L fluctuation, entry conditions, adjustments, a large chart of the index through the trade (solid = entry strikes, dotted = strikes added later, orange = adjustment days), the marked P&amp;L path when recorded, and the legs.</li>
-          <li>The note is suggested from the data (speed, adjustments, drawdown survived, entry conditions). Edit it in the box and press Save note; Use the suggestion puts the generated note back.</li>
-          <li>P&amp;L fluctuation: the price swing for every trade; trades open from mid-October 2026 also get the true worst/best marked P&amp;L (the desk records each open trade at every session close).</li>
-          <li>Filter by strategy, ticker, account or result, or search names and notes. Click a card for the full detail: entry conditions, price path chart, marked P&amp;L path, and every leg.</li>
-          <li><b>Overview</b>: cumulative P&amp;L, days held vs return, totals by strategy, and P&amp;L by month and strategy.</li>
+          <li><b>Position:</b> all of a trade's fills from the ONE Detail Report, adjustments included. A losing trade reopened in the same ticker within the hour counts as one position (a roll).</li>
+          <li><b>Decision:</b> the same trade placed in MGN and SMSF is one decision, so one win or one loss. R averages the two and dollars add up. Twins named differently take the strategy they share, in the Journal only: Evidence and the gates keep the report's own names.</li>
+          <li><b>1R</b> is the position's worst case at entry: what it loses if every leg ends at intrinsic value, at any price. It stays frozen. Risk added later shows as <b>Peak ÷ 1R</b>, not as a bigger 1R. R = P&amp;L ÷ 1R.</li>
+          <li><b>Planned loss</b> is the card's stop × 1R. The cap (warning 1%, cap 2% of NAV, in USD at the day's AUD/USD close) is measured on this. Trades with no card stop have no planned loss and stay out of it.</li>
+          <li><b>Return on risk-days</b>: P&amp;L ÷ (risk held × days), each span at the risk it carried then, so a trade that grew isn't flattered.</li>
+          <li>Information only. Nothing in the Journal changes sizing, gates or orders. The cloud copy reads it all; typing happens on the laptop.</li>
+        </ol>
+      </section>
+      <section class="panel c6" data-sub="Journal"><header><h2>The Journal's sub-tabs</h2></header>
+        <ol>
+          <li><b>Trades:</b> folders by strategy on the left, one trade in full on the right, with an editable note (Use the suggestion restores the generated one) and tags for how the trade felt. <b>Table:</b> every position, sortable; click a closed trade for its card.</li>
+          <li><b>Overview:</b> cumulative P&amp;L, days held vs return, totals by strategy and month, capital pace.</li>
+          <li><b>Edge:</b> the numbers, the cumulative R curve with its drawdowns shaded, and the R histogram. Mean under median means a few big losses pull the mean. Skew stays grey: short premium reads negative by nature.</li>
+          <li><b>Confidence:</b> each strategy against the rules of thumb: losses against the 30 bar (ONE's plus OptionStrat's before June), an 80% Wilson range on win rate, an 80% bootstrap range on mean R, CV and skew. A losing strategy never passes CV. There is no overall verdict, and ⚑ marks under 20.</li>
+          <li><b>Discipline:</b> rule accuracy against win rate. A rule counts only from the day it began: cards 24 Oct, entry gates 25 Oct, cap 1 Nov. The box shows every trade scored in hindsight. Trade plan's Exit and Close calls and the Adjust? answer are logged when Actions opens, then held against the fills that follow. Overrides go here.</li>
+          <li><b>Risk taken:</b> planned loss against the cap, risk added after entry, open risk by account, and <b>New pre-commit</b>: write down what you accept as gone before the trade. Each is stamped written before or after the fill.</li>
+          <li><b>Behaviour:</b> results and size after winning streaks and after losses, revenge flags, mood against result.</li>
+          <li><b>Review:</b> losses past 2.5× the average, or past their planned loss, owe a post-mortem. The count shows on the Journal badge and in Actions.</li>
+          <li><b>Settings:</b> every threshold, plus a backup of what you typed. No report can rebuild that, so it also travels in the encrypted snapshot.</li>
         </ol>
       </section>
       <section class="panel c6" id="g-evid" data-sub="Tabs"><header><h2>Evidence and Recorder</h2></header>

@@ -270,7 +270,8 @@ def link_tickets(decisions, tickets, days=3):
 
 def plan_scores(log, pos, exits):
     """What Trade plan said at the time against what the fills then did. exits: {key: US exit session}. Each Exit or Close call counts
-    once per trade, from the first session it was shown; each adjustment is held against the last log at most three sessions before it."""
+    once per trade, from the first session it was shown; each adjustment is held against the last plan logged before it, if that is
+    within three days. A plan logged after the fill says nothing about the decision: it already includes the adjustment."""
     by, calls, against, allowed = {}, [], 0, 0
     for r in sorted(log, key=lambda r: r["date"]):
         by.setdefault(r["trade_key"], []).append(r)
@@ -281,7 +282,7 @@ def plan_scores(log, pos, exits):
         p = pos.get(key)
         for e in (p["events"][1:-1] if p and p["flat"] else p["events"][1:] if p else []):
             day = (e - dt.timedelta(hours=14)).date()
-            said = [r for r in rows if dt.date.fromisoformat(r["date"]) <= day]
+            said = [r for r in rows if r.get("updated") and dt.datetime.fromisoformat(r["updated"]) <= e]
             if said and (day - dt.date.fromisoformat(said[-1]["date"])).days <= 3:
                 if said[-1]["adj"] == "no":
                     against += 1

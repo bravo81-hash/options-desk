@@ -174,7 +174,7 @@ async function load() {
     if (!J.trades || !J.trades.length) { $("jnList").innerHTML = `<div class="state">No closed trades found. Export a ONE report to Documents.</div>`; return; }
     $("jnMeta").textContent = `from ${String(J.file || "").split(/[\\/]/).pop()}`;
     const opts = (k) => [...new Set(J.trades.map((t) => t[k]))].sort();
-    const sel = (id, k, label) => { $(id).innerHTML = `<option value="">${label}</option>` + opts(k).map((v) => `<option>${esc(v)}</option>`).join(""); };
+    const sel = (id, k, label) => { const cur = $(id).value; $(id).innerHTML = `<option value="">${label}</option>` + opts(k).map((v) => `<option>${esc(v)}</option>`).join(""); $(id).value = cur; };
     sel("jnStrategy", "strategy", "all strategies"); sel("jnTicker", "ticker", "all tickers"); sel("jnGroup", "group", "all accounts");
     window.JV.render(J, openTrade);
     overview(J.trades); paceView(J.trades); list();

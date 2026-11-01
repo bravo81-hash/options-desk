@@ -436,12 +436,19 @@ def test_a_pre_commit_goes_to_the_nearest_entry_and_says_whether_it_came_first()
 
 def test_each_exit_call_counts_once_and_adjustments_meet_the_last_plan():
     pos = {"k": {"events": [at("10-01"), at("10-06"), at("10-20"), at("10-29")], "flat": False}}
-    log = [{"date": "2026-10-05", "trade_key": "k", "act": "hold", "label": "Hold", "adj": "no"},
-           {"date": "2026-10-19", "trade_key": "k", "act": "exit", "label": "Exit", "adj": "yes"},
-           {"date": "2026-10-20", "trade_key": "k", "act": "exit", "label": "Exit", "adj": "yes"}]
+    log = [{"date": "2026-10-05", "trade_key": "k", "act": "hold", "label": "Hold", "adj": "no", "updated": "2026-10-06T05:00:00"},
+           {"date": "2026-10-19", "trade_key": "k", "act": "exit", "label": "Exit", "adj": "yes", "updated": "2026-10-20T05:00:00"},
+           {"date": "2026-10-20", "trade_key": "k", "act": "exit", "label": "Exit", "adj": "yes", "updated": "2026-10-21T05:00:00"}]
     out = positions.plan_scores(log, pos, {"k": "2026-10-23"})
     assert out["calls"] == [{"key": "k", "act": "exit", "label": "Exit", "from": "2026-10-19", "done": "2026-10-23"}]
     assert (out["adj_against"], out["adj_allowed"], out["sessions"]) == (1, 1, 3)  # the third adjustment is too long after the last plan to judge
+
+
+def test_a_plan_logged_after_the_fill_does_not_judge_it():
+    pos = {"k": {"events": [at("10-01"), at("10-06", "06:00")], "flat": False}}
+    log = [{"date": "2026-10-05", "trade_key": "k", "act": "hold", "label": "Hold", "adj": "no", "updated": "2026-10-06T07:00:00"}]
+    out = positions.plan_scores(log, pos, {})
+    assert (out["adj_against"], out["adj_allowed"]) == (0, 0)
 
 
 def test_a_call_not_yet_acted_on_shows_as_open():

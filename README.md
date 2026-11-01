@@ -61,7 +61,7 @@ market-cap share.
 | **Expected moves** | Every underlying you hold (open ONE trades + IBKR stocks): ATM IV, straddle, 1σ/2σ move and range per expiry (next expiry, next two Fridays, monthlies, and every expiry you hold), a cone chart with your strikes plotted, and each strike's distance from spot in σ. |
 | **A14 scanner** | Put broken-wing butterflies on SPX and RUT across expiries, upper-long placements and wing widths, priced from a live TWS chain. Ranks by expected P&L at your planned exit / risk, theta / risk, P(profit), or max profit / risk; heatmap of where the edge sits (expiry × short-strike distance); SPX and RUT trend now (vs 20-day average) against how your A14s did when entered above or below it; expected return per day held; risk graph per setup; and your own A14 history from ONE grouped by DTE. |
 | **P&L & Recon** | Folded in from TWS Matcher. Change in NAV today per account (with IBKR's own figure for reference), a weekly P&L grid per account (change in NAV, $ or %) with a monthly view and NAV chart, today's P&L by ticker (marked to market), ONE-vs-IBKR reconciliation (quantities; fill prices for positions opened today; FIFO vs moving-average cost-basis differences shown as information, as in TWS Matcher), stock holdings, a 7-day fill journal matched to ONE trades, and ONE import CSVs per account built from real IBKR fills. |
-| **Journal** | Every closed trade from the newest ONE report (Summary or Detail) as a visual card: trade ID, ticker, strategy, P&L, days in trade, expiry, price path vs strikes with adjustment days, worst/best marked P&L (recorded from Oct 2026), and an editable learning note; overview charts by strategy and month. Laptop only. |
+| **Journal** | Every position from the newest ONE report as a card, plus a measure of edge and behaviour on the Detail Report's fills. Whole positions with R frozen at the entry worst case, counted per decision so twins in two accounts are one result. Sub-tabs: Trades, Table, Overview, Edge (KPIs, cumulative R with drawdown, R histogram), Confidence (30-loss bar, Wilson and bootstrap ranges), Discipline (dated rule accuracy, plan logged against fills, overrides), Risk taken (planned loss against the cap, risk growth, open risk, pre-commits), Behaviour (streaks, revenge, size after a loss, mood), Review (post-mortems), Settings. Notes and tags live in `data/desk.db`, travel in the encrypted snapshot and export to JSON. Information only: nothing here reads into sizing, gates or orders. |
 | **Evidence** | Every closed TimeEdge / TimeZone / Flyagonal trade from OptionStrat (before June) and ONE (from June) against market conditions on its entry day. |
 | **Guide** | Step-by-step cheat sheet: getting started, a 10-minute daily routine, how to use each tab, how to read an A14 scanner row, glossary, and what to do when something looks wrong. |
 | **Recorder** | Daily SPX/RUT surface snapshot (scheduled 15:40 ET weekdays while the app and TWS run), manual record, history refresh, data inventory. |
@@ -95,8 +95,9 @@ market-cap share.
   The SPX curve (9/30/93/183/365 days) is interpolated in total variance to any maturity,
   which is how SPX contango z-scores work before your own history accumulates.
 * **IBKR** — 5 years of SPX/RUT daily closes and 30-day implied vol.
-* **Trade journal** — newest `*-ONESummaryReport.csv` (Documents/Downloads) and newest
-  OptionStrat `all-expired-by-symbol-*.xlsx` (Downloads).
+* **Trade journal** — newest `*-ONEDetailReport.csv` (Documents/Downloads; a Summary Report reads for the
+  book but has no fills), newest OptionStrat `all-expired-by-symbol-*.xlsx` (Downloads), and AUD/USD closes
+  from yfinance, because NAV is in AUD and trades are in USD.
 
 ## Risk grid data
 

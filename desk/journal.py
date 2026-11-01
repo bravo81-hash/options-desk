@@ -9,9 +9,11 @@ P&L fluctuation (exact data only):
   when present it gives the true worst (MAE) and best (MFE) points.
 """
 import datetime as dt
+import functools
 import json
 import os
 import re
+import threading
 import uuid
 
 from . import db, load_config, one, positions
@@ -66,18 +68,18 @@ def parse(path=None):
     return trades, path
 
 
-def _context(t):
+def _context(t, load=series):
     """Market at entry and the underlying's path through the trade."""
     d0, d1 = _us(t["open"]), _us(t["close"])
     out = {"entry": d0, "exit": d1}
-    vix, v3 = series("VIX"), series("VIX3M")
+    vix, v3 = load("VIX"), load("VIX3M")
     a = lambda s, d: float(s[s.index <= d].iloc[-1]) if d and len(s[s.index <= d]) else None  # noqa: E731
     out["vix"] = a(vix, d0)
     v3m = a(v3, d0)
     out["ivts"] = out["vix"] / v3m if out["vix"] and v3m else None
     und = t["underlying"] if t["underlying"] in ("SPX", "RUT", "NDX") else None
     if und and d0:
-        s = series(und)
+        s = load(und)
         pre = s[s.index <= d0]
         if len(pre) >= 20:
             out["vs_sma20"] = 100 * (float(pre.iloc[-1]) / float(pre.iloc[-20:].mean()) - 1)
@@ -248,7 +250,7 @@ def book(trades, ctxs, cfg):
             "plan": positions.plan_scores(db.query("SELECT * FROM journal_planlog"), pos, exits)}
 
 
-_history, _memo = {}, {}
+_history, _memo, _memo_lock = {}, {}, threading.Lock()
 
 
 def history():
@@ -279,16 +281,17 @@ def manual():
 def _stamp():
     """Everything the page's payload is built from. The build takes seconds and the Actions tab asks for part of it on every load."""
     path = one.report_path()
-    q = [f"SELECT COUNT(*) n, MAX(updated) v FROM {t}" for t in MANUAL + ("trade_pnl",)] + ["SELECT COUNT(*) n, MAX(date) v FROM account_daily", "SELECT COUNT(*) n, MAX(date) v FROM fx_daily"]
+    q = [f"SELECT COUNT(*) n, MAX(updated) v FROM {t}" for t in MANUAL + ("trade_pnl",)] + [f"SELECT COUNT(*) n, MAX(date) v FROM {t}" for t in ("account_daily", "fx_daily", "index_daily")]
     return str(db._PATH), path, path and os.path.getmtime(path), tuple(tuple(db.query(sql)[0].values()) for sql in q)
 
 
 def closed():
     init()
-    stamp = _stamp()
-    if _memo.get("stamp") != stamp:
-        _memo.update(stamp=stamp, out=_build())
-    return _memo["out"]
+    with _memo_lock:  # the Actions tab and the Journal can both ask at once: one build, and the other waits for it
+        stamp = _stamp()
+        if _memo.get("stamp") != stamp:
+            _memo.update(stamp=stamp, out=_build())
+        return _memo["out"]
 
 
 def due():
@@ -306,7 +309,8 @@ def _build():
     trades, path = parse()
     cfg = settings()
     notes = {r["trade_key"]: r["note"] for r in db.query("SELECT * FROM journal_notes")}
-    ctxs = {t["key"]: _context(t) for t in trades}
+    load = functools.lru_cache(maxsize=None)(series)  # 3 series a trade, the same few each time
+    ctxs = {t["key"]: _context(t, load) for t in trades}
     bk = book(trades, ctxs, cfg)
     pos = positions.load()[0]
     side = {k: r for r in bk["rows"] for k in r["keys"]}
