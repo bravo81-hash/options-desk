@@ -105,7 +105,8 @@ def refresh_fx():
         h = yf.download("AUDUSD=X", start=have or "2025-06-01", progress=False, auto_adjust=False)
     if h is None or not len(h):
         return 0
-    s = h["Close"].squeeze().dropna()
+    s = h["Close"]
+    s = (s.iloc[:, 0] if s.ndim > 1 else s).dropna()  # one ticker's column; squeeze() turns a one-row download into a number
     rows = [("AUDUSD", i.date().isoformat(), float(v)) for i, v in s.items()]
     if rows:
         db.write("INSERT OR REPLACE INTO fx_daily VALUES (?,?,?)", rows, many=True)

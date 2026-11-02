@@ -505,3 +505,14 @@ def test_a_post_mortem_clears_what_the_journal_is_owed(desk, monkeypatch):
     assert (out["streak"], out["streak_n"]) == (5, 4)
     journal.save_review({"decision": "d1", "cause": "x"})
     assert journal.due()["due"] == []
+
+
+@pytest.mark.parametrize("days,multi", [(1, True), (3, True), (1, False)])
+def test_fx_refresh_reads_one_row_downloads(desk, monkeypatch, days, multi):
+    import pandas as pd
+    import yfinance
+    idx = pd.date_range("2026-10-28", periods=days, freq="D")
+    cols = pd.MultiIndex.from_tuples([("Close", "AUDUSD=X"), ("Open", "AUDUSD=X")]) if multi else ["Close", "Open"]
+    monkeypatch.setattr(yfinance, "download", lambda *a, **k: pd.DataFrame([[0.65, 0.66]] * days, index=idx, columns=cols))
+    assert positions.refresh_fx() == days
+    assert db.query("SELECT COUNT(*) n FROM fx_daily")[0]["n"] == days
