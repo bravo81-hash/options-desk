@@ -130,7 +130,7 @@ def _run_step(key, force):
         return flex.run()
     if key == "fx":
         n = positions.refresh_fx()
-        return {"ok": True, "detail": f"{n} days" if n else "already current"}
+        return {"ok": True, "detail": f"{n} new close{'' if n == 1 else 's'}" if n else "already current"}
 
 
 def run(source="manual"):
