@@ -70,6 +70,7 @@ window.deskReload = function () {
   const cur = (document.querySelector('.tabs button[aria-selected="true"]') || {}).dataset?.tab || "actions";
   Object.keys(loaded).forEach((k) => delete loaded[k]);
   mdStale = true;
+  if (window.riskStale) window.riskStale();  // Actions and the calendar list read the Risk grid's trades: fetch them again too
   showTab(cur);
   loadFresh();
   if (window.loadReadiness) window.loadReadiness();

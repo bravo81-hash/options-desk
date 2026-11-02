@@ -550,8 +550,10 @@ $("rkRefresh").addEventListener("click", refresh);
 $("rkClose").addEventListener("click", () => { sel = null; $("rkDetailPanel").hidden = true; });
 window.loadRisk = load;
 // for the Actions tab: every open trade with its plan (pace, trade plan, close order, alert levels)
+let STALE = false;  // set after an update or a Reload: the next ask fetches the trades again instead of reusing this page's copy
+window.riskStale = () => { STALE = true; };
 window.riskActions = async () => {
-  if (!R) await load();
+  if (!R || STALE) { STALE = false; await load(); }
   if (!R || !R.trades) return null;
   R.trades.forEach((t) => { t.beta = 1; paceOf(t); planOf(t); t.acctLabel = label(t); });
   return {trades: R.trades, marks_ts: R.marks_ts, one_fresh: R.one_fresh, detail_exported: R.detail_exported, missing: R.missing || [], overnight: R.overnight, hedge: R.hedge};

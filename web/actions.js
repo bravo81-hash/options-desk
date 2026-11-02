@@ -279,7 +279,7 @@ document.addEventListener("click", (e) => {
   if (a.dataset.go) { showTab(a.dataset.go); if (a.dataset.go === "rec") { const p = $("snapPanel"); if (p) setTimeout(() => p.scrollIntoView({behavior: "smooth"}), 200); } if (a.dataset.sub) { const host = document.querySelector(`#tab-${a.dataset.go} [data-subs]`); if (host && host._showSub) host._showSub(a.dataset.sub); } }
 });
 window.addEventListener("heads", () => { if (L) coming(pick(L.Rk), L.Rd); });
-const rf = () => { const b = $("acReload"); if (b) b.addEventListener("click", load); };
+const rf = () => { const b = $("acReload"); if (b) b.addEventListener("click", () => { if (window.riskStale) window.riskStale(); load(); }); };
 document.addEventListener("DOMContentLoaded", rf);
 window.loadActions = load;
 })();
