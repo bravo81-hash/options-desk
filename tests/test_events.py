@@ -120,6 +120,7 @@ def test_step_down_sees_tradingview_titles_but_not_the_election(monkeypatch):
 
 
 def test_step_down_skips_titles_that_only_look_like_big_releases(monkeypatch):
+    monkeypatch.setattr(market, "KNOWN", {})  # the built-in payrolls schedule would join in any week with a first Friday
     rows = [("Atlanta Fed GDPNow", None), ("Nonfarm Productivity QoQ Prel", None), ("GDP Growth Rate QoQ 2nd Est", "GDP")]
     _feeds(monkeypatch, tv=[{"date": _soon(2), "title": t, "importance": 0, "kind": k, "source": "tv"} for t, k in rows])
     assert [e["title"] for e in readiness._events()] == ["GDP Growth Rate QoQ 2nd Est"]

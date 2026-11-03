@@ -55,7 +55,7 @@ def put_price(F, K, T, sig):
 
 # ------------------------------------------------------------------ chain
 def _expiries(params, lo, hi):
-    """Fridays and month-end expiries in the DTE window."""
+    """Fridays (or the Thursday of a Friday holiday) and month-end expiries in the DTE window."""
     out = []
     for e in sorted(params):
         d = dt.datetime.strptime(e, "%Y%m%d").date()
@@ -66,7 +66,7 @@ def _expiries(params, lo, hi):
         while nxt.weekday() >= 5:
             nxt += dt.timedelta(days=1)
         eom = nxt.month != d.month
-        if d.weekday() == 4 or eom:  # (AM monthlies are already keyed by their Friday)
+        if d.weekday() == 4 or eom or a14rules.weekly(d):  # (AM monthlies are already keyed by their Friday; weekly() adds a holiday week's Thursday)
             out.append(e)
     return out
 
@@ -207,6 +207,7 @@ def scan(symbols=("SPX", "RUT"), dte_min=a14rules.DTE_LO, dte_max=a14rules.DTE_H
         for e, sm in sorted(sms.items()):
             if not (dte_min <= sm["dte"] <= dte_max):
                 continue
+            in_rule = a14rules.DTE_LO <= sm["dte"] <= a14rules.DTE_HI and a14rules.weekly(dt.datetime.strptime(e, "%Y%m%d").date())
             ks = np.array(sm["strikes"])
             kset = set(ks.tolist())
             ups = ks[(ks >= S0 * (1 + up_lo / 100)) & (ks <= S0 * (1 + up_hi / 100))]
@@ -270,7 +271,8 @@ def scan(symbols=("SPX", "RUT"), dte_min=a14rules.DTE_LO, dte_max=a14rules.DTE_H
                      "exp_day": float(100 * exp_pnl[j] / (risk[j] * 100)) / h,
                      "upper_pct": 100 * (C[j, 0] / S0 - 1), "short_pct": short_pct, "atm_iv": atm,
                      "short_sd": (C[j, 1] / F0 - 1) / (atm * math.sqrt(T)),
-                     "usual": bool(C[j, 0] >= S0 * 0.99 and C[j, 0] <= S0 * 1.01 and -3.5 <= short_pct <= -0.5)}
+                     "usual": bool(C[j, 0] >= S0 * 0.99 and C[j, 0] <= S0 * 1.01 and -3.5 <= short_pct <= -0.5),
+                     "rule": in_rule}
                 cands.append(c)
                 hk = (sym, e)
                 bucket = round(short_pct * 2) / 2

@@ -33,8 +33,9 @@ async function loadFresh() {
     const mins = F.marks_ts ? Math.round((Date.now() - Date.parse(F.marks_ts)) / 6e4) : null, ago = !ok(mins) ? "" : mins < 90 ? `${mins} min` : `${Math.round(mins / 60)} h`;
     const live = ok(mins) && window.mktOpen && window.mktOpen(), late = live && mins > 45;  // marks lag the market once it is open
     $("freshBar").className = "datapill" + (stale.length || late ? " st" : "");
-    $("freshBar").textContent = `Data: ${day(F.last_close)} ${stale.length ? `· ${stale.length} stale` : "✓"}${live ? ` · marks ${ago}` : ""}`;
-    $("freshList").innerHTML = `<p class="small muted">Latest US close: <b>${day(F.last_close)}</b>${ago ? ` · marks updated ${ago} ago${late ? ` <span class="wrn">(over 45 min while the market is open)</span>` : ""}` : ""}</p><div class="tbl"><table><thead><tr><th>Source</th><th class="n">Date</th><th>Used by</th></tr></thead><tbody>${F.sources.map((x) =>
+    const now_ = live && F.session;  // during a session its date leads; the closes are still the day before until 4 pm ET
+    $("freshBar").textContent = `${now_ ? `Live: ${day(F.session)}` : `Data: ${day(F.last_close)}`} ${stale.length ? `· ${stale.length} stale` : "✓"}${live ? ` · marks ${ago}` : ""}`;
+    $("freshList").innerHTML = `<p class="small muted">${now_ ? `<b>${day(F.session)} session open now</b> · daily closes run to <b>${day(F.last_close)}</b> until 4 pm ET` : `Latest US close: <b>${day(F.last_close)}</b>`}${ago ? ` · marks updated ${ago} ago${late ? ` <span class="wrn">(over 45 min while the market is open)</span>` : ""}` : ""}</p><div class="tbl"><table><thead><tr><th>Source</th><th class="n">Date</th><th>Used by</th></tr></thead><tbody>${F.sources.map((x) =>
       `<tr><td>${esc(x.name)}</td><td class="n ${x.stale ? "wrn" : ""}">${x.name === "ONE export" ? (x.stale ? "stale" : "ok") : day(x.date)}</td><td class="small muted">${esc(x.what)}</td></tr>`).join("")}</tbody></table></div>`;
   } catch (e) { $("freshBar").textContent = "Data"; }
 }

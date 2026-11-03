@@ -13,6 +13,8 @@ import json
 
 import numpy as np
 
+from .accounts import ET, US_HOLIDAYS
+
 FROM = "2026-11-02"  # nothing before this is scored on these rules
 STOP_NAV = 1.5  # % of NAV lost at the card's stop, at Full size
 ENTRY_DTE, DTE_LO, DTE_HI = 49, 42, 56
@@ -38,9 +40,30 @@ def tilt(vs20):
     return 0.0 if vs20 is None or abs(vs20) <= TILT_LINE else TILT_SD if vs20 > 0 else -TILT_SD
 
 
+def _shut(d):
+    return d.isoformat() in US_HOLIDAYS
+
+
+def weekly(d):
+    """A week's own expiry: the Friday, or the Thursday when that Friday is a market holiday (Christmas week, Good Friday)."""
+    return d.weekday() == 4 or (d.weekday() == 3 and _shut(d + dt.timedelta(days=1)))
+
+
+def entry_day(d):
+    """The rule's entry day in d's week: the Friday, or the Thursday when the market is shut on the Friday."""
+    return weekly(d) and not _shut(d)
+
+
+def entry_next(d):
+    """The next entry day on or after d."""
+    while not entry_day(d):
+        d += dt.timedelta(days=1)
+    return d
+
+
 def expiry_for(smiles):
-    """The Friday expiry nearest ENTRY_DTE inside the entry window; the sooner one on a tie, so an id never starts long."""
-    fri = {e: s for e, s in smiles.items() if DTE_LO <= s["dte"] <= DTE_HI and dt.datetime.strptime(e, "%Y%m%d").weekday() == 4}
+    """The weekly expiry nearest ENTRY_DTE inside the entry window; the sooner one on a tie, so an id never starts long."""
+    fri = {e: s for e, s in smiles.items() if DTE_LO <= s["dte"] <= DTE_HI and weekly(dt.datetime.strptime(e, "%Y%m%d").date())}
     return min(fri, key=lambda e: (abs(fri[e]["dte"] - ENTRY_DTE), fri[e]["dte"]), default=None)
 
 
@@ -128,7 +151,7 @@ def checks(r, entered):
         out.append(["a14add", r["lots_peak"] <= r["lots0"], live])
     if r.get("dte0") is not None:
         out.append(["a14dte", DTE_LO <= r["dte0"] <= DTE_HI, live])
-    out.append(["a14day", dt.date.fromisoformat(entered).weekday() == ENTRY_DAY, live])
+    out.append(["a14day", entry_day(dt.date.fromisoformat(entered)), live])
     if r.get("ladder_n") is not None:
         out.append(["a14cap", r["ladder_n"] <= CAP, live])
     if r.get("off_window") is not None:
@@ -148,5 +171,5 @@ def state():
     raw = db.get_meta("a14_chain")
     blob = json.loads(raw) if raw else {}
     D = backtest.data()
-    return {"rule": rule(), "navs": navs, "nav": nav, "worst": round(nav * STOP_NAV / stop) if nav else None, "stop_usd": round(nav * STOP_NAV / 100) if nav else None,
+    return {"rule": rule(), "entry_next": entry_next(dt.datetime.now(ET).date()).isoformat(), "navs": navs, "nav": nav, "worst": round(nav * STOP_NAV / stop) if nav else None, "stop_usd": round(nav * STOP_NAV / 100) if nav else None,
             "chain_ts": blob.get("ts"), "next": {u: next_id(u, blob, D, nav) for u in ("SPX", "RUT")}, "target": target(accounts.weekly(60), traded)}

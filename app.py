@@ -348,6 +348,7 @@ def api_freshness():
     from desk.accounts import US_HOLIDAYS
     now = dt.datetime.now(dt.timezone.utc).astimezone(ET)
     sess = session_date(now)
+    running = sess == now.date() and (now.hour, now.minute) < (16, 0) and sess.weekday() < 5 and sess.isoformat() not in US_HOLIDAYS
     if sess == now.date() and (now.hour, now.minute) < (16, 0):  # session still running: the last close is the day before
         sess = sess - dt.timedelta(days=1)
     while sess.weekday() >= 5 or sess.isoformat() in US_HOLIDAYS:
@@ -391,7 +392,7 @@ def api_freshness():
             prev -= dt.timedelta(days=1)
         out.append({"name": "IBKR Flex", "date": fx["through"], "stale": bool(fx["error"]) or (fx["through"] or "") < prev.isoformat(),
                     "what": fx["error"] or "official NAV, deposits and commissions; a day's statement comes the next morning"})
-    return ok({"last_close": sess.isoformat(), "sources": out, "marks_ts": pl.get("marks_ts")})
+    return ok({"last_close": sess.isoformat(), "session": now.date().isoformat() if running else None, "sources": out, "marks_ts": pl.get("marks_ts")})
 
 
 @app.get("/api/vixcond")

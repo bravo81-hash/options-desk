@@ -202,10 +202,12 @@ function ladder() {
   const openIn = (u, a) => (known ? L.Rk.trades : []).filter((t) => t.strategy === "A14" && t.underlying === u && t.acctLabel === a).map((t) => window.dteOf(t.firstExp)).sort((x, y) => y - x);
   const strip = (D, n) => bulletSvg(n ? n.dte : null, {w: 190, lo: 0, hi: Math.max(60, ...D), color: "var(--accent)", label: `${D.length} open: ${D.join(", ")} DTE · entry band ${P.dte_lo}–${P.dte_hi} · out at ${P.time_dte}`,
     zones: [{from: P.dte_lo, to: P.dte_hi, color: "var(--accent)"}], marks: [{v: P.time_dte, color: "var(--warn)", label: `out at ${P.time_dte} DTE`}, ...D.map((v) => ({v, color: "var(--ink)", width: 1.5, label: `${v} DTE`}))]});
+  const etToday = new Date().toLocaleDateString("en-CA", {timeZone: "America/New_York"});
+  const entryTxt = new Date(LAD.entry_next + "T12:00:00Z").toLocaleDateString("en-AU", {weekday: "short", day: "numeric", month: "short", timeZone: "UTC"});
   const expiry = (e) => new Date(Date.UTC(+e.slice(0, 4), +e.slice(4, 6) - 1, +e.slice(6))).toLocaleDateString("en-AU", {day: "numeric", month: "short", timeZone: "UTC"});
   const row = (u) => { const n = LAD.next[u], D = accts.map((a) => openIn(u, a)), most = Math.max(0, ...D.map((x) => x.length));
     const size = ((L.Rd && L.Rd.strategies) || []).find((s) => s.name === `A14 ${u}`), step = size ? size.size : null, lots = n && step ? n.lots[step] : null;
-    const state = !known ? ["", "Ids unknown"] : most > P.cap ? ["wrn", "⚠ Over the cap"] : most === P.cap ? ["muted", "At the cap"] : step === "Stand aside" ? ["muted", "Stand aside"] : day === P.entry_day + 1 ? ["pos", "✓ Entry today"] : ["muted", "◔ Entry Friday"];
+    const state = !known ? ["", "Ids unknown"] : most > P.cap ? ["wrn", "⚠ Over the cap"] : most === P.cap ? ["muted", "At the cap"] : step === "Stand aside" ? ["muted", "Stand aside"] : LAD.entry_next === etToday ? ["pos", "✓ Entry today"] : ["muted", `◔ Entry ${entryTxt}`];
     const shift = n && n.tilt ? `tilt ${n.tilt > 0 ? "+" : "−"}${Math.abs(n.tilt)} sd, index ${pctS(n.vs20)} vs 20-day` : "centred";
     return `<tr><td><b>${u}</b><br><span class="chip ${state[0]}">${state[1]}</span></td>
       ${accts.map((a, k) => `<td><b class="mono ${D[k].length > P.cap ? "wrn" : ""}">${known ? D[k].length : "–"}</b> <span class="small muted">of ${P.cap}</span> ${strip(D[k], n)}</td>`).join("")}

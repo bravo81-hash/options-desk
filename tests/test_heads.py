@@ -198,7 +198,7 @@ def test_ordinary_down_day_does_not_break():
 
 # ---- gap what-if
 def fake_trade(und="SPX", acct="A", qty=-1, strike=5000.0, right="P", days=30, iv=0.2, spot=5000.0):
-    exp = (dt.datetime.now(UTC) + dt.timedelta(days=days)).isoformat()
+    exp = (NOW.astimezone(UTC) + dt.timedelta(days=days)).isoformat()  # from the grid's clock, not the real one
     return {"underlying": und, "spot": spot, "ib_account": acct, "group": acct, "legs": [{"qty": qty, "strike": strike, "right": right, "expiry_iso": exp, "mark": {"iv": iv}}]}
 
 

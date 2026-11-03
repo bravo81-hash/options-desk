@@ -162,3 +162,24 @@ def test_score_fields_counts_the_ladder_and_off_window_adjustments():
     ar.score_fields(rows, pos)
     assert [x["ladder_n"] for x in rows] == [1, 2, 2]
     assert [x["off_window"] for x in rows] == [1, 0, 0]
+
+
+def test_a_holiday_friday_moves_the_week_to_thursday():
+    d = dt.date
+    assert ar.weekly(d(2026, 12, 18)) and ar.weekly(d(2026, 12, 24)) and not ar.weekly(d(2026, 12, 23))
+    assert ar.entry_day(d(2026, 12, 24)) and not ar.entry_day(d(2026, 12, 25)) and not ar.entry_day(d(2026, 12, 17))
+    assert ar.entry_next(d(2026, 11, 3)) == d(2026, 11, 6) and ar.entry_next(d(2026, 12, 21)) == d(2026, 12, 24) and ar.entry_next(d(2026, 11, 6)) == d(2026, 11, 6)
+    assert _by(ar.checks(_row(), "2026-12-24"))["a14day"][0] is True
+
+
+def test_expiry_can_be_a_holiday_thursday():
+    S = {"20261218": {"dte": 45}, "20261224": {"dte": 51}}  # Christmas Friday: that week's expiry is the Thursday
+    assert ar.expiry_for(S) == "20261224"
+
+
+def test_the_chain_fetch_keeps_a_holiday_weeks_thursday(monkeypatch):
+    from desk import a14
+    today = dt.date(2026, 11, 3)
+    monkeypatch.setattr(a14, "dte", lambda e: (dt.datetime.strptime(e, "%Y%m%d").date() - today).days)
+    params = {e: ("SPXW", [], e) for e in ("20261217", "20261218", "20261223", "20261224", "20261230", "20261231")}
+    assert a14._expiries(params, 7, 110) == ["20261218", "20261224", "20261231"]
