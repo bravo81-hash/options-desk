@@ -98,11 +98,11 @@ function read() {
   const f = C.defs, S = C.score;
   const tip = {quiet: `SPX never closes more than ${Math.abs(f.quiet)}% below today's close in the next ${f.ahead} sessions`,
     normal: `SPX closes between ${Math.abs(f.quiet)}% and ${Math.abs(f.rough)}% below at its worst`, rough: `SPX closes ${Math.abs(f.rough)}% or more below at some point`};
-  const btn = (k) => `<button type="button" class="nwcall ${C.mine === k ? "on " + CALL[k][1] : ""}" data-call="${k}" title="${esc(tip[k])}">${CALL[k][0]}<span>${C.base ? C.base[k] + "% of weeks" : ""}</span></button>`;
+  const btn = (k) => `<button type="button" class="nwcall ${C.mine === k ? "on " + CALL[k][1] : ""}" data-call="${k}"${window.DESK_CLOUD ? " disabled" : ""} title="${esc(tip[k])}">${CALL[k][0]}<span>${C.base ? C.base[k] + "% of weeks" : ""}</span></button>`;
   const rate = (h, n) => n ? `${h} of ${n}` : "–";
   el.innerHTML = `<div class="nwcalls">${Object.keys(CALL).map(btn).join("")}</div>
     <p class="small">${C.mine ? `Your read for the week after ${day(C.today)}: <b>${CALL[C.mine][0]}</b>. The desk's read: <b>${C.app ? CALL[C.app][0] : "–"}</b>. You can change yours until that session ends.`
-      : `How will the next ${f.ahead} sessions go? One tap. The desk's own read stays hidden until you've made yours.`}</p>
+      : window.DESK_CLOUD ? "No read made for this session yet. It is made on the laptop desk: this copy can't save." : `How will the next ${f.ahead} sessions go? One tap. The desk's own read stays hidden until you've made yours.`}</p>
     <p class="small muted">Scored so far: you <b>${rate(S.mine, S.mine_n)}</b> · the desk <b>${rate(S.app, S.app_n)}</b> · always saying quiet <b>${rate(S.quiet, S.n)}</b>${S.n < 20 ? ` · ${S.n} weeks scored: it takes about 20 before this says anything` : ""}. Quiet = SPX stays within ${Math.abs(f.quiet)}% of today's close on the downside; rough = it closes ${Math.abs(f.rough)}%+ lower at some point.</p>`;
   el.querySelectorAll("[data-call]").forEach((b) => b.addEventListener("click", async () => {
     const r = await api("/api/process/call", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({mine: b.dataset.call})}).catch(() => null);
@@ -115,7 +115,7 @@ function logRows(rows, withNote) {
     <td>${esc(d.name)} <span class="small muted">${esc(d.accts.join(" + "))}</span></td>
     <td>${d.planned ? `<span class="chip pos">✓ as planned</span>` : `<span class="chip wrn">differed</span>`}</td>
     <td class="small">${d.planned ? `<span class="muted">${d.checks} rules checked</span>` : d.why.map(esc).join("<br>")}</td>
-    ${withNote ? `<td>${d.planned ? "" : `<input class="nwnote" data-key="${esc(d.key)}" value="${esc(d.note || "")}" placeholder="one line, when you have time" maxlength="200">`}</td>` : ""}</tr>`).join("");
+    ${withNote ? `<td>${d.planned ? "" : `<input class="nwnote" data-key="${esc(d.key)}" value="${esc(d.note || "")}" placeholder="${window.DESK_CLOUD ? "notes are typed on the laptop" : "one line, when you have time"}" maxlength="200"${window.DESK_CLOUD ? " disabled" : ""}>`}</td>` : ""}</tr>`).join("");
 }
 function bindNotes(el) {
   el.querySelectorAll(".nwnote").forEach((i) => i.addEventListener("change", async () => {
@@ -174,9 +174,11 @@ function setDetail(on) {
   try { localStorage.setItem(DK, on ? "1" : "0"); } catch (e) {}
 }
 let detail = false; try { detail = localStorage.getItem(DK) === "1"; } catch (e) {}
-if (window.DESK_CLOUD) {  // the cloud copy has no trades, limits or log to answer from: it keeps its tabs and opens on Actions
-  detail = true; ["now", "rules"].forEach((t) => { const b = document.querySelector(`.tabs button[data-tab="${t}"]`); if (b) b.style.display = "none"; });
-  const d = $("detailBtn"); if (d) d.style.display = "none";
+const CLOUD = !!window.DESK_CLOUD;
+if (CLOUD) {  // the cloud copy answers Now and Rules from your encrypted snapshot: hidden until it is unlocked, and nothing can be saved there
+  const tabs = ["now", "rules"].map((t) => document.querySelector(`.tabs button[data-tab="${t}"]`)).filter(Boolean), d = $("detailBtn");
+  detail = true; tabs.forEach((b) => { b.style.display = "none"; }); if (d) d.style.display = "none";
+  window.addEventListener("load", () => api("/api/rulebook").then((r) => { if (r && r.sections) { tabs.forEach((b) => { b.style.display = ""; }); if (d) d.style.display = ""; } }).catch(() => {}));
 }
 setDetail(detail);
 document.addEventListener("click", (e) => { if (e.target.closest("#detailBtn")) setDetail(document.body.classList.contains("simple")); });

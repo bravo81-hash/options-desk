@@ -76,3 +76,8 @@ def test_the_rule_book_reads_its_numbers_from_the_rules_and_every_rule_has_a_rea
     assert f"+{R['target']:g}%" in by["Target"]["rule"] and f"−{R['stop']:g}%" in by["Hard stop"]["rule"] and f"{R['time_dte']} days" in by["Time stop"]["rule"]
     assert "20%" in by["Worst-case cap"]["rule"] and "fits 2 ids" in by["Worst-case cap"]["why"] and "10%" in by["Stress limit"]["rule"]
     assert "TimeEdge" in by and "A14" not in by  # A14 has its own section, the other cards one line each
+
+
+def test_the_now_screen_and_the_rule_book_travel_in_the_encrypted_snapshot():
+    from desk import snapshot
+    assert {"process", "rulebook", "risk", "a14/rules"} <= set(snapshot.PLAIN)
