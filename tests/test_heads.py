@@ -3,6 +3,7 @@ import datetime as dt
 import io
 
 import pandas as pd
+import pytest
 
 from desk import heads, risk, trades
 from desk.recorder import ET
@@ -208,6 +209,7 @@ NOW = et(2026, 11, 2, 18)  # Monday evening: the next open is Tuesday's
 
 
 def grid(*t, **k):
+    k.setdefault("smiles", {})  # no recorded surface unless a test gives one: never the real database
     return risk.gap_grid(list(t), LABELS, k.pop("futures", None), now=NOW, **k)
 
 
@@ -218,16 +220,47 @@ def test_next_open_skips_weekends_and_holidays():
     assert risk.next_open(et(2026, 11, 2, 12)) == et(2026, 11, 3, 9, 30)
 
 
+ROWS = ["-10.0%", "-7.0%", "-5.0%", "-3.0%", "-1.5%", "+1.5%", "+3.0%", "+5.0%", "+7.0%", "+10.0%"]
+FLAT = 2  # column of "VIX flat": joint, -3, 0, 3, 6
+
+
 def test_short_put_loses_on_a_gap_down_and_gains_on_a_gap_up():
     g = grid(fake_trade())
-    assert g["rows"] == ["-2.5%", "-1.5%", "+1.5%", "+2.5%"] and g["vols"] == [-3, 0, 3, 6]
-    flat = [row[1] for row in g["total"]]
-    assert flat[0] < flat[1] < 0 < flat[2] < flat[3]
+    assert g["rows"] == ROWS and g["vols"] == ["joint", -3, 0, 3, 6] and g["gaps"] == [-10, -7, -5, -3, -1.5, 1.5, 3, 5, 7, 10]
+    flat = [row[FLAT] for row in g["total"]]
+    assert flat[0] < flat[1] < flat[2] < flat[3] < flat[4] < 0 < flat[5] < flat[6] < flat[7] < flat[8] < flat[9]
 
 
 def test_short_premium_is_hurt_by_a_higher_vix():
-    row = grid(fake_trade())["total"][0]
-    assert row[0] > row[1] > row[2] > row[3]
+    row = grid(fake_trade())["total"][3]
+    assert row[1] > row[2] > row[3] > row[4]
+
+
+def test_joint_column_raises_iv_on_falls_and_lowers_it_on_rises():
+    assert risk.joint_dv(-0.05) == pytest.approx(0.075) and risk.joint_dv(0.05) == pytest.approx(-0.05) and risk.joint_dv(0.0) == 0
+    g = grid(fake_trade())
+    down, up = g["rows"].index("-5.0%"), g["rows"].index("+5.0%")
+    assert g["total"][down][0] < g["total"][down][FLAT]  # a short put loses more when IVs rise with the fall
+    assert g["total"][up][0] > g["total"][up][FLAT]  # and gains more when they fall with the rally
+
+
+def test_sliding_smile_takes_the_iv_of_the_strike_now_as_far_from_spot():
+    import numpy as np
+    t = fake_trade(strike=4750.0, iv=0.25)
+    exp = risk._legs(t)[0][4].strftime("%Y%m%d")
+    skew = {"SPX": {exp: (np.array([4000.0, 5000.0, 6000.0]), np.array([0.35, 0.20, 0.15]))}}  # puts richer below spot
+    moved = risk._slid(t, risk._legs(t), -0.05, skew)
+    # after a 5% fall the 4750 put sits where 5000 sat: its IV changes by iv(5000) - iv(4750) = 0.20 - 0.2375
+    assert moved[0][3] == pytest.approx(0.25 + 0.20 - 0.2375)
+    g = grid(t, smiles=skew)
+    i = g["rows"].index("-5.0%")
+    assert g["modes"]["strike"]["total"][i][FLAT] < g["modes"]["moneyness"]["total"][i][FLAT] < 0  # lower IV on the short put: a smaller loss
+    assert g["mode"] == "moneyness" and g["total"] == g["modes"]["moneyness"]["total"] and g["slid"] == ["SPX"]  # sliding is the default view
+
+
+def test_a_leg_with_no_recorded_smile_keeps_its_iv():
+    t = fake_trade(und="NKE", spot=60.0, strike=60.0)
+    assert risk._slid(t, risk._legs(t), -0.05, {"SPX": {}}) == risk._legs(t)
 
 
 def test_accounts_add_up_to_the_total():
@@ -240,20 +273,21 @@ def test_accounts_add_up_to_the_total():
 
 def test_rut_moves_by_beta_on_the_percent_rows():
     t = fake_trade(und="RUT", spot=2300.0, strike=2300.0)
-    a, b = grid(t, beta=1.0)["total"][0][1], grid(t, beta=2.0)["total"][0][1]
+    i = ROWS.index("-3.0%")
+    a, b = grid(t, beta=1.0)["total"][i][FLAT], grid(t, beta=2.0)["total"][i][FLAT]
     assert b < a
 
 
 def test_futures_row_uses_each_index_own_move():
     g = grid(fake_trade(), fake_trade(und="RUT", spot=2300.0, strike=2300.0), futures=FUT)
-    assert g["rows"][2] == "Futures now" and g["futures"] == FUT["chg"]
+    assert g["rows"][5] == "Futures now" and g["rows"][4] == "-1.5%" and g["rows"][6] == "+1.5%" and g["gaps"][5] is None and g["futures"] == FUT["chg"]
     alone = grid(fake_trade(), futures={"chg": {"SPX": -1.0}})
-    assert g["total"][2][1] < alone["total"][2][1]  # RTY's -2% adds a second loss
+    assert g["total"][5][FLAT] < alone["total"][5][FLAT]  # RTY's -2% adds a second loss
 
 
 def test_stock_trades_take_the_spx_future():
     a = grid(fake_trade(und="NKE", spot=60.0, strike=60.0), futures={"chg": {"SPX": -2.0}})
-    assert a["total"][2][1] < 0
+    assert a["total"][a["rows"].index("Futures now")][FLAT] < 0
 
 
 def test_no_futures_quote_drops_the_row():
@@ -267,8 +301,8 @@ def test_trade_without_a_spot_is_left_out_rather_than_breaking_the_grid():
 
 def test_trade_expiring_before_the_open_is_frozen_at_expiry():
     soon = fake_trade(days=0.01, strike=5000.0, iv=0.2)
-    v = grid(soon)["total"][1][1]  # -1.5%: intrinsic loss only, whatever the VIX shift
-    assert v == grid(soon)["total"][1][3] or abs(v - grid(soon)["total"][1][3]) < 1e-9
+    g, i = grid(soon), ROWS.index("-1.5%")
+    assert len({round(v, 9) for v in g["total"][i]}) == 1  # intrinsic loss only, whatever the VIX shift or the joint move
 
 
 def test_bad_iv_takes_the_expiry_average():

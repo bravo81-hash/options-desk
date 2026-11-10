@@ -129,27 +129,12 @@ function recon() {
   }
 }
 
-function target() {
-  const el = $("plTarget"), T = A14R && A14R.target; if (!el) return;
-  if (!T || !Object.keys(T).length) { el.innerHTML = `<div class="state">${esc((A14R && A14R.error) || "No finished weeks yet.")}</div>`; return; }
-  const P = A14R.rule, N = Object.keys(T);
-  el.innerHTML = `<div class="acctgrid">${N.map((a, k) => { const t = T[a]; return `<div><h3>${esc(a)}</h3><div class="kv mini">
-      <div><span class="lbl">${P.target_weeks}-week average</span><b class="${t.now == null ? "" : t.now >= P.week_target ? "pos" : ""}">${t.now == null ? "–" : pctS(t.now, 2)}</b></div>
-      <div><span class="lbl">Weeks at ${P.week_target}% or more</span><b>${t.hit} of ${t.n}</b></div><div><span class="lbl">Worst of those weeks</span><b class="${cls(t.worst)}">${t.worst == null ? "–" : pctS(t.worst, 2)}</b></div></div>
-      <div class="chart" id="plTgt${k}"></div><div class="chart" id="plTgw${k}"></div></div>`; }).join("")}</div>
-    <p class="note">The line is the average of the last ${P.target_weeks} finished weeks, and the bars are those ${P.target_weeks} weeks as % of NAV: green at ${P.week_target}% or more, red below zero. One week is mostly noise, so the target is read on the line. This counts every strategy and FX, not A14 alone, and leaves out accounts with no trades.</p>`;
-  N.forEach((a, k) => {
-    lineChart($(`plTgt${k}`), {h: 150, label: `${a} ${P.target_weeks}-week average, % of NAV a week`, refs: [{y: P.week_target, label: `${P.week_target}%`}, {y: 0}], fy: (v) => `${v}%`, endLabels: false, series: [{name: "Average", color: "var(--accent)", width: 2.4, data: T[a].series}]});
-    barChart($(`plTgw${k}`), {h: 110, label: `${a} last ${P.target_weeks} finished weeks, % of NAV`, items: T[a].weeks.slice(-P.target_weeks).map((w, i) => ({label: i % 2 ? "" : dlabel(w.d), title: `week of ${dlabel(w.d)}: <b>${pctS(w.v)}</b>`, v: w.v, color: w.v >= P.week_target ? "var(--up)" : w.v < 0 ? "var(--down)" : "var(--faint)"}))});
-  });
-}
-
 async function load() {
   try {
     [W, T, R] = await Promise.all(["/api/pnl/weekly", "/api/pnl/today", "/api/recon"].map((u) => fetch(u).then((r) => r.json())));
     $("plMeta").textContent = T && T.ts ? `TWS data ${new Date(T.ts).toLocaleString([], {weekday: "short", hour: "numeric", minute: "2-digit"})}` : "no TWS data yet";
     strip(); weekly(); tickers(); recon();
-    fetch("/api/a14/rules").then((r) => r.json()).catch(() => null).then((d) => { A14R = d; target(); });
+    if (window.renderProcess) window.renderProcess($("plTarget"));  // the Process scoreboard (now.js) took the 13-week target's place
   } catch (e) { $("plWeekly").innerHTML = `<div class="state err">${esc(e.message || e)}</div>`; }
 }
 $("plUnit").addEventListener("change", weekly);

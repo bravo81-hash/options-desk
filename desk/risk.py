@@ -258,6 +258,17 @@ def _last_session_pnl():
     return (rows[0]["date"], {r["trade_key"]: r["pnl"] for r in rows}) if rows else (None, {})
 
 
+def _full_marks():
+    """{trade key: (P&L, when)}: each trade's latest P&L this session with every leg priced (journal.snapshot_open writes only those,
+    and keeps the 16:15 ET close capture). The Trade plan labels from these when live marks are missing a leg, as of that time."""
+    from .recorder import session_date
+    try:
+        rows = db.query("SELECT trade_key, pnl, updated FROM trade_pnl WHERE date=?", (session_date().isoformat(),))
+    except Exception:
+        return {}
+    return {r["trade_key"]: (r["pnl"], r["updated"]) for r in rows}
+
+
 def _surface_iv(underlying, expiry, strike):
     """IV at a strike from the latest recorded surface (OTM quotes only), same or nearest expiry."""
     snap = db.query("SELECT id FROM snaps WHERE symbol=? ORDER BY date DESC, id DESC LIMIT 1", (underlying,))
@@ -394,7 +405,13 @@ def calendar_checks(t, rel, rv20):
 
 
 # ------------------------------------------------------------------ gap what-if (same pricing as value() in web/risk.js)
-GAPS, VOL_SHIFTS = (-2.5, -1.5, 1.5, 2.5), (-3, 0, 3, 6)
+GAPS, VOL_SHIFTS = (-10, -7, -5, -3, -1.5, 1.5, 3, 5, 7, 10), (-3, 0, 3, 6)
+COLS = ("joint",) + VOL_SHIFTS  # "joint": IVs move with the index, JOINT points per 1%
+JOINT = (1.5, 1.0)  # IV points per 1% move: up this much on a fall, down this much on a rise (the review's joint shock)
+MODES = ("strike", "moneyness")  # each strike keeps its IV / the smile slides with the index (recorded SPX/RUT surface)
+MODE = "moneyness"  # the default view and the stress check. Recorded surfaces 9 Oct-6 Nov (85-102% of spot, 25-80 DTE): on the 5 falls of
+# 1%+ sliding + joint overstated the fixed-strike IV rise by 0.3-0.8 pts, sticky strike + joint by 1.2-3.9 (5 Nov: actual +2.6, 3.2, 6.5);
+# on the 4 rises of 1%+ sliding gave the smaller IV drop, the harsher side for a short-vega book.
 RUT_BETA = 1.2  # the Risk grid's default
 
 
@@ -431,37 +448,153 @@ def _value(legs, spot, at, dv=0.0):
     return sum(q * 100 * bs_price(spot, k, max(0.0, (x - at).total_seconds() / yr), max(0.01, v + dv), r) for q, k, r, v, x in legs)
 
 
-def _change(t, legs, x, dv, at, now):
-    """P&L change from now: spot moved by x, vols by dv, on `at` (a trade expiring sooner is frozen at its first expiry)."""
-    return _value(legs, t["spot"] * (1 + x), min(at, min(lg[4] for lg in legs)), dv) - _value(legs, t["spot"], now)
+def _change(t, legs, x, dv, at, now, moved=None):
+    """P&L change from now: spot moved by x, vols by dv, on `at` (a trade expiring sooner is frozen at its first expiry).
+    `moved` is the legs with the smile slid to the new spot (sticky moneyness); without it each strike keeps its IV."""
+    return _value(moved or legs, t["spot"] * (1 + x), min(at, min(lg[4] for lg in legs)), dv) - _value(legs, t["spot"], now)
 
 
-def gap_grid(trades, labels, futures=None, now=None, beta=RUT_BETA):
-    """Book at the next open for each gap and IV shift, in total and per account. Rows ±1.5% and ±2.5% are SPX gaps with RUT at
-    beta × that; the `Futures` row uses each index's own overnight move (None when there's no quote)."""
+def joint_dv(x):
+    """IV shift (vol units) that goes with an index move x (a fraction): up JOINT[0] points per 1% on a fall, down JOINT[1] on a rise."""
+    return JOINT[0] * -x if x < 0 else -JOINT[1] * x
+
+
+def _smiles(syms):
+    """{sym: {expiry: (strikes, ivs)}} from the latest recorded surface: puts below spot, calls above, one IV per strike."""
+    import numpy as np
+    out = {}
+    for u in syms:
+        snap = db.query("SELECT id FROM snaps WHERE symbol=? ORDER BY date DESC, id DESC LIMIT 1", (u,))
+        if not snap:
+            continue
+        pts = {}
+        for r in db.query("SELECT expiry, strike, iv FROM quotes WHERE snap_id=? AND iv IS NOT NULL AND iv > 0", (snap[0]["id"],)):
+            pts.setdefault(r["expiry"], {}).setdefault(r["strike"], []).append(r["iv"])
+        out[u] = {e: (np.array(sorted(p)), np.array([sum(p[k]) / len(p[k]) for k in sorted(p)])) for e, p in pts.items() if len(p) >= 3}
+    return out
+
+
+def _slid(t, legs, x, smiles):
+    """The legs with the smile slid to spot × (1 + x): each strike takes the recorded IV at the same distance from spot
+    (strike / (1 + x) today), as a change on its own IV. Legs with no recorded smile within 10 days keep their IV."""
+    import numpy as np
+    sm = smiles.get(t["underlying"]) or {}
+    if not sm or not x:
+        return legs
+    out = []
+    for q, k, r, v, xp in legs:
+        e = min(sm, key=lambda e: abs((dt.datetime.strptime(e, "%Y%m%d").date() - xp.date()).days))
+        if abs((dt.datetime.strptime(e, "%Y%m%d").date() - xp.date()).days) > 10:
+            out.append((q, k, r, v, xp))
+            continue
+        ks, ivs = sm[e]
+        out.append((q, k, r, max(0.01, v + float(np.interp(k / (1 + x), ks, ivs) - np.interp(k, ks, ivs))), xp))
+    return out
+
+
+def gap_grid(trades, labels, futures=None, now=None, beta=RUT_BETA, smiles=None):
+    """Book at the next open for each gap and IV shift, in total and per account, with each strike keeping its IV ("strike") and with
+    the smile sliding with the index ("moneyness"). Rows are SPX gaps with RUT at beta × that; the `Futures` row uses each index's own
+    overnight move (None when there's no quote). Column "joint" moves IVs with the index (joint_dv); the others shift every leg's IV."""
     now = now or dt.datetime.now(dt.timezone.utc)
     at = next_open(now)
     book = [(t, labels.get(t["ib_account"]) or t["group"], _legs(t)) for t in trades if t.get("spot") and t["legs"]]
     fut = (futures or {}).get("chg") or {}
+    if smiles is None:
+        smiles = _smiles(sorted({t["underlying"] for t, _, _ in book} & {"SPX", "RUT"}))
 
-    def rows():
-        for g in GAPS[:2]:
-            yield {"label": f"{g:+.1f}%", "gap": g, "live": False}
-        if fut:
-            yield {"label": "Futures now", "gap": None, "live": True}
-        for g in GAPS[2:]:
-            yield {"label": f"{g:+.1f}%", "gap": g, "live": False}
+    R = []  # falls, then where futures are now, then rises
+    for g in GAPS:
+        if g > 0 and fut and not any(r["live"] for r in R):
+            R.append({"label": "Futures now", "gap": None, "live": True})
+        R.append({"label": f"{g:+.1f}%", "gap": g, "live": False})
 
     def move(t, r):
         if r["live"]:
             return fut.get(t["underlying"], fut.get("SPX", 0.0)) / 100
         return r["gap"] / 100 * (beta if t["underlying"] == "RUT" else 1)
 
-    R = list(rows())
-    cells = lambda tt: [[sum(_change(t, lg, move(t, r), v / 100, at, now) for t, _, lg in tt) for v in VOL_SHIFTS] for r in R]  # noqa: E731
+    def cells(tt, mode):
+        res = []
+        for r in R:
+            row = [0.0] * len(COLS)
+            for t, _, lg in tt:
+                x = move(t, r)
+                moved = _slid(t, lg, x, smiles) if mode == "moneyness" else None
+                for j, c in enumerate(COLS):
+                    row[j] += _change(t, lg, x, joint_dv(x) if c == "joint" else c / 100, at, now, moved)
+            res.append(row)
+        return res
     names = sorted({a for _, a, _ in book})
-    return {"at": at.isoformat(), "rows": [r["label"] for r in R], "vols": list(VOL_SHIFTS), "beta": beta, "futures": fut or None, "futures_ts": (futures or {}).get("ts"),
-            "total": cells(book), "accounts": [{"label": a, "cells": cells([b for b in book if b[1] == a])} for a in names]}
+    grids = {m: {"total": cells(book, m), "accounts": [{"label": a, "cells": cells([b for b in book if b[1] == a], m)} for a in names]} for m in MODES}
+    slid = sorted({t["underlying"] for t, _, _ in book if smiles.get(t["underlying"])})
+    return {"at": at.isoformat(), "rows": [r["label"] for r in R], "gaps": [r["gap"] for r in R], "vols": list(COLS), "joint": list(JOINT), "beta": beta,
+            "futures": fut or None, "futures_ts": (futures or {}).get("ts"), "slid": slid, "mode": MODE, **grids[MODE], "modes": grids}
+
+
+JUMPS = (1.5, 3, 4, 5, 7, 10)  # one-session SPX moves counted, %
+
+
+def jump_freq(vix=None, since="1990-01-02"):
+    """How often SPX has moved at least this much in one session, close to close, since 1990, each way: on all days, on days that began
+    with the VIX at or below `vix` (the prior close), and what a normal curve at that VIX would expect. Closes, not overnight gaps."""
+    from statistics import NormalDist
+    from .history import series
+    px = [(r["date"], r["c"]) for r in db.query("SELECT date, c FROM bars_daily WHERE symbol='^GSPC' AND date>=? AND c>0 ORDER BY date", (since,))]
+    if len(px) < 500:
+        return None
+    vx = series("VIX", since).to_dict()
+    days = [(d, c / p - 1, vx.get(pd)) for (pd, p), (d, c) in zip(px, px[1:])]
+    years = len(days) / 252
+    calm = [x for x in days if vix and x[2] is not None and x[2] <= vix]
+    sd = vix / 100 / 252 ** 0.5 if vix else None
+    rows = []
+    for t in JUMPS:
+        side = {}
+        for k, hit in (("down", lambda r: r <= -t / 100), ("up", lambda r: r >= t / 100)):  # noqa: E731
+            all_ = [d for d, r, _ in days if hit(r)]
+            low = [d for d, r, _ in calm if hit(r)]
+            side[k] = {"n": len(all_), "per_yr": round(len(all_) / years, 2), "last": all_[-1] if all_ else None,
+                       "calm_n": len(low) if vix else None, "calm_per_yr": round(len(low) / (len(calm) / 252), 2) if calm else None,
+                       "normal_per_yr": 252 * NormalDist().cdf(-t / 100 / sd) if sd else None}
+        rows.append({"pct": t, **side})
+    return {"since": px[0][0], "to": px[-1][0], "years": round(years, 1), "vix": vix, "calm_days": len(calm), "rows": rows}
+
+
+def limits(trades, labels, book, gaps, cfg=None):
+    """Each account's open book against the A14 rule page (ids per ticker, worst case an id) and against the stress limit: the loss on a
+    day the index moves `move` % either way with IVs moving with it (the Gap what-if's joint column in its default MODE), as % of
+    NAV. Both limits are personal (config.local.json risk.stress: limit_pct for the stress day, cap_pct for all A14 worst cases added up; one
+    number or {label: number}); unset, the figure is shown, not alerted. "over" marks an account past either: no new id fits until it is back under.
+    Information only: nothing here closes, blocks or sizes anything."""
+    from . import a14rules
+    cfg = (load_config()["risk"].get("stress") or {}) if cfg is None else cfg
+    move, lim, capw = float(cfg.get("move") or 5), cfg.get("limit_pct"), cfg.get("cap_pct")
+    navs = {m["label"]: m["nav"] / m["rate"] for m in (book or {}).get("margin") or [] if m.get("nav") and m.get("rate")}
+    rule = a14rules.book([{**t, "acct": labels.get(t["ib_account"]) or t["group"]} for t in trades], navs)
+    gi = {g: i for i, g in enumerate(gaps.get("gaps") or []) if g is not None}
+    j = (gaps.get("vols") or []).index("joint") if "joint" in (gaps.get("vols") or []) else None
+    strike = {x["label"]: x["cells"] for x in ((gaps.get("modes") or {}).get("strike") or {}).get("accounts") or []}
+    out = []
+    for acc in gaps.get("accounts") or []:
+        a, nav = acc["label"], navs.get(acc["label"])
+        cell = lambda g, c=acc["cells"]: c[gi[g]][j] if g in gi and j is not None else None  # noqa: E731
+        worst = lambda c: -min(v for v in (cell(-move, c), cell(move, c), 0.0) if v is not None)  # noqa: E731
+        down, up = cell(-move), cell(move)
+        pct = round(100 * worst(acc["cells"]) / nav, 1) if nav else None
+        hard = round(100 * worst(strike[a]) / nav, 1) if nav and a in strike and gaps.get("mode") != "strike" else None  # each strike keeping its IV
+        cap = lim.get(a) if isinstance(lim, dict) else lim
+        r = rule.get(a) or {}
+        alerts = list(r.get("alerts") or [])
+        if cap is not None and pct is not None and pct > cap:
+            alerts.append(f"a {move:g}% day with IVs moving with it would cost {pct:.1f}% of NAV, over your {cap:g}% limit")
+        tot, wp = (capw.get(a) if isinstance(capw, dict) else capw), r.get("worst_pct")
+        if tot is not None and r and (wp is None or wp > tot):  # None with ids open: an id has no ceiling
+            alerts.append(f"all A14 worst cases add to {wp:.1f}% of NAV, over your {tot:g}% cap" if wp is not None else f"an A14 id has no ceiling: over your {tot:g}% cap")
+        over = bool((cap is not None and pct is not None and pct > cap) or (tot is not None and r and (wp is None or wp > tot)))
+        out.append({"label": a, "nav_usd": round(nav) if nav else None, "a14": r or None, "stress": {"move": move, "down": down, "up": up, "pct": pct, "limit": cap,
+                    "ten": [cell(-10.0), cell(10.0)], "mode": gaps.get("mode") or "strike", "strike_pct": hard}, "cap": tot, "over": over, "alerts": alerts})
+    return out
 
 
 def overnight_risk(trades, vix, now=None):
@@ -543,7 +676,9 @@ def payload():
     recon = reconcile(trades, m.get("positions", [])) if m.get("positions") else []
     adj, adj_ts = adjustment_counts()
     last_date, last_pnl = _last_session_pnl()
+    full = _full_marks()
     for t in trades:
+        t["full_pnl"], t["full_at"] = full.get(t["id"], (None, None))
         t["prev_spot"] = m.get("prev_close", {}).get(t["underlying"])
         t["strategy"] = classify(t["group"], t["name"])
         t["entry_spot"] = _entry_spot(t["underlying"], t["opened"])
@@ -563,10 +698,15 @@ def payload():
             t["calendar"] = calendar_checks(t, rel, realized(t["underlying"]))
     labels = load_config()["risk"]["account_labels"]
     book = _book(m, spots, labels)
-    from . import heads
+    from . import a14rules, heads
+    gaps = gap_grid(trades, labels, heads.gaps_now())
+    lims = limits(trades, labels, book, gaps)
+    from . import process
+    process.snap_day(lims)  # which accounts were over your limits this session, for the automatic log
     return {"trades": trades, "one_file": path, "one_fresh": one_freshness(path), "marks_ts": m.get("ts"), "spots": spots, "stocks": m.get("stocks", []),
-            "missing": m.get("missing", []), "recon": recon, "status": status, "detail_exported": adj_ts,
-            "labels": labels, "book": book, "gaps": gap_grid(trades, labels, heads.gaps_now()), "overnight": overnight_risk(trades, book["vix"]), "hedge": hedge_reference(book["spx"])}
+            "missing": m.get("missing", []), "recon": recon, "status": status, "detail_exported": adj_ts, "a14rule": a14rules.rule(),
+            "labels": labels, "book": book, "gaps": gaps, "limits": lims, "jumps": jump_freq(book["vix"]),
+            "overnight": overnight_risk(trades, book["vix"]), "hedge": hedge_reference(book["spx"])}
 
 
 def recon_view():

@@ -16,6 +16,7 @@ import numpy as np
 from .accounts import ET, US_HOLIDAYS
 
 FROM = "2026-11-02"  # nothing before this is scored on these rules
+TARGET = 7.0  # % of margin: the Trade plan's close, whatever the entry DTE
 STOP_NAV = 1.5  # % of NAV lost at the card's stop, at Full size
 ENTRY_DTE, DTE_LO, DTE_HI = 49, 42, 56
 TIME_BEFORE = 2  # the card's time stop for ids entered before FROM
@@ -31,7 +32,7 @@ def rule():
     """The rule page as data, for the pages that print it."""
     from .positions import CARDS
     stop = CARDS["A14"]["stop"]
-    return {"from": FROM, "stop_nav": STOP_NAV, "stop": stop, "worst_nav": round(100 * STOP_NAV / stop, 2), "entry_dte": ENTRY_DTE, "dte_lo": DTE_LO, "dte_hi": DTE_HI, "time_dte": CARDS["A14"]["time"],
+    return {"from": FROM, "target": TARGET, "stop_nav": STOP_NAV, "stop": stop, "worst_nav": round(100 * STOP_NAV / stop, 2), "entry_dte": ENTRY_DTE, "dte_lo": DTE_LO, "dte_hi": DTE_HI, "time_dte": CARDS["A14"]["time"],
             "cap": CAP, "windows": list(WINDOWS), "entry_day": ENTRY_DAY, "tilt_sd": TILT_SD, "tilt_line": TILT_LINE, "week_target": WEEK_TARGET, "target_weeks": TARGET_WEEKS}
 
 
@@ -113,9 +114,13 @@ def next_id(sym, blob, D, nav):
 
 
 def target(weekly, labels):
-    """{label: {now, weeks, series}}: each traded account's weekly % of NAV and its rolling TARGET_WEEKS average, finished weeks only."""
+    """{label: {now, weeks, series, prov}}: each traded account's weekly % of NAV and its rolling TARGET_WEEKS average on finished
+    weeks; `prov` is the week to date and the average it would make if the week ended now, shown apart and marked provisional."""
     names = {a["id"]: a["label"] for a in weekly.get("accounts", [])}
-    done = [w for w in sorted(weekly.get("weeks", []), key=lambda w: w["week"]) if not any("week to date" in n for n in w.get("notes") or [])]
+    to_date = lambda w: next((n for n in w.get("notes") or [] if "week to date" in n), None)  # noqa: E731
+    weeks = sorted(weekly.get("weeks", []), key=lambda w: w["week"])
+    done = [w for w in weeks if not to_date(w)]
+    cur = next((w for w in reversed(weeks) if to_date(w)), None)
     out = {}
     for ac, name in names.items():
         if name not in labels:
@@ -124,9 +129,75 @@ def target(weekly, labels):
         vals = [v for _, v in rows]
         series = [{"d": rows[i][0], "v": round(sum(vals[i + 1 - TARGET_WEEKS:i + 1]) / TARGET_WEEKS, 3)} for i in range(TARGET_WEEKS - 1, len(rows))]
         recent = vals[-TARGET_WEEKS:]
+        p = (cur["acct"].get(ac) or {}).get("pct") if cur else None
+        prov = None
+        if p is not None:
+            k = TARGET_WEEKS - 1
+            prov = {"d": cur["week"], "v": round(p, 2), "note": to_date(cur), "now": round((sum(vals[-k:]) + p) / TARGET_WEEKS, 3) if len(vals) >= k else None}
         out[name] = {"now": series[-1]["v"] if series else None, "n": len(recent), "hit": sum(v >= WEEK_TARGET for v in recent), "worst": round(min(recent), 2) if recent else None,
-                     "weeks": [{"d": d, "v": round(v, 2)} for d, v in rows], "series": series}
+                     "weeks": [{"d": d, "v": round(v, 2)} for d, v in rows], "series": series, "prov": prov}
     return out
+
+
+def id_worst(t):
+    """An open trade's lowest total P&L, US$: every open leg at intrinsic value at any index level, plus what it has already
+    realised (ONE's P&L). None when a leg has no open price; -inf when more calls are short than long (no ceiling)."""
+    from .positions import uncapped, worst
+    if any(lg.get("open_price") is None or lg.get("strike") is None for lg in t["legs"]):
+        return None
+    pos = {}
+    for lg in t["legs"]:
+        k = (lg["expiry_iso"][:10], lg["strike"], lg["right"])
+        pos[k] = pos.get(k, 0.0) + lg["qty"]
+    if uncapped(pos):
+        return float("-inf")
+    return worst(pos, (t.get("one_pnl") or 0.0) - sum(lg["qty"] * 100 * lg["open_price"] for lg in t["legs"]))
+
+
+def _entered_us(t):
+    """The US session date a trade was opened (ONE's times are this computer's local time)."""
+    try:
+        return dt.datetime.fromisoformat(t["opened_iso"]).astimezone(ET).date().isoformat()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def book(rows, navs):
+    """The open A14 book against the rule page, per account: ids per ticker against CAP, and each id's worst case (id_worst) against
+    the rule's 7.5% of that account's NAV. rows: open trades with "acct" (label) and "strategy"; navs: {label: NAV in US$}.
+    Information only: nothing here closes, blocks or sizes anything."""
+    from .positions import CARDS
+    lim = 100 * STOP_NAV / CARDS["A14"]["stop"]
+    out = {}
+    for t in rows:
+        if t.get("strategy") != "A14":
+            continue
+        a = out.setdefault(t["acct"], {"ids": {}, "cap": CAP, "lim": lim, "over": [], "worst_usd": 0.0, "unpriced": 0, "largest": None})
+        a["ids"][t["underlying"]] = a["ids"].get(t["underlying"], 0) + 1
+        w, nav = id_worst(t), navs.get(t["acct"])
+        if w is None:
+            a["unpriced"] += 1
+            continue
+        loss = -min(w, 0.0)
+        a["worst_usd"] += loss
+        if nav:
+            pct = 100 * loss / nav
+            a["largest"] = max(a["largest"] or 0.0, pct)
+            if pct > lim:
+                ent = _entered_us(t)
+                a["over"].append({"id": t["id"], "name": t["name"], "pct": None if pct == float("inf") else round(pct, 1), "before": bool(ent) and ent < FROM})
+    for name, a in out.items():
+        nav = navs.get(name)
+        a["worst_pct"] = None if not nav or a["worst_usd"] == float("inf") else round(100 * a["worst_usd"] / nav, 1)
+        a["largest"] = None if a["largest"] is None or a["largest"] == float("inf") else round(a["largest"], 1)
+        a["worst_usd"] = None if a["worst_usd"] == float("inf") else round(a["worst_usd"])
+        a["alerts"] = [f"{n} {u} ids open: the rule's cap is {CAP}" for u, n in sorted(a["ids"].items()) if n > CAP] + [_over_txt(o, lim) for o in a["over"]]
+    return out
+
+
+def _over_txt(o, lim):
+    size = "has no ceiling" if o["pct"] is None else f"is {o['pct']:.1f}% of NAV"
+    return f"{o['name']}: worst case {size}, over the rule's {lim:g}%" + (" (opened before the 2 Nov rules)" if o["before"] else "")
 
 
 def score_fields(rows, pos):

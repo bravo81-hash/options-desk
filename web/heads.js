@@ -42,7 +42,12 @@ function ribbon() {
   if (!H) { el.innerHTML = tried ? `<button type="button" class="rdchip" id="rdHeadsBtn" title="The heads-up feeds could not be read">Event risk <b class="muted">unavailable</b></button>` : `<span class="rdchip muted">Event risk loading…</span>`; return; }
   const [col, word] = LEVEL[H.score.level], st = H.stress, n = H.alerts.length;
   const tip = [...H.score.why, ...H.alerts, ok(st.n) ? `stress: ${st.n} of ${st.of} signals firing` : ""].filter(Boolean).join(" · ");
-  el.innerHTML = `<button type="button" class="rdchip" id="rdHeadsBtn" title="${esc(tip)}">Event risk <b style="color:${col}">${word}</b>${ok(st.n) ? ` · Stress <b>${st.n}</b> of ${st.of}` : ""}${n ? ` · <b style="color:var(--warn)">⚠ ${n} alert${n > 1 ? "s" : ""}</b>` : ""}</button>`;
+  el.innerHTML = `<button type="button" class="rdchip" id="rdHeadsBtn" title="${esc(tip)}">Event risk <b style="color:${col}">${word}</b>${ok(st.n) ? ` · Stress <b>${st.n}</b> of ${st.of}` : ""}${n ? ` · <b style="color:var(--warn)">⚠ ${n} alert${n > 1 ? "s" : ""}</b>` : ""}</button>${bookChip()}`;
+}
+/* an account past your worst-case cap or stress limit: no new id fits (desk/risk.py limits) */
+function bookChip() {
+  const over = ((RK && RK.limits) || []).filter((a) => a.over);
+  return over.length ? `<span class="rdchip" title="${esc(over.flatMap((a) => a.alerts.map((x) => a.label + ": " + x)).join(" · "))}">Book <b style="color:var(--down)">over your limits</b> · no new ids</span>` : "";
 }
 
 function render() {
@@ -118,6 +123,15 @@ function stressView() {
   barChart($("acStressChart"), {h: 130, unit: "", label: "stress signals firing, last 30 sessions", items: S.hist.map((d) => ({label: shortDate(d.d), v: d.n, color: d.n >= 5 ? "var(--down)" : d.n >= 3 ? "var(--warn)" : "var(--accent)", title: `${esc(d.d)}: <b>${d.n} of ${S.of}</b>`}))});
 }
 
+/* σ from the VIX against how often SPX has really moved that much in a day (desk/risk.py jump_freq) */
+function jumpTxt(J) {
+  const r = (p) => J && J.rows && (J.rows.find((x) => x.pct === p) || {}).down;
+  if (!r(3)) return "";
+  const yrs = (n) => !ok(n) || n <= 0 ? "never" : 1 / n > 1000 ? "less than once in 1,000 years" : n >= 0.75 ? `about ${n.toFixed(1)} a year` : `once every ${Math.round(1 / n).toLocaleString()} years`;
+  const v = window.jumpVerdict ? window.jumpVerdict(J) : "";
+  return ` <b>Real falls</b>: since ${esc(String(J.since).slice(0, 4))} SPX closed down 3%+ on ${r(3).n} days (${fmt(r(3).per_yr, 1)} a year), 4%+ on ${r(4).n}, 5%+ on ${r(5).n}${ok(r(4).calm_n) ? `; ${r(4).calm_n} of the 4%+ days began with the VIX at ${fmt(J.vix, 1)} or lower` : ""}. A normal curve at this VIX expects a 4% fall ${yrs(r(4).normal_per_yr)} and a 5% fall ${yrs(r(5).normal_per_yr)}.${v ? ` <b>${esc(v)}</b>` : ""}`;
+}
+
 /* ---------- pre-close ---------- */
 function pre() {
   const el = $("acPre"); if (!el) return;
@@ -129,7 +143,7 @@ function pre() {
   const rows = [
     row("Event risk, next 24 trading hours", S ? `<span class="chip ${LEVEL[S.level][2]}">${LEVEL[S.level][1]}</span>` : `<span class="chip muted">feed unavailable</span>`, S ? esc(S.why.join(" · ")) : "The heads-up feeds could not be read."),
     row("Net gamma", O ? `<b class="${cls(O.gamma_1pct)}">${money(O.gamma_1pct)}</b>` : "–", O ? `On a 1% move, ${O.gamma_1pct < 0 ? "short gamma costs about that much" : "long gamma makes about that much"} on top of delta, either way. Estimated at today's IVs across all accounts.` : lock),
-    row("±2σ overnight", O ? `<b class="${cls(O.down2)}">${money(O.down2)}</b> / <b class="${cls(O.up2)}">${money(O.up2)}</b>` : "–", O ? `SPX ±${fmt(2 * O.sd_pct, 1)}% (VIX ${fmt(O.vix, 1)}, one day), RUT at beta 1.2, IVs unchanged, repriced at the next open (${esc(etTime(O.at))}). Real gaps come with IV moves: the Risk grid's Gap what-if has both.` : lock),
+    row("±2σ overnight", O ? `<b class="${cls(O.down2)}">${money(O.down2)}</b> / <b class="${cls(O.up2)}">${money(O.up2)}</b>` : "–", O ? `SPX ±${fmt(2 * O.sd_pct, 1)}% (VIX ${fmt(O.vix, 1)}, one day), RUT at beta 1.2, IVs unchanged, repriced at the next open (${esc(etTime(O.at))}). Real gaps come with IV moves: the Risk grid's Gap what-if has both.${jumpTxt(Rk.jumps)}` : lock),
     row("Hedge reference", S && S.level === "red" ? `<span class="chip wrn">event risk red</span>` : `<span class="small muted">only when red</span>`, S && S.level === "red"
       ? (hg ? `SPX ${Math.round(hg.long)}/${Math.round(hg.short)} put spread, ${hg.dte} DTE (${esc(hg.expiry)}): about <b>${money(hg.cost * 100)}</b> a spread at ask/bid, ${money(hg.mid * 100)} at mid, from the surface recorded ${esc(etTime(hg.ts))}. A reference price with no size: it isn't a recommendation to hedge.` : lock === "needs TWS marks" ? "No recorded SPX surface to price it from." : lock)
       : "A put-spread cost appears here when event risk is red."),

@@ -31,8 +31,11 @@ function prep(t) { // per-leg IV fallback: same-expiry average, then 20%
   t.firstExp = Math.min(...t.legs.map((l) => l.expMs));
   t.model0 = t.legs.reduce((s, l) => s + l.qty * MULT * bs(t.spot, l.strike, Math.max(0, (l.expMs - now()) / (365 * DAY)), l.vol, l.right), 0);
   t.unreal = t.legs.reduce((s, l) => s + (l.mid == null ? 0 : l.qty * MULT * (l.mid - l.open_price)), 0);
-  t.pnlNow = (t.one_pnl || 0) + t.unreal;
   t.marked = t.legs.every((l) => l.mid != null);
+  // an unpriced leg would count at its open price, which is no total: take this session's last fully priced P&L (the desk's own
+  // 16:15 ET close capture after hours), or mark the total partial so the Trade plan says nothing from it
+  t.basis = t.marked ? "live" : ok(t.full_pnl) ? "full" : "partial";
+  t.pnlNow = t.basis === "full" ? t.full_pnl : (t.one_pnl || 0) + t.unreal;
   t.dayChg = !t.marked ? null : ok(t.last_pnl) ? t.pnlNow - t.last_pnl : t.new_since_close ? t.pnlNow : null;  // against the desk's own closing marks
   t.totalPct = t.margin ? 100 * t.pnlNow / t.margin : null;
   t.dayPct = t.margin && ok(t.dayChg) ? 100 * t.dayChg / t.margin : null;
@@ -105,6 +108,11 @@ const dexp = (ms) => { if (!ok(ms)) return "–"; const [m, d, y] = new Date(ms)
 const etDay = (ms) => { const p = new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"}).format(new Date(ms)); return Date.parse(p + "T00:00:00Z"); };
 const dteOf = (ms) => Math.max(0, Math.round((etDay(ms) - etDay(now())) / DAY)); // calendar days, US date, like OptionStrat
 const dteTxt = (t) => t.lastExp > t.firstExp + DAY ? `${dteOf(t.firstExp)}d / ${dteOf(t.lastExp)}d` : `${dteOf(t.firstExp)}d`;
+const asOf = (iso) => ok(Date.parse(iso)) ? new Date(iso).toLocaleString("en-US", {weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York"}) + " ET" : "an earlier refresh";
+// a total's basis next to it: live marks, the session's last fully priced marks, or partial (an unpriced leg counted at its open price)
+const basisTag = (t) => t.basis === "full" ? ` <span class="small muted" title="a leg has no live price: this is the last fully priced total, ${esc(asOf(t.full_at))}">as of ${esc(asOf(t.full_at))}</span>`
+  : t.basis === "partial" ? ` <span class="small wrn" title="${t.legs.filter((l) => l.mid == null).length} of ${t.legs.length} legs have no price; they count at their open price">partial</span>` : "";
+window.basisTag = basisTag;
 let tSort = {k: "firstExp", dir: 1};
 const mktOpen = () => { const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "numeric", hour12: false}).formatToParts(new Date());
   const g = (t) => (p.find((x) => x.type === t) || {}).value, h = +g("hour"), m = +g("minute"), wd = g("weekday");
@@ -119,7 +127,7 @@ function tradesTable(T) {
   const tot = (k) => T.reduce((a, t) => a + (ok(t[k]) ? t[k] : 0), 0), mg = tot("margin");
   return `<div class="tbl"><table><thead><tr>${cols.map(([k, l, n]) => `<th class="sort ${n ? "n" : ""}" tabindex="0" data-k="${k}" ${s.k === k ? `aria-sort="${s.dir < 0 ? "descending" : "ascending"}"` : ""}>${l}${s.k === k ? (s.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}</tr></thead><tbody>${
     rows.map((t) => `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td>${esc(t.name)}</td><td>${esc(t.acct)}</td>
-      <td class="n ${cls(t.pnlNow)}">${money(t.pnlNow)}</td><td class="n ${cls(t.totalPct)}">${hBarSvg(t.totalPct, 10, {w: 60, label: "total % of margin (full bar = 10%)"})} ${pctS(t.totalPct)}</td>
+      <td class="n ${cls(t.pnlNow)}">${money(t.pnlNow)}</td><td class="n ${cls(t.totalPct)}">${hBarSvg(t.totalPct, 10, {w: 60, label: "total % of margin (full bar = 10%)"})} ${pctS(t.totalPct)}${basisTag(t)}</td>
       <td class="n ${cls(t.perDay)}" title="total return ÷ ${Math.max(t.ditNow || 0, 1)} days in trade">${ok(t.perDay) ? fmt(t.perDay, 2) + "%" : "–"}</td><td class="n" title="theta/day at today's IVs ÷ margin: what it earns from here">${ok(t.paceNow) ? fmt(t.paceNow, 2) + "% " + speedChip(t) : "–"}</td><td>${planChip(t)}</td><td class="n ${cls(t.dollarDay)}">${money(t.dollarDay)}</td>
       <td class="n ${cls(t.dayChg)}">${money(t.dayChg)}</td><td class="n ${cls(t.dayPct)}">${pctS(t.dayPct)}</td>
       <td class="n">${dshort(t.openedMs)}</td><td class="n">${t.ditNow ?? "–"}</td><td class="n" title="${esc(dexp(t.firstExp) + (t.lastExp > t.firstExp + DAY ? " / " + dexp(t.lastExp) : ""))}">${dteTxt(t)}</td><td class="n">${money(t.margin)}</td></tr>`).join("")}
@@ -188,10 +196,12 @@ function capitalView(T) {
 
 /* ---------- trade plan: TP / SL / time / adjust gates from your ONE history (A14: 56 closed trades, 365 adjustments) ---------- */
 // all levels are % of ONE margin; adjust: "gated" = the gates in planOf, "one" = the card's one adjustment then exit, "never"
-// A14 stop: −20 (was the card's −10). In the 2009–2026 model backtest (Evidence → Since 2009) −10 was hit in 28–46% of
-// A14s (14–60 DTE), mostly on VIX pops that later reverted, and cost more than it saved at every SPX entry DTE from 14 to 60.
+// A14 target, stop and time stop come from the rule page (desk/a14rules.py, approved 2 Nov 2026): +7%, −20%, out by 7 DTE.
+// The stop was the card's −10: in the 2009–2026 model backtest (Evidence → Since 2009) −10 was hit in 28–46% of A14s
+// (14–60 DTE), mostly on VIX pops that later reverted, and cost more than it saved at every SPX entry DTE from 14 to 60.
+const RULE = () => (R && R.a14rule) || {target: 7, stop: 20, time_dte: 7, cap: 4, worst_nav: 7.5};
 const CARDS = {
-  A14: {tp: (t) => (t.entryDte <= 21 ? 5 : 7), decide: -6, stop: -20, timeDte: 7, adjust: "gated", pace: true, holdPastDecide: true, windows: [1, 3, 5], reshapeFrom: 21, sameLots: true},
+  A14: {tp: () => RULE().target, decide: -6, get stop() { return -RULE().stop; }, get timeDte() { return RULE().time_dte; }, adjust: "gated", pace: true, holdPastDecide: true, windows: [1, 3, 5], reshapeFrom: 21, sameLots: true},
   Allantis: {tp: () => 7, decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
   HV7: {tp: () => 5, stop: -10, timeDte: 2, adjust: "never"},
   TimeEdge: {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
@@ -199,7 +209,7 @@ const CARDS = {
   TimeZone: {tp: () => 5, stop: -5, timeDte: 7, adjust: "one"},
   Flyagonal: {tp: () => 10, timeFrac: 2 / 3, adjust: "one"},
 };
-const PRI = {exit: 0, close: 1, decide: 2, slow: 3, hold: 4};
+const PRI = {exit: 0, close: 1, decide: 2, marks: 3, slow: 4, hold: 5};
 /* ---------- execution aids: the combo price that closes a trade at a given total, and the index level where it gets there ---------- */
 const COMM_SIDE = 1.36, TICK = 0.05;
 window.dexp = dexp;
@@ -252,6 +262,16 @@ function planOf(t) {
   const slow = c.pace && (t.slowSoFar || t.overstay), win = c.windows ? windowOf(c.windows) : null;
   const when = win && !win.open ? `on ${win.next}, the next window,` : "today";
   const slowWhy = t.slowSoFar ? `${fmt(t.perDay, 2)}%/day after ${t.ditNow} days, under the ${fmt(SPEED().slow, 2)}% slow line` : `held ${t.ditNow}d vs ${Math.round(t.usualHold)}d usual for this entry DTE`;
+  if (t.basis === "partial") {  // no target, stop or adjust call from a total with unpriced legs; the time stop needs no price
+    const n = t.legs.filter((l) => l.mid == null).length, miss = `${n} of ${t.legs.length} legs have no price${mktOpen() ? "" : " with the market shut"} and this session has no fully priced total yet`;
+    const [act, label, why] = timeHit ? ["close", "Close: time stop", `${ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration`}. Marks incomplete: ${miss}.`]
+      : ["marks", "Marks incomplete", `${miss}: no target, stop or adjust call until every leg is priced. Refresh marks with TWS running.`];
+    t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, partial: true, how: "",
+      adj: {ok: "?", why: "marks incomplete: the gates read the total"}, lv: {tp: usd(tp), decide: ok(c.decide) ? usd(c.decide) : null, stop: ok(c.stop) ? usd(c.stop) : null},
+      band: ok(t.entry_spot) ? [t.entry_spot * 0.985, t.entry_spot * 1.015] : null, order: closeAt(t, tp), at: {decide: null, stop: null, stopIv: null}, stopPx: ok(c.stop) ? closeAt(t, c.stop) : null};
+    t.planPri = t.plan.pri;
+    return;
+  }
   let act, label, why;
   if (ok(c.stop) && p <= c.stop) [act, label, why] = ["exit", "Exit: hard stop", `${pctS(p)} is at or past the ${c.stop}% stop. Exit; no adjustment.`];
   else if (p >= tp) [act, label, why] = ["close", "Close: target", `${pctS(p)} reached the +${tp}% target. Holding 10 more sessions helped only half your exits; +7% targets earned 22% more per margin-day.`];
@@ -262,6 +282,7 @@ function planOf(t) {
     : `${pctS(p)} is past the ${c.decide}% line: adjust ${when} if the gates pass, otherwise exit.`];
   else if (slow) [act, label, why] = ["slow", "Slow: exit at green", `${slowWhy}. Close at the next close at or above 0%; no new adjustments.`];
   else [act, label, why] = ["hold", "Hold", `between ${ok(c.decide) ? c.decide : c.stop ?? "–"}% and +${tp}%: let it work.`];
+  if (t.basis === "full") why = `As of ${asOf(t.full_at)}, the last time every leg was priced: ${why}`;
   // adjustment gate
   let adj, how = "";
   if (c.adjust === "never") adj = {ok: "no", why: "this strategy is never adjusted"};
@@ -286,15 +307,15 @@ function planOf(t) {
       : ok(move) && move <= -1.5 && dte > 21 ? "roll out in time (+6% median, 75% helped); don't roll the shorts down (−6%)"
       : "roll out in time or reduce; reshaping in the same expiry is a coin flip";
   }
-  t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, adj, how,
+  t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, adj, how, basis: t.basis, asOf: t.basis === "full" ? t.full_at : null,
     lv: {tp: usd(tp), decide: ok(c.decide) ? usd(c.decide) : null, stop: ok(c.stop) ? usd(c.stop) : null},
     band: ok(t.entry_spot) ? [t.entry_spot * 0.985, t.entry_spot * 1.015] : null,
     order: closeAt(t, tp), at: {decide: ok(c.decide) ? levelAt(t, c.decide) : null, stop: ok(c.stop) ? levelAt(t, c.stop) : null,
       stopIv: ok(c.stop) ? levelAt(t, c.stop, 0.03) : null}, stopPx: ok(c.stop) ? closeAt(t, c.stop) : null};
   t.planPri = t.plan.pri;
 }
-const PLAN_CLS = {exit: "neg", close: "pos", decide: "wrn", slow: "wrn", hold: "muted"};
-const PLAN_ICON = {exit: "⚠ ", close: "✓ ", decide: "⚠ ", slow: "◔ "}, ADJ_ICON = {"roll out": "↻ ", reduce: "↓ ", wait: "◔ "};
+const PLAN_CLS = {exit: "neg", close: "pos", decide: "wrn", marks: "wrn", slow: "wrn", hold: "muted"};
+const PLAN_ICON = {exit: "⚠ ", close: "✓ ", decide: "⚠ ", marks: "◌ ", slow: "◔ "}, ADJ_ICON = {"roll out": "↻ ", reduce: "↓ ", wait: "◔ "};
 const planChip = (t) => t.plan ? `<span class="chip ${PLAN_CLS[t.plan.act]}" title="${esc(t.plan.why)}">${PLAN_ICON[t.plan.act] || ""}${esc(t.plan.label)}</span>` : `<span class="small muted" title="no card rules for ${esc(t.strategy || "this trade")}">–</span>`;
 const orderHead = (o) => !o ? "–" : `${o.side} ${o.units}× at <b class="mono">${o.px.toFixed(2)}</b>`;
 const orderCash = (o) => `= ${money(o.cash)}${o.lots ? ` for ${o.lots} lot${o.lots > 1 ? "s" : ""}, ${money(o.cash / o.lots)} a lot` : ""}`;
@@ -304,7 +325,7 @@ const lvTxt = (L, u) => !L ? "–" : L.past ? "already past" : [L.dn ? `${u} ↓
 const ADJ_CLS = {yes: "pos", one: "pos", "roll out": "wrn", reduce: "wrn", wait: "muted", no: "muted", "?": "muted"};
 /* where a trade's total sits between its hard stop and target (decide line dashed) */
 function planBullet(t, w = 140) {
-  const q = t.plan; if (!q) return "";
+  const q = t.plan; if (!q || q.partial) return "";
   const lo = ok(q.stop) ? q.stop : -10, hi = q.tp || 7;
   return bulletSvg(t.totalPct, {w, lo: lo - 1, hi: hi + 1, label: `${pctS(t.totalPct)} · stop ${q.stop}% · decide ${q.decide ?? "–"}% · target +${q.tp}%`,
     zones: [{from: lo, to: q.decide ?? lo, color: "var(--down)"}, {from: q.decide ?? lo, to: 0, color: "var(--warn)"}, {from: 0, to: hi, color: "var(--up)"}],
@@ -343,7 +364,7 @@ const relBit = (t) => { const P = t.calendar ? t.calendar.pairs : []; if (!P.len
 function healthBits(t) { return [dayBit(t), shortsBit(t), adjBit(t), relBit(t)].filter(Boolean); }
 function healthLine(t, bare) {
   const bits = bare ? [dayBit(t), shortsBit(t), relBit(t)].filter(Boolean) : healthBits(t);
-  return `<div class="hline">${t.plan ? planBullet(t, 110) : ""}<b class="${cls(t.totalPct)}">${pctS(t.totalPct)}</b>${!bare && t.plan && t.plan.act !== "hold" ? planChip(t) : ""}${bits.join("")}</div>`;
+  return `<div class="hline">${t.plan ? planBullet(t, 110) : ""}<b class="${cls(t.totalPct)}">${pctS(t.totalPct)}</b>${basisTag(t)}${!bare && t.plan && t.plan.act !== "hold" ? planChip(t) : ""}${bits.join("")}</div>`;
 }
 window.healthBits = healthBits;
 const calLine = (t) => t.calendar && t.calendar.pairs.length ? `<div class="small muted">${t.calendar.pairs.map((p) => `${fmt(p.strike, 0)}${p.right} ${p.fdte}d / ${p.bdte}d: IV ${fmt(p.front_iv, 1)} / ${fmt(p.back_iv, 1)}, spread ${ptsS(p.spread)} · forward vol ${fmt(p.fwd_vol, 1)} vs RV20 ${fmt(t.calendar.rv20, 1)} (${ptsS(p.fwd_vs_rv)})`).join("<br>")}</div>` : "";
@@ -363,24 +384,78 @@ function whatIf(T, G) {
   const table = `<div class="tbl"><table class="wi"><thead><tr><th>Change from P&amp;L now</th>${head}</tr></thead><tbody>${all.map((row, i) => `<tr><td>${WI_IV[i][1]}</td>${row.map((v) => `<td class="n ${cls(v)}" style="${heat(v, full)}">${money(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   const left = [...new Set(T.map(label))].map((a) => { const tt = T.filter((t) => label(t) === a), m = (b.margin || []).find((x) => x.label === a) || {};
     const worst = Math.min(...grid(tt).flat()), rate = m.rate || 1, cur = m.currency || "USD", after = ok(m.excess) ? m.excess + worst * rate : null;
+    const nav = ok(m.nav) && m.nav > 0 ? m.nav : null, pct = nav ? 100 * worst * rate / nav : null;
     const d = tt.reduce((s, t) => s + G[T.indexOf(t)].dollarDelta1pct * t.beta, 0) / (0.01 * spx);
-    return `<tr><td>${esc(a)}</td><td class="n">${fmt(d, 1)}</td><td class="n ${cls(worst)}">${money(worst)}</td><td class="n">${ok(m.excess) ? Math.round(m.excess).toLocaleString() : "–"}</td><td class="n">${ok(m.available) ? Math.round(m.available).toLocaleString() : "–"}</td>
+    return `<tr><td>${esc(a)}</td><td class="n">${fmt(d, 1)}</td><td class="n ${cls(worst)}">${money(worst)}</td><td class="n ${cls(pct)}">${ok(pct) ? pctS(pct) : "–"}</td><td class="n">${ok(m.excess) ? Math.round(m.excess).toLocaleString() : "–"}</td><td class="n">${ok(m.available) ? Math.round(m.available).toLocaleString() : "–"}</td>
       <td class="n ${ok(after) && after < 0 ? "neg" : ""}">${ok(after) ? `${hBarSvg(Math.max(after, 0), m.excess || 1, {w: 70, zeroLeft: true, color: "var(--accent)", label: "excess liquidity left after the worst cell"})} ${Math.round(after).toLocaleString()} ${esc(cur)}` : "not read yet"}</td></tr>`; }).join("");
-  return `${table}<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Account</th><th class="n" title="position delta in SPX points: delta per 1% move ÷ 1% of SPX, RUT at the beta above">SPX-weighted delta</th><th class="n">Worst cell (USD)</th><th class="n">Excess liquidity</th><th class="n">Available funds</th><th class="n">Excess left after the worst cell</th></tr></thead><tbody>${left}</tbody></table></div>
-    <p class="note">Each cell reprices every open leg on that date, so time decay is in it; a trade that expires sooner is frozen at its first expiry, as on the graph. σ is SPX's implied move over the horizon from the VIX; RUT moves ${fmt(+$("rkBeta").value, 1)} × that (set above) and stocks the same %. IV shifts every leg by the same points with each strike's IV held, so a change in skew or a move in only one expiry is not in here. A down row need not improve steadily with IV: once the index is past the shorts, more IV stops helping and the longer-dated trades start to lose from it. Margin comes from the last TWS read, in each account's own currency, with USD results converted at its rate. <b>Excess left is a best case</b>: the requirement rises in a real move as well, and this holds it at today's level.</p>`;
+  return `${table}<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Account</th><th class="n" title="position delta in SPX points: delta per 1% move ÷ 1% of SPX, RUT at the beta above">SPX-weighted delta</th><th class="n">Worst cell (USD)</th><th class="n" title="worst cell ÷ the account's NAV from the last TWS read">% of NAV</th><th class="n">Excess liquidity</th><th class="n">Available funds</th><th class="n">Excess left after the worst cell</th></tr></thead><tbody>${left}</tbody></table></div>
+    ${jumpLine(R.jumps, b.vix)}
+    ${limitsView(R.limits)}
+    <p class="note">Each cell reprices every open leg on that date, so time decay is in it; a trade that expires sooner is frozen at its first expiry, as on the graph. σ is SPX's implied move over the horizon from the VIX; RUT moves ${fmt(+$("rkBeta").value, 1)} × that (set above) and stocks the same %. IV shifts every leg by the same points with each strike's IV held, so a change in skew or a move in only one expiry is not in here. A down row need not improve steadily with IV: once the index is past the shorts, more IV stops helping and the longer-dated trades start to lose from it. Margin comes from the last TWS read, in each account's own currency, with USD results converted at its rate. <b>Excess left is a best case</b>: the requirement rises in a real move as well, and this holds it at today's level. σ shrinks when the VIX is low, which is when the 5 Nov fall came (VIX 16.6, about a 4σ day), so the limits below use a fixed % move instead.</p>`;
+}
+
+/* how often SPX has really moved this much in a day, beside what the VIX's σ suggests (desk/risk.py jump_freq) */
+function jumpLine(J, vix) {
+  if (!J || !J.rows) return "";
+  const r = (p) => J.rows.find((x) => x.pct === p), every = (n) => !ok(n) || n <= 0 ? "never" : n >= 1 ? `${fmt(n, 1)} a year` : 1 / n > 1000 ? "less than once in 1,000 years" : `once in ${Math.round(1 / n).toLocaleString()} years`;
+  const falls = [3, 4, 5].map((p) => { const d = r(p) && r(p).down; return d ? `<b>${d.n}</b> of ${p}%+ <span class="muted">(${fmt(d.per_yr, 1)}/yr)</span>` : ""; }).filter(Boolean).join(", ");
+  const calm = [3, 4, 5].map((p) => { const d = r(p) && r(p).down; return d && ok(d.calm_n) ? `${d.calm_n} of ${p}%+` : ""; }).filter(Boolean).join(", ");
+  const f4 = r(4) && r(4).down;
+  return `<div class="kv mini" style="margin-top:10px"><div><span class="lbl">Real one-day falls, SPX closes since ${esc(String(J.since).slice(0, 4))}</span><b>${falls}</b><span class="small muted">over ${fmt(J.years, 0)} years; last 4%+ fall ${esc(f4 && f4.last || "–")}</span></div>
+    ${ok(vix) && J.calm_days ? `<div><span class="lbl">Starting with the VIX at ${fmt(vix, 1)} or lower</span><b>${calm}</b><span class="small muted">on ${J.calm_days.toLocaleString()} such days: a 4%+ fall about ${f4 && ok(f4.calm_per_yr) ? every(f4.calm_per_yr) : "–"} of such days</span></div>` : ""}
+    ${f4 && ok(f4.normal_per_yr) ? `<div><span class="lbl">A normal curve at VIX ${fmt(vix, 1)} expects</span><b>${[4, 5, 7].map((p) => { const d = r(p) && r(p).down; return d && ok(d.normal_per_yr) ? `${p}%+ ${every(d.normal_per_yr)}` : ""; }).filter(Boolean).join(", ")}</b><span class="small muted">history, at every VIX level: ${[4, 5, 7].map((p) => { const d = r(p) && r(p).down; return d ? `${p}%+ ${every(d.per_yr)}` : ""; }).filter(Boolean).join(", ")}. ${jumpVerdict(J)}</span></div>` : ""}</div>`;
+}
+window.jumpLine = jumpLine;
+/* where history's falls outrun a normal curve at today's VIX: from the smallest size at which every bigger size outruns it too */
+function jumpVerdict(J) {
+  const sizes = (J && J.rows || []).map((x) => x.pct).filter((p) => p >= 3).sort((a, b) => a - b), d = (p) => (J.rows.find((x) => x.pct === p) || {}).down;
+  const beats = (p) => { const x = d(p); return x && ok(x.normal_per_yr) && x.per_yr > x.normal_per_yr; };
+  const from = sizes.find((p, i) => sizes.slice(i).every(beats));
+  if (!sizes.length || !ok((d(sizes[0]) || {}).normal_per_yr)) return "";
+  return from === sizes[0] ? `Falls of every size from ${from}% come more often than σ says.` : from ? `At this VIX the curve already allows for ${sizes[sizes.indexOf(from) - 1]}% falls; it understates falls of ${from}% or more.` : "At this VIX the curve expects more big falls than history had.";
+}
+window.jumpVerdict = jumpVerdict;
+
+/* the book against the A14 rule page and the stress limit, per account (desk/risk.py limits). Information only. */
+function limitsView(Lm) {
+  if (!Lm || !Lm.length) return "";
+  const rl = RULE(), pc = (v) => ok(v) ? `${fmt(v, 1)}%` : "–";
+  const rows = Lm.map((a) => { const r = a.a14 || {}, s = a.stress || {}, ids = r.ids || {};
+    const idTxt = Object.keys(ids).length ? Object.entries(ids).map(([u, n]) => `<span class="${n > rl.cap ? "neg" : ""}">${esc(u)} <b>${n}</b> of ${rl.cap}</span>`).join(" · ") : `<span class="muted">no A14</span>`;
+    const over = ok(r.largest) && r.largest > rl.worst_nav, st = ok(s.limit) && ok(s.pct) && s.pct > s.limit;
+    return `<tr><td>${esc(a.label)}</td><td>${idTxt}</td><td class="n ${over ? "neg" : ""}">${pc(r.largest)} <span class="small muted">limit ${rl.worst_nav}%</span>${r.unpriced ? `<br><span class="small muted">${r.unpriced} without open prices</span>` : ""}</td>
+      <td class="n ${ok(a.cap) && (!ok(r.worst_pct) || r.worst_pct > a.cap) && Object.keys(ids).length ? "neg" : ""}">${pc(r.worst_pct)} <span class="small muted">${ok(a.cap) ? `cap ${fmt(a.cap, 0)}%` : "cap not set"}</span></td><td class="n ${st ? "neg" : cls(-s.pct)}">${pc(s.pct)} <span class="small muted">${ok(s.down) ? money(s.down) : "–"} ↓ / ${ok(s.up) ? money(s.up) : "–"} ↑</span>${ok(s.strike_pct) ? `<br><span class="small muted" title="the same day with each strike keeping its IV: on recorded falls it overstated the IV rise 2–3 times over">${pc(s.strike_pct)} if each strike keeps its IV</span>` : ""}</td>
+      <td class="n">${ok(s.limit) ? `${fmt(s.limit, 1)}%` : `<span class="small muted">not set</span>`}</td><td>${a.alerts.length ? `<span class="chip neg">⚠ ${a.alerts.length}</span>` : `<span class="chip pos">within</span>`}</td></tr>`; }).join("");
+  const al = Lm.flatMap((a) => a.alerts.map((x) => `<li><b>${esc(a.label)}</b>: ${esc(x)}</li>`)).join("");
+  const mv = (Lm[0].stress || {}).move;
+  return `<h3 style="margin:14px 0 6px">Book limits <span class="small muted">A14 rule page · stress on a ${fmt(mv, 0)}% day</span></h3>
+    <div class="tbl"><table><thead><tr><th>Account</th><th title="open A14 ids per ticker against the rule's cap">A14 ids</th><th class="n" title="the largest A14 id's worst case: every leg at intrinsic at any index level, with what it has realised, ÷ NAV">Largest id, worst case</th>
+      <th class="n" title="all open A14 ids' worst cases added up, ÷ NAV">All A14 worst cases</th><th class="n" title="the book (every open trade) on a ${fmt(mv, 0)}% day either way at the next open, IVs moving with it, the smile sliding with the index (the Gap what-if's default): the worse side ÷ NAV">${fmt(mv, 0)}% day, IVs with it</th><th class="n">Your stress limit</th><th>Alerts</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${al ? `<ul class="small" style="margin:6px 0 0;padding-left:18px">${al}</ul>` : ""}
+    <p class="note">The rule page caps each A14 id at ${rl.worst_nav}% of NAV worst case and ${rl.cap} open ids per ticker and account; an id over it has had size added, or was opened before the 2 Nov rules. The cap on all A14 worst cases and the stress limit are yours (config.local.json, <span class="mono">risk.stress.cap_pct</span> and <span class="mono">limit_pct</span>, one number or one per account). While an account is over either, the A14 ladder shows no new id. NAV is the last TWS read, converted to US$. Alerts change nothing: no order is placed, blocked or sized from here.</p>`;
 }
 
 /* ---------- gap what-if: the book at the next open (desk/risk.py gap_grid), in total and per account ---------- */
+let gapMode = null;  // null: the server's default (risk.MODE), until a radio is picked
+document.addEventListener("change", (e) => { if (e.target.name === "rkGapMode") { gapMode = e.target.value; if (R) $("rkGap").innerHTML = gapView(); } });
 function gapView() {
-  const G = R.gaps;
-  if (!G || !G.total.length || !G.accounts.length) return `<div class="state">No marked trades to reprice: refresh marks with TWS running.</div>`;
+  const G0 = R.gaps;
+  if (!G0 || !G0.total.length || !G0.accounts.length) return `<div class="state">No marked trades to reprice: refresh marks with TWS running.</div>`;
+  if (!gapMode) gapMode = G0.mode || "strike";
+  const G = (G0.modes && G0.modes[gapMode]) || G0, J = R.jumps, navs = new Map((R.limits || []).map((a) => [a.label, a.nav_usd]));
   const full = Math.max(...G.total.flat().map(Math.abs), 1);
-  const iv = (v) => v ? `VIX ${v > 0 ? "+" : "−"}${Math.abs(v)}` : "VIX flat";
-  const fut = G.futures ? Object.entries(G.futures).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v.toFixed(2)}%`).join(" · ") : null;
-  $("rkGapMeta").textContent = `priced at the next open, ${new Date(G.at).toLocaleString([], {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit"})} ET${fut ? ` · futures now: ${fut}` : " · no futures quote"}`;
-  const grid = (name, cells) => `<div><h3>${esc(name)}</h3><div class="tbl"><table class="wi"><thead><tr><th>Gap</th>${G.vols.map((v) => `<th class="n">${iv(v)}</th>`).join("")}</tr></thead><tbody>${cells.map((row, i) => `<tr><td>${G.rows[i] === "Futures now" ? "<b>Futures now</b>" : esc(G.rows[i].replace("-", "−"))}</td>${row.map((v) => `<td class="n ${cls(v)}" style="${heat(v, full)}">${money(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
-  return `<div class="hgrid">${grid("Total", G.total)}${G.accounts.map((a) => grid(a.label, a.cells)).join("")}</div>
-    <p class="note">Change from P&amp;L now, USD, with time decay to the open included. ± rows are SPX gaps with RUT at ${fmt(G.beta, 1)} × that and stocks the same %; this table stays at beta ${fmt(G.beta, 1)} whatever the beta box above says. The Futures row uses ES for SPX and stocks, RTY for RUT and NQ for NDX, each against its own cash-close price. VIX shifts move every leg's IV by the same points with each strike's IV held, so a change in skew isn't in here. A trade that expires before the open is frozen at its expiry. Colour is scaled to the worst Total cell, so accounts compare directly.</p>`;
+  const iv = (v) => v === "joint" ? `IV with the move<br><span class="small muted">+${G0.joint[0]} pt per 1% fall, −${G0.joint[1]} per 1% rise</span>` : v ? `VIX ${v > 0 ? "+" : "−"}${Math.abs(v)}` : "VIX flat";
+  const fut = G0.futures ? Object.entries(G0.futures).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v.toFixed(2)}%`).join(" · ") : null;
+  $("rkGapMeta").textContent = `priced at the next open, ${new Date(G0.at).toLocaleString([], {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit"})} ET${fut ? ` · futures now: ${fut}` : " · no futures quote"}`;
+  const often = (g) => { const r = J && ok(g) ? J.rows.find((x) => x.pct === Math.abs(g)) : null, s = r && r[g < 0 ? "down" : "up"];
+    return s ? `<span title="SPX closes ${g < 0 ? "down" : "up"} ${Math.abs(g)}% or more in one session since ${esc(String(J.since).slice(0, 4))}${ok(s.calm_n) ? `; ${s.calm_n} of them began with the VIX at ${fmt(J.vix, 1)} or lower` : ""}${s.last ? `; last ${esc(s.last)}` : ""}">${s.n} <span class="muted">· ${fmt(s.per_yr, s.per_yr < 1 ? 2 : 1)}/yr</span></span>` : ""; };
+  const pctNav = (cells, a) => { const nav = navs.get(a); if (!nav) return ""; const w = Math.min(...cells.flat());
+    return `<tr><td class="small muted">worst, % of NAV</td><td colspan="${G0.vols.length}" class="n small ${cls(w)}">${pctS(100 * w / nav)} <span class="muted">of US$${Math.round(nav).toLocaleString()}</span></td></tr>`; };
+  const grid = (name, cells, freq) => `<div><h3>${esc(name)}</h3><div class="tbl"><table class="wi"><thead><tr><th>Gap</th>${G0.vols.map((v) => `<th class="n">${iv(v)}</th>`).join("")}${freq ? `<th class="n" title="one-session SPX closes at least this big, that way, since ${esc(String((J && J.since) || "").slice(0, 4))}">How often</th>` : ""}</tr></thead><tbody>${cells.map((row, i) => `<tr><td>${G0.rows[i] === "Futures now" ? "<b>Futures now</b>" : esc(G0.rows[i].replace("-", "−"))}</td>${row.map((v) => `<td class="n ${cls(v)}" style="${heat(v, full)}">${money(v)}</td>`).join("")}${freq ? `<td class="n small">${often(G0.gaps[i])}</td>` : ""}</tr>`).join("")}${freq ? "" : pctNav(cells, name)}</tbody></table></div></div>`;
+  const slid = (G0.slid || []).join(" and ") || "no index";
+  return `<div class="small" style="margin-bottom:8px">Smile: <label><input type="radio" name="rkGapMode" value="strike"${gapMode === "strike" ? " checked" : ""}> each strike keeps its IV</label> <label><input type="radio" name="rkGapMode" value="moneyness"${gapMode === "moneyness" ? " checked" : ""}> slides with the index</label> <span class="muted">(recorded ${esc(slid)} surface; other legs keep their IV)</span></div>
+    <div class="hgrid">${grid("Total", G.total, true)}${G.accounts.map((a) => grid(a.label, a.cells)).join("")}</div>
+    <p class="note">Change from P&amp;L now, USD, with time decay to the open included. ± rows are SPX moves with RUT at ${fmt(G0.beta, 1)} × that and stocks the same %; this table stays at beta ${fmt(G0.beta, 1)} whatever the beta box above says. The Futures row uses ES for SPX and stocks, RTY for RUT and NQ for NDX, each against its own cash-close price. <b>IV with the move</b> raises every leg's IV ${G0.joint[0]} points per 1% fall and lowers it ${G0.joint[1]} per 1% rise (on 5 Nov the VIX rose 11.6 on a 4.4% fall, while fixed-strike SPX IVs rose 2–5 points); the VIX columns shift every leg by the same points. <b>Each strike keeps its IV</b> is the desk's usual sticky strike. <b>Slides with the index</b> moves the recorded smile with spot, so on a fall each strike takes the lower IV of the strike that is now as far from spot, before the shift. Checked against the recorded surfaces, 9 Oct–6 Nov, strikes 85–102% of spot at 25–80 DTE: on the five days SPX or RUT fell 1% or more, sliding plus the move overstated the fixed-strike IV rise by 0.3–0.8 points and each strike keeping its IV by 1.2–3.9 (5 Nov, SPX −4.3%: actual +2.6, sliding +3.2, each strike +6.5). On the four rises of 1% or more, sliding gave the smaller IV drop of the two, the harsher figure for a book that is short vega. So sliding is the default here and in the stress check, with the each-strike figure beside it. Four weeks with one large day is a check, not a calibration. A trade that expires before the open is frozen at its expiry. Colour is scaled to the worst Total cell, so accounts compare directly. <b>How often</b> counts one-session SPX closes at least that big since ${esc(String((J && J.since) || "").slice(0, 4))} (hover for those that began with the VIX at today's level or lower); they're close-to-close moves, not overnight gaps, which are rarer.</p>`;
 }
 
 /* twin trades in two accounts can read differently: each has its own fills and P&L, and the gates work per trade */
@@ -408,7 +483,7 @@ function planView(T) {
     P.map((t) => { const q = t.plan;
       return `<tr class="click" tabindex="0" data-id="${esc(t.id)}"><td style="white-space:normal;min-width:190px">${planChip(t)}<br><span class="small muted">${esc(q.why)}</span></td>
         <td style="white-space:normal;min-width:150px">${esc(t.name)}<br><span class="small muted">${esc(t.strategy)} · ${esc(label(t))}</span></td>
-        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b><br>${planBullet(t, 100)}</td><td class="n small">${lvl(q.tp, q.lv.tp)}<br>${lvl(q.decide, q.lv.decide)}<br>${lvl(q.stop, q.lv.stop)}</td>
+        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b>${basisTag(t) ? "<br>" + basisTag(t) : ""}<br>${planBullet(t, 100)}</td><td class="n small">${lvl(q.tp, q.lv.tp)}<br>${lvl(q.decide, q.lv.decide)}<br>${lvl(q.stop, q.lv.stop)}</td>
         <td class="n ${ok(q.timeDte) && q.dte <= q.timeDte ? "wrn" : ""}">${q.dte}d${ok(q.timeDte) ? ` <span class="small muted">/ ${q.timeDte}</span>` : ""}<br><span class="small">${dayBit(t)}</span></td>
         <td class="n" title="${q.band ? esc(`entry close ${fmt(t.entry_spot, 0)} · ±1.5% = ${fmt(q.band[0], 0)} / ${fmt(q.band[1], 0)}`) : ""}">${ok(q.move) ? `<span class="${Math.abs(q.move) >= 1.5 ? "wrn" : ""}">${pctS(q.move)}</span>` : "–"}</td>
         <td class="small" style="min-width:120px;white-space:normal">${shortsBit(t) || "–"}${relBit(t) ? "<br>" + relBit(t) : ""}</td>
@@ -417,11 +492,12 @@ function planView(T) {
         <td class="n small">${lvTxt(q.at.decide, t.underlying)}<br>${lvTxt(q.at.stop, t.underlying)}</td></tr>`; }).join("")}</tbody></table></div>
     ${twinNote(P)}
     <p class="note">Checked in this order every day: hard stop → target → time stop → slow (under ${fmt(SPEED().slow, 2)}%/day after 3+ weeks, or 25% past your usual hold) → decide line → otherwise hold.
+    <b>Marks</b>: a trade is labelled only from a total with every leg priced. When a leg has no live quote (after the close, or RUT overnight), the plan uses this session's last fully priced total and says <i>as of</i> when; with neither, it shows <b>Marks incomplete</b> (only the time stop still applies), and that is never written to the Journal's plan log.
     <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (Allantis at 10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
     A14 also waits for a window day (Monday, Wednesday, Friday in New York), has no adjustments at 21 DTE or less, and never adds size: new risk is a new id. Targets and stops are watched every day. See Guide → A14 rules.
     How: market up → roll the shorts up (Allantis can add a call side); market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
-    Calendars: one adjustment, then a further breach is an exit. A14 target is +5% when entered at 21 DTE or less, +7% beyond.
-    A14's time stop is 7 DTE, moved from 2 on 2 Nov 2026. A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.
+    Calendars: one adjustment, then a further breach is an exit. A14's target, stop and time stop come from the rule page: +${RULE().target}%, −${RULE().stop}%, out by ${RULE().time_dte} DTE, whatever the entry DTE.
+    A14's time stop moved from 2 to 7 DTE on 2 Nov 2026. A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.
     <b>Target close order</b>: a GTC limit on the whole combo (legs in the ratio shown, × units) that closes the trade at the target after about $${COMM_SIDE} a contract in commissions. It uses ONE's P&amp;L and the legs' open prices, not today's marks, so it stays right until you adjust; re-enter it after every adjustment. Sell limits are rounded up and buy limits down to ${TICK.toFixed(2)}.
     <b>Alerts</b>: the index level where the trade would reach the decide line and the hard stop if the move happened today with IVs unchanged; set TWS price alerts there. Falls usually come with higher IVs, which reach the stop sooner (the detail panel shows the stop level with IV +3 pts). Stops are best worked by hand at the alert, not left as stop orders on a combo.
     <b>Shorts</b>: how far each short strike is from spot in standard deviations of the move to its expiry. Around a short is a BWB's best zone, so it only turns amber when spot is 0.5σ or more through one.
@@ -556,7 +632,8 @@ window.riskActions = async () => {
   if (!R || STALE) { STALE = false; await load(); }
   if (!R || !R.trades) return null;
   R.trades.forEach((t) => { t.beta = 1; paceOf(t); planOf(t); t.acctLabel = label(t); });
-  return {trades: R.trades, marks_ts: R.marks_ts, one_fresh: R.one_fresh, detail_exported: R.detail_exported, missing: R.missing || [], overnight: R.overnight, hedge: R.hedge};
+  return {trades: R.trades, marks_ts: R.marks_ts, one_fresh: R.one_fresh, detail_exported: R.detail_exported, missing: R.missing || [], overnight: R.overnight, hedge: R.hedge,
+    jumps: R.jumps, limits: R.limits, vix: R.book && R.book.vix};
 };
 window.riskOpen = (id) => openDetail(id);
 window.riskChart = riskChart;

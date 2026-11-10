@@ -347,8 +347,16 @@ def test_the_cap_counts_only_from_when_it_was_set_and_a_trade_with_no_card_has_n
 def test_the_card_table_matches_the_plan_in_the_page():
     text = (Path(__file__).parent.parent / "web" / "risk.js").read_text(encoding="utf8")
     block = text[text.index("const CARDS = {"):text.index("const PRI =")]
+    from desk import a14rules
+    rl = a14rules.rule()
+    assert (rl["stop"], rl["time_dte"], rl["target"]) == (positions.CARDS["A14"]["stop"], positions.CARDS["A14"]["time"], a14rules.TARGET)
+    fallback = re.search(r"const RULE = .*\{target: (\d+), stop: (\d+), time_dte: (\d+), cap: (\d+), worst_nav: ([\d.]+)\}", text)
+    assert fallback and tuple(float(x) for x in fallback.groups()) == (rl["target"], rl["stop"], rl["time_dte"], rl["cap"], rl["worst_nav"])  # the page's copy when the payload has none
     for name, c in positions.CARDS.items():
         line = next(ln for ln in block.splitlines() if re.match(rf'\s*"?{re.escape(name)}"?: \{{', ln))
+        if name == "A14":  # read from the rule page in the payload (a14rule), checked above
+            assert "RULE().target" in line and "-RULE().stop" in line and "RULE().time_dte" in line and 'adjust: "gated"' in line
+            continue
         stop = re.search(r"stop: (-?\d+)", line)
         assert (abs(int(stop.group(1))) if stop else None) == c["stop"], name
         time = re.search(r"timeDte: (\d+)", line)

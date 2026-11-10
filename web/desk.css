@@ -128,3 +128,27 @@ table.wi td,table.wi th{padding-left:14px;padding-right:14px}
   .desk .tab{grid-column:1;grid-row:auto;padding:12px 12px 30px}
 }
 @media (max-width:560px){.brand h1,#updMeta{display:none} .brand{flex:0 0 auto;margin-right:auto}}
+
+/* Now screen and the Detail switch */
+body.simple .side .tabs button:not([data-tab="now"]):not([data-tab="rules"]),body.simple .side .ngroup>span{display:none}
+body.simple .side .tabs{gap:0}
+#detailBtn{margin:14px 9px 0;width:calc(100% - 18px)}
+.nwbig{display:flex;align-items:baseline;gap:10px;margin:2px 0 8px}
+.nwbig b{font-size:30px;font-weight:700;line-height:1.1}
+.nwbig b.muted{color:var(--muted)}.nwbig b.wrn{color:var(--warn)}
+.nwbig span{color:var(--muted)}
+.nwlist{margin:0 0 8px;padding-left:18px}.nwlist li{margin:3px 0}
+.nwcalls{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.nwcall{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;font-size:16px;font-weight:600;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink);cursor:pointer}
+.nwcall span{font-size:12px;font-weight:400;color:var(--muted)}
+.nwcall:hover{background:var(--soft)}
+.nwcall.on{border-color:currentColor;background:color-mix(in srgb,currentColor 12%,transparent)}
+.nwcall.on.pos{color:var(--up)}.nwcall.on.sz{color:var(--accent)}.nwcall.on.neg{color:var(--down)}
+.nwnote{width:100%;min-width:170px;background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit;font-size:13px}
+.nwnote.saved{border-color:var(--up)}
+.rbsec{margin-bottom:14px}.rbsec>h2{margin:0 0 2px}.rbsec>p{margin:0 0 8px;color:var(--muted)}
+.rbgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px}
+.rbcard{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--panel)}
+.rbcard h3{margin:0 0 4px;font-size:14px}.rbcard .rbrule{font-weight:600;margin:0 0 6px}
+.rbcard p{margin:0 0 5px;font-size:13px}.rbcard p span{color:var(--muted)}
+.rbcard .rbwho{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-top:6px}

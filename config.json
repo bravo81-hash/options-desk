@@ -17,7 +17,12 @@
       "step": 5
     }
   },
-  "auto_update": {"enabled": true, "open_min": 15, "closed_min": 60, "surface_min": 60},
+  "auto_update": {
+    "enabled": true,
+    "open_min": 15,
+    "closed_min": 60,
+    "surface_min": 60
+  },
   "record": {
     "time_et": "15:40",
     "all_expiries_to_dte": 21,
@@ -49,6 +54,12 @@
       "amount": 10000,
       "note": "deposits positive, withdrawals negative; US session date"
     },
-    "_note": "Put your account_map (ONE account group -> IBKR account), account_labels and cash_flows in config.local.json (not uploaded)."
+    "_note": "Put your account_map (ONE account group -> IBKR account), account_labels and cash_flows in config.local.json (not uploaded).",
+    "stress": {
+      "move": 5,
+      "limit_pct": null,
+      "_note": "Book what-if alert: the loss on a day the index moves `move` % either way, IVs moving with it, as % of each account's NAV. Set limit_pct in config.local.json (one number, or {\"MGN\": 12.5, \"SMSF\": 12.5}); null shows the figure without an alert. cap_pct works the same way for all A14 worst cases added up, as % of NAV.",
+      "cap_pct": null
+    }
   }
 }

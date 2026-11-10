@@ -419,13 +419,15 @@ def save_review(b):
 
 def log_plan(items, sess=None):
     """What Trade plan said about each open trade, as it stood when last looked at that session. A plan is worked out in the browser,
-    so the page sends it; the fills that follow show whether it was followed."""
+    so the page sends it; the fills that follow show whether it was followed. A trade with unpriced legs has no plan ("marks"): it is
+    never logged, so a label read off a partial total can't be scored."""
     from .recorder import session_date
     init()
     sess = sess or session_date().isoformat()
     have = {r["trade_key"]: (r["act"], r["label"], r["adj"]) for r in db.query("SELECT * FROM journal_planlog WHERE date=?", (sess,))}
     rows = [(sess, i["key"], i.get("act"), i.get("label"), i.get("adj"), i.get("pct"), _now()) for i in items or []
-            if i.get("key") and have.get(i["key"]) != (i.get("act"), i.get("label"), i.get("adj"))]  # an unchanged plan changes nothing, so it doesn't rebuild the page or the snapshot
+            if i.get("key") and i.get("act") not in (None, "marks") and not i.get("partial")
+            and have.get(i["key"]) != (i.get("act"), i.get("label"), i.get("adj"))]  # an unchanged plan changes nothing, so it doesn't rebuild the page or the snapshot
     if rows:
         db.write("INSERT OR REPLACE INTO journal_planlog VALUES (?,?,?,?,?,?,?)", rows, many=True)
     return {"ok": True, "n": len(rows)}

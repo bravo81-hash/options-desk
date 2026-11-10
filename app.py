@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, a14rules, accounts, backtest, conditions, flex, heads, journal, pick, readiness, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
+from desk import ROOT, a14, a14rules, accounts, backtest, conditions, flex, heads, journal, pick, process, readiness, rulebook, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -439,6 +439,25 @@ def api_a14_history():
 
 
 # ------------------------------------------------------------------ P&L and reconciliation (ex TWS Matcher)
+@app.get("/api/rulebook")
+def api_rulebook():
+    return ok(rulebook.book())
+
+
+@app.get("/api/process")
+def api_process():
+    """The Now screen and the Process scoreboard: the daily read, the automatic log, drawdown. Uses the readiness odds if already read."""
+    v = _READY.get("v") or {}
+    return ok(process.payload(v.get("risk")))
+
+
+@app.post("/api/process/call")
+def api_process_call():
+    b = request.get_json(force=True) or {}
+    v = _READY.get("v") or {}
+    return ok(process.save_call(b.get("mine"), v.get("risk")))
+
+
 @app.get("/api/pnl/weekly")
 def api_pnl_weekly():
     return ok(accounts.weekly(int(request.args.get("weeks", 53))))

@@ -6,7 +6,7 @@ const money = (v) => ok(v) ? (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).to
 const pctS = (v, d = 1) => ok(v) ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "–";
 const cls = (v) => !ok(v) ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
 const SIZE_CLS = {"Full size": "pos", "Three-quarter size": "sz", "Half size": "sz", "Quarter size": "sz", "Stand aside": "neg"};
-const ACT = {exit: ["neg", "⚠ Exit"], decide: ["wrn", "⚠ Decide"], close: ["pos", "✓ Close"], slow: ["wrn", "◔ Exit at next green"]};
+const ACT = {exit: ["neg", "⚠ Exit"], decide: ["wrn", "⚠ Decide"], close: ["pos", "✓ Close"], marks: ["wrn", "◌ Marks incomplete"], slow: ["wrn", "◔ Exit at next green"]};
 const WORD = {"Full size": "full size", "Three-quarter size": "three-quarter size", "Half size": "half size", "Quarter size": "quarter size", "Stand aside": "stand aside"};
 const go = (tab, text, sub) => `<a href="#" class="small" data-go="${tab}"${sub ? ` data-sub="${esc(sub)}"` : ""}>${esc(text)} →</a>`;
 const order = (o) => window.orderTxt(o, true);
@@ -70,7 +70,8 @@ async function load() {
 let planSent = 0;
 function logPlans(Rk) {
   if (window.DESK_CLOUD || !Rk || Date.now() - planSent < 9e5) return; planSent = Date.now();
-  const items = Rk.trades.filter((t) => t.plan).map((t) => ({key: t.id, act: t.plan.act, label: t.plan.label, adj: t.plan.adj ? t.plan.adj.ok : null, pct: t.totalPct}));
+  // a plan read off a partial total is never logged (the server drops it too)
+  const items = Rk.trades.filter((t) => t.plan && !t.plan.partial).map((t) => ({key: t.id, act: t.plan.act, label: t.plan.label, adj: t.plan.adj ? t.plan.adj.ok : null, pct: t.totalPct}));
   if (items.length) fetch("/api/journal/plan", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({items})}).catch(() => {});
 }
 /* owed to the journal: losses waiting for a post-mortem, and a winning streak, which is when size tends to creep */
@@ -96,18 +97,22 @@ function doToday(Rk) {
   if (!Rk) { $("acDo").innerHTML = `<div class="state">${window.DESK_CLOUD ? "Your trades are locked. <button type=\"button\" class=\"unlockBtn\">Unlock snapshot</button>" : "Open trades unavailable: is a ONE report in Documents?"}</div>`; return; }
   const P = Rk.trades.filter((t) => t.plan && t.plan.act !== "hold").sort((a, b) => a.plan.pri - b.plan.pri || (a.totalPct ?? 0) - (b.totalPct ?? 0));
   const held = Rk.trades.filter((t) => t.plan && t.plan.act === "hold").length, noCard = Rk.trades.filter((t) => !t.plan).length;
-  if (window.navBadge) { navBadge("actions", P.length ? String(P.length) : "", P.length ? "wrn" : ""); navBadge("risk", String(L.Rk.trades.length)); }
-  $("acDoMeta").textContent = `${Rk.trades.length}${active() ? ` of ${L.Rk.trades.length}` : ""} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}`;
-  if (!P.length) { $("acDo").innerHTML = `<div class="state">Nothing to do on ${active() ? "the filtered" : "open"} trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
+  // book-level: the A14 rule page (ids per ticker, worst case an id) and the stress limit, every account whatever the filter
+  const lim = ((L.Rk && L.Rk.limits) || []).filter((a) => a.alerts.length), nAl = lim.reduce((s, a) => s + a.alerts.length, 0);
+  const book = lim.length ? `<div class="state err" style="margin-bottom:8px"><b>⚠ Book limits</b> ${go("risk", "Book what-if", "What-if")}<ul class="small" style="margin:4px 0 0;padding-left:18px">${lim.flatMap((a) => a.alerts.map((x) => `<li><b>${esc(a.label)}</b>: ${esc(x)}</li>`)).join("")}</ul></div>` : "";
+  if (window.navBadge) { navBadge("actions", P.length + nAl ? String(P.length + nAl) : "", P.length + nAl ? "wrn" : ""); navBadge("risk", String(L.Rk.trades.length)); }
+  $("acDoMeta").textContent = `${Rk.trades.length}${active() ? ` of ${L.Rk.trades.length}` : ""} open trades · ${P.length} need something · ${held} on hold${noCard ? ` · ${noCard} without card rules` : ""}${nAl ? ` · ${nAl} book alert${nAl > 1 ? "s" : ""}` : ""}`;
+  if (!P.length) { $("acDo").innerHTML = `${book}<div class="state">Nothing to do on ${active() ? "the filtered" : "open"} trades: every carded trade is between its stop and target. ${go("risk", "Trade plan", "Trade plan")}</div>`; return; }
   const folded = (t, i) => i >= 5 && !["exit", "decide"].includes(t.plan.act);  // never fold an Exit or Decide away
-  $("acDo").innerHTML = `<div class="capped"><div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th title="days in trade · short strikes in σ · whether an adjustment is allowed">Health</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
+  $("acDo").innerHTML = `${book}<div class="capped"><div class="tbl"><table><thead><tr><th>Do</th><th>Trade</th><th class="n" title="dot = total now · red line = hard stop · dashed = decide line · green line = target">Total · stop → target</th><th title="days in trade · short strikes in σ · whether an adjustment is allowed">Health</th><th>Why</th><th>Order to use</th><th></th></tr></thead><tbody>${
     P.map((t, i) => { const q = t.plan, [k, word] = ACT[q.act] || ["", q.label];
       const use = q.act === "exit" ? `close now${q.stopPx ? ` · combo ~${q.stopPx.px.toFixed(2)}` : ""}`
+        : q.act === "marks" ? `refresh marks with TWS running ${go("risk", "Risk grid", "Trade plan")}${q.order ? ` · the target order still stands: ${order(q.order)}` : ""}`
         : q.act === "close" ? `close now · target order ${order(q.order)}`
         : q.act === "slow" ? `close at the next close ≥ 0%${q.order ? ` · or keep the target order ${order(q.order)}` : ""}`
         : `adjust: <span class="chip">${esc(q.adj.ok)}</span>${q.how ? ` <span class="small muted">${esc(q.how)}</span>` : ""}`;
       return `<tr${folded(t, i) ? ` class="xrow"` : ""}><td><span class="chip ${k}">${esc(word)}</span></td><td>${esc(t.name)} <span class="small muted">${esc(t.acctLabel || "")}</span></td>
-        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span><br>${window.planBullet ? window.planBullet(t) : ""}</td><td style="min-width:150px"><div class="hline">${window.healthBits ? window.healthBits(t).join("") : ""}</div></td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
+        <td class="n ${cls(t.totalPct)}"><b>${pctS(t.totalPct)}</b> <span class="small muted">${money(t.pnlNow)}</span>${window.basisTag ? window.basisTag(t) : ""}<br>${window.planBullet ? window.planBullet(t) : ""}</td><td style="min-width:150px"><div class="hline">${window.healthBits ? window.healthBits(t).join("") : ""}</div></td><td class="small" style="white-space:normal;min-width:240px">${esc(q.why)}</td><td class="small" style="white-space:normal;min-width:200px">${use}</td>
         <td><a href="#" class="small" data-trade="${esc(t.id)}">detail →</a></td></tr>`; }).join("")}</tbody></table></div>${P.some(folded) ? `<button type="button" class="ghost" data-cap="Show all ${P.length}">Show all ${P.length}</button>` : ""}</div>`;
 }
 
@@ -207,13 +212,14 @@ function ladder() {
   const expiry = (e) => new Date(Date.UTC(+e.slice(0, 4), +e.slice(4, 6) - 1, +e.slice(6))).toLocaleDateString("en-AU", {day: "numeric", month: "short", timeZone: "UTC"});
   const row = (u) => { const n = LAD.next[u], D = accts.map((a) => openIn(u, a)), most = Math.max(0, ...D.map((x) => x.length));
     const size = ((L.Rd && L.Rd.strategies) || []).find((s) => s.name === `A14 ${u}`), step = size ? size.size : null, lots = n && step ? n.lots[step] : null;
-    const state = !known ? ["", "Ids unknown"] : most > P.cap ? ["wrn", "⚠ Over the cap"] : most === P.cap ? ["muted", "At the cap"] : step === "Stand aside" ? ["muted", "Stand aside"] : LAD.entry_next === etToday ? ["pos", "✓ Entry today"] : ["muted", `◔ Entry ${entryTxt}`];
+    const overL = ((L.Rk && L.Rk.limits) || []).filter((x) => x.over).map((x) => x.label);
+    const state = !known ? ["", "Ids unknown"] : overL.length ? ["wrn", `⚠ No new id: ${overL.join(" and ")} over your limits`] : most > P.cap ? ["wrn", "⚠ Over the cap"] : most === P.cap ? ["muted", "At the cap"] : step === "Stand aside" ? ["muted", "Stand aside"] : LAD.entry_next === etToday ? ["pos", "✓ Entry today"] : ["muted", `◔ Entry ${entryTxt}`];
     const shift = n && n.tilt ? `tilt ${n.tilt > 0 ? "+" : "−"}${Math.abs(n.tilt)} sd, index ${pctS(n.vs20)} vs 20-day` : "centred";
     return `<tr><td><b>${u}</b><br><span class="chip ${state[0]}">${state[1]}</span></td>
       ${accts.map((a, k) => `<td><b class="mono ${D[k].length > P.cap ? "wrn" : ""}">${known ? D[k].length : "–"}</b> <span class="small muted">of ${P.cap}</span> ${strip(D[k], n)}</td>`).join("")}
       <td>${n ? `${expiry(n.expiry)} <span class="small muted">${n.dte}d</span> <span class="mono">${Math.round(n.upper)}/${Math.round(n.short)}/${Math.round(n.lower)}</span><br><span class="small muted">${esc(shift)}</span>` : `<span class="small muted">No Friday expiry in ${P.dte_lo}–${P.dte_hi} DTE on the fetched chain</span>`}</td>
       <td class="n">${n ? `${money(n.risk)}<br><span class="small muted">${Math.abs(n.credit).toFixed(2)} ${n.credit >= 0 ? "credit" : "debit"}</span>` : "–"}</td>
-      <td class="n">${ok(lots) ? `<b class="${lots ? "" : "wrn"}">${lots}</b> <span class="small muted">at ${esc(WORD[step] || step)}</span><br><span class="small muted">full size ${n.lots["Full size"]}</span>` : "–"}</td>
+      <td class="n">${overL.length ? `<b class="wrn">0</b><br><span class="small muted">until back under your limits</span>` : ok(lots) ? `<b class="${lots ? "" : "wrn"}">${lots}</b> <span class="small muted">at ${esc(WORD[step] || step)}</span><br><span class="small muted">full size ${n.lots["Full size"]}</span>` : "–"}</td>
       <td class="n small">${n && lots ? accts.map((a) => `${esc(a)} ${(100 * lots * n.risk * P.stop / 100 / LAD.navs[a]).toFixed(2)}%`).join("<br>") : "–"}</td></tr>`; };
   $("acLadMeta").textContent = `${window.DAYS[day]} in New York: ${P.windows.includes((day + 6) % 7) ? "a window day for adjustments" : "no adjustments today; targets and stops still count"}${LAD.chain_ts ? ` · next id priced on the ${new Date(LAD.chain_ts).toLocaleString([], {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"})} chain` : ""}`;
   el.innerHTML = `<div class="tbl"><table><thead><tr><th>Ticker</th>${accts.map((a) => `<th>${esc(a)} ids</th>`).join("")}<th>Next id</th><th class="n">Risk a lot</th><th class="n">Lots</th><th class="n">Loss at −${P.stop}%</th></tr></thead><tbody>${syms.map(row).join("")}</tbody></table></div>
