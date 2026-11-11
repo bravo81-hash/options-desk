@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, a14rules, accounts, backtest, conditions, f49, flex, heads, limitcfg, journal, pick, process, readiness, rulebook, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
+from desk import ROOT, a14, a14rules, accounts, backtest, conditions, f49, flex, heads, limitcfg, longdated, journal, pick, process, readiness, rulebook, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -454,6 +454,14 @@ def api_limits():
 def api_limits_save():
     b = request.get_json(force=True) or {}
     return ok(limitcfg.save(b.get("key", ""), b.get("value")))
+
+
+@app.get("/api/longdated")
+def api_longdated():
+    try:
+        return ok(longdated.state())
+    except Exception as e:
+        return ok({"error": f"130-day structure unavailable: {e}"})
 
 
 @app.get("/api/f49")

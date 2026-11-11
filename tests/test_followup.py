@@ -220,3 +220,47 @@ def test_f49_is_a_strategy_with_a_card():
     from desk import positions, trades
     assert trades.classify("MGN", "SPX F49 31 DEC 2 LOTS") == "F49" and trades.classify("MGN", "SPX A14 F490") == "A14"
     assert positions.CARDS["F49"] == {"stop": None, "time": 14, "adjust": "never"}
+
+
+# ------------------------------------------------------------------ the 130-day structure: put butterfly + call calendar
+def _smile(dte, F=7700.0, lift=0.0):
+    import numpy as np
+    ks = np.arange(6500.0, 8901.0, 100.0)
+    return {"F": F, "dte": dte, "T": dte / 365, "ks": ks, "ivs": 0.14 + lift + 0.5 * np.maximum(0, (F - ks) / F) + 0.05 * np.maximum(0, (ks - F) / F)}
+
+
+def test_the_130_day_structure_is_a_balanced_put_fly_and_a_delta_neutral_call_calendar():
+    from desk import longdated as ld
+    B = ld.build(_smile(128), _smile(156, lift=0.004))
+    up, sh, lo, sc, lc = B["legs"]
+    assert [x["q"] for x in B["legs"]] == [1, -2, 1, -1, 1] and up["strike"] - sh["strike"] == sh["strike"] - lo["strike"] > 0
+    assert abs(abs(up["delta"]) - 0.40) < 0.02 and abs(abs(sh["delta"]) - 0.30) < 0.02 and abs(sc["delta"] - 0.30) < 0.02
+    assert lc["back"] and not sc["back"] and abs(B["delta"]) < 1.0 and B["cost"] == pytest.approx(B["cost_fly"] + B["cost_cal"], abs=1)
+    assert B["gap"] == pytest.approx(0.4, abs=0.2) and B["skew"] > 0 and not B["back_est"]
+    assert B["front_up1"] < 0 < B["back_up1"] and B["skew_up1"] > 0 and abs(B["vega"]) < abs(B["front_up1"]) / 3  # the gap, not the level
+    assert 0 < B["theta"] < abs(B["front_up1"]) / 20  # theta is the small number
+    assert B["curve"]["now"][B["curve"]["xs"].index(min(B["curve"]["xs"], key=lambda x: abs(x - 7700)))] == pytest.approx(0, abs=40)
+    est = ld.build(_smile(128))
+    assert est["back_est"] and est["gap"] is None and est["back_dte"] == 156
+
+
+def test_monthlies_listed_by_their_thursday_are_recorded_and_read():
+    from desk import longdated as ld, recorder
+    d = dt.date
+    assert ld.monthly(d(2027, 3, 19)) and ld.monthly(d(2027, 4, 15)) and not ld.monthly(d(2027, 4, 9)) and not ld.monthly(d(2027, 4, 22))
+    rec = {"all_expiries_to_dte": 21, "fridays_to_dte": 75, "monthlies_to_dte": 200}
+    got = [e for e, _ in recorder._pick_expiries(["20261120", "20270318", "20270319", "20270415", "20270422", "20270820"], d(2026, 11, 11), rec)]
+    assert got == ["20261120", "20270319", "20270415"]  # March has its Friday listed, April only its Thursday; a later Thursday and 200+ days are left out
+
+
+def test_the_stand_ins_say_what_followed_each_third(desk):
+    import math
+    from desk import longdated as ld
+    rows, d0 = [], dt.date(2020, 1, 1)
+    for i in range(900):
+        day = (d0 + dt.timedelta(days=i)).isoformat()
+        rows += [("VIX3M", day, 20.0), ("VIX6M", day, 21.5 + math.sin(i / 20)), ("SKEW", day, 130 + 10 * math.sin(i / 20))]
+    db.write("INSERT INTO index_daily (symbol, date, close) VALUES (?,?,?)", rows, many=True)
+    S = ld.standins()
+    assert S["slope"]["cuts"][0] < S["slope"]["cuts"][1] and S["slope"]["after"]["low"]["chg"] > 0 > S["slope"]["after"]["high"]["chg"]  # a wave reverts
+    assert 0 <= S["skew"]["pct"] <= 100 and len(S["skew"]["series"]) == 504

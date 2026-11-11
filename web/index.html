@@ -217,6 +217,7 @@
       <section class="panel c8 scrollp" data-sub="Scanner"><header><h2>Top setups</h2><span class="small muted">put BWB, 1 lot = +1 upper / −2 short / +1 lower · $ per lot · click a column to rank, a row for its risk graph</span></header><div id="a14Table"></div>
         <p class="note">Priced from a live TWS chain (frozen closing quotes outside market hours): own IV from mids off the put-call-parity forward, one smile per expiry, every leg priced from it. The exit scenario holds each strike's IV (sticky strike) and lets time pass; the odds use a lognormal with the chosen volatility, which understates crash risk, so check the −1σ and Stress columns and the risk graph too. Stress = index −5% by the exit date with every strike's IV 5 points higher, a typical sell-off. Exit date = your average days held for that entry DTE (Journal) unless you type one. "Your usual" = upper long within ±1% of spot and short 0.5–3.5% below, like your A14 entries in ONE. Risk = the loss below the lower wing (or the debit, if larger).</p></section>
       <section class="panel c12" data-sub="F49 tent"><header><h2>F49: far-OTM put tent</h2><span class="small muted" id="f49Meta"></span></header><div id="f49Body"><div class="state loading">Pricing the tent…</div></div></section>
+      <section class="panel c12" data-sub="130-day structure"><header><h2>130-day structure: put butterfly + call calendar</h2><span class="small muted" id="ldMeta"></span></header><div id="ldBody"><div class="state loading">Pricing the structure…</div></div></section>
       <section class="panel modalp" id="a14DetailPanel" hidden><header><h2>Selected setup</h2><button type="button" class="ghost mclose">Close</button></header><div id="a14Detail"></div></section>
       <section class="panel c12" data-sub="Your history"><header><h2>Your A14 history</h2><span class="small muted">entries from your newest ONE report</span></header><div id="a14Hist"><div class="state">Loading…</div></div></section>
     </div>
@@ -625,6 +626,7 @@
 <script src="heads.js"></script>
 <script src="actions.js"></script>
 <script src="f49.js"></script>
+<script src="longdated.js"></script>
 <script src="now.js"></script>
   <script src="update.js"></script>
 </body>

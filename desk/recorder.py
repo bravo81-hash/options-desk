@@ -69,6 +69,9 @@ def _pick_expiries(expirations, today, rec):
         if dte < 1:
             continue
         third_friday = d.weekday() == 4 and 15 <= d.day <= 21
+        # further out only the AM-settled monthly is listed, and IB dates it by its last trading day: the Thursday before the third Friday
+        nxt = (d + dt.timedelta(days=1)).strftime("%Y%m%d")
+        third_friday = third_friday or (d.weekday() == 3 and 14 <= d.day <= 20 and nxt not in expirations)
         if dte <= rec["all_expiries_to_dte"] or (dte <= rec["fridays_to_dte"] and d.weekday() == 4) \
                 or (dte <= rec["monthlies_to_dte"] and third_friday):
             out.append((e, dte))
