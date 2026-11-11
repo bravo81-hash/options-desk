@@ -201,13 +201,14 @@ function capitalView(T) {
 // (14–60 DTE), mostly on VIX pops that later reverted, and cost more than it saved at every SPX entry DTE from 14 to 60.
 const RULE = () => (R && R.a14rule) || {target: 7, stop: 20, time_dte: 7, cap: 4, worst_nav: 7.5};
 const CARDS = {
-  A14: {tp: () => RULE().target, decide: -6, get stop() { return -RULE().stop; }, get timeDte() { return RULE().time_dte; }, adjust: "gated", pace: true, holdPastDecide: true, windows: [1, 3, 5], reshapeFrom: 21, sameLots: true},
+  A14: {tp: () => RULE().target, decide: -6, get stop() { return -RULE().stop; }, get timeDte() { return RULE().time_dte; }, adjust: "gated", pace: true, holdPastDecide: true, deltaBand: true, reshapeFrom: 21, sameLots: true},
   Allantis: {tp: () => 7, decide: -6, stop: -10, timeDte: 2, adjust: "gated", pace: true},
   HV7: {tp: () => 5, stop: -10, timeDte: 2, adjust: "never"},
   TimeEdge: {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
   "Triple Cal": {tp: () => 5, stop: -15, timeDte: 1, adjust: "one"},
   TimeZone: {tp: () => 5, stop: -5, timeDte: 7, adjust: "one"},
   Flyagonal: {tp: () => 10, timeFrac: 2 / 3, adjust: "one"},
+  F49: {tp: () => 7, timeDte: 14, adjust: "never", belowShorts: true},
 };
 const PRI = {exit: 0, close: 1, decide: 2, marks: 3, slow: 4, hold: 5};
 /* ---------- execution aids: the combo price that closes a trade at a given total, and the index level where it gets there ---------- */
@@ -252,6 +253,13 @@ function windowOf(days) {  // today in New York against a card's adjustment days
   return null;
 }
 window.nyDay = nyDay; window.DAYS = DAYS; window.dteOf = dteOf;
+// an id's delta a lot, in deltas (US$ per index point): the A14 adjustment trigger (desk/a14rules.py DELTA_BAND)
+function deltaLot(t) {
+  if (!t.marked || !ok(t.spot)) return null;
+  const lots = lotsOf(t) || gcdAll(t.legs.map((l) => l.qty)), d = greeks(t).delta;
+  return ok(d) && lots ? d / lots : null;
+}
+const shortK = (t) => { const k = t.legs.filter((l) => l.qty < 0 && l.right === "P").map((l) => l.strike); return k.length ? Math.max(...k) : null; };
 function planOf(t) {
   const c = CARDS[t.strategy];
   t.plan = null; t.planPri = null;
@@ -259,12 +267,16 @@ function planOf(t) {
   const p = t.totalPct, dte = dteOf(t.firstExp), tp = c.tp(t), usd = (pct) => money(t.margin * pct / 100);
   const move = ok(t.entry_spot) && ok(t.spot) ? 100 * (t.spot / t.entry_spot - 1) : null;
   const timeHit = ok(c.timeDte) ? dte <= c.timeDte : ok(t.entryDte) && (t.ditNow || 0) >= c.timeFrac * t.entryDte;
-  const slow = c.pace && (t.slowSoFar || t.overstay), win = c.windows ? windowOf(c.windows) : null;
+  const deltaActive = c.deltaBand && new Date().toLocaleDateString("en-CA", {timeZone: "America/New_York"}) >= (RULE().delta_from || "2026-11-12");
+  const slow = c.pace && (t.slowSoFar || t.overstay), win = c.deltaBand && !deltaActive ? windowOf([1, 3, 5]) : c.windows ? windowOf(c.windows) : null;
+  const band = deltaActive ? (RULE().delta_band ?? 3) : null, dl = c.deltaBand ? deltaLot(t) : null, sk = c.belowShorts ? shortK(t) : null;
+  const indexClose = t.index_close || {}, belowClose = ok(sk) && ok(indexClose.price) && indexClose.price < sk;
+  const closeWhy = `${t.underlying} closed at ${fmt(indexClose.price, 0)} on ${indexClose.date}, below the ${fmt(sk, 0)} shorts (${indexClose.source || "daily close"}).`;
   const when = win && !win.open ? `on ${win.next}, the next window,` : "today";
   const slowWhy = t.slowSoFar ? `${fmt(t.perDay, 2)}%/day after ${t.ditNow} days, under the ${fmt(SPEED().slow, 2)}% slow line` : `held ${t.ditNow}d vs ${Math.round(t.usualHold)}d usual for this entry DTE`;
   if (t.basis === "partial") {  // no target, stop or adjust call from a total with unpriced legs; the time stop needs no price
     const n = t.legs.filter((l) => l.mid == null).length, miss = `${n} of ${t.legs.length} legs have no price${mktOpen() ? "" : " with the market shut"} and this session has no fully priced total yet`;
-    const [act, label, why] = timeHit ? ["close", "Close: time stop", `${ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration`}. Marks incomplete: ${miss}.`]
+    const [act, label, why] = belowClose ? ["exit", "Exit: close below shorts", closeWhy] : timeHit ? ["close", "Close: time stop", `${ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration`}. Marks incomplete: ${miss}.`]
       : ["marks", "Marks incomplete", `${miss}: no target, stop or adjust call until every leg is priced. Refresh marks with TWS running.`];
     t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, partial: true, how: "",
       adj: {ok: "?", why: "marks incomplete: the gates read the total"}, lv: {tp: usd(tp), decide: ok(c.decide) ? usd(c.decide) : null, stop: ok(c.stop) ? usd(c.stop) : null},
@@ -274,6 +286,7 @@ function planOf(t) {
   }
   let act, label, why;
   if (ok(c.stop) && p <= c.stop) [act, label, why] = ["exit", "Exit: hard stop", `${pctS(p)} is at or past the ${c.stop}% stop. Exit; no adjustment.`];
+  else if (belowClose) [act, label, why] = ["exit", "Exit: close below shorts", closeWhy];
   else if (p >= tp) [act, label, why] = ["close", "Close: target", `${pctS(p)} reached the +${tp}% target. Holding 10 more sessions helped only half your exits; +7% targets earned 22% more per margin-day.`];
   else if (timeHit) [act, label, why] = ["close", "Close: time stop", ok(c.timeDte) ? `${dte} DTE: inside the ${c.timeDte} DTE time stop.` : `held ${t.ditNow}d of ${t.entryDte}: past 2/3 of the duration.`];
   else if (slow && p >= 0) [act, label, why] = ["close", "Close: slow, green", `${slowWhy}. Free the margin while it's green.`];
@@ -292,22 +305,24 @@ function planOf(t) {
   else {
     const no = [], vs = p >= 3 ? `${pctS(p)}, at or over the +3% line` : p >= 0 && ok(move) && Math.abs(move) < 1.5 ? `${pctS(p)}, ${t.underlying} moved only ${pctS(move)}` : `${pctS(p)}, under the +3% line`;
     if (p >= 3) no.push(`up ${pctS(p)}: never adjust a winner (yours at +3 to +6% helped only 36%)`);
-    if (p >= 0 && p < 3 && ok(move) && Math.abs(move) < 1.5) no.push(`green and ${t.underlying} only ${pctS(move)} from entry (small-move adjustments helped 44–47%)`);
-    if (p >= 0 && p < 3 && !ok(move)) no.push("green, and the entry price is unknown");
+    if (!band && p >= 0 && p < 3 && ok(move) && Math.abs(move) < 1.5) no.push(`green and ${t.underlying} only ${pctS(move)} from entry (small-move adjustments helped 44–47%)`);
+    if (!band && p >= 0 && p < 3 && !ok(move)) no.push("green, and the entry price is unknown");
     if (ok(c.stop) && p <= c.stop) no.push("past the hard stop");
     if (dte <= c.timeDte) no.push("inside the time stop");
     if (no.length) adj = {ok: "no", why: no.join(" · ")};
     else if (ok(c.reshapeFrom) && dte <= c.reshapeFrom) adj = {ok: "no", why: `${dte} DTE: no adjustments at ${c.reshapeFrom} DTE or less; the target, the stop or the ${c.timeDte} DTE exit decides`};
     else if (win && !win.open) adj = {ok: "wait", why: `${win.day} isn't a window day: look again on ${win.next}`};
+    else if (band && !ok(dl)) adj = {ok: "?", why: `delta unknown until every leg is priced: the rule adjusts only beyond ±${band} deltas a lot`};
+    else if (band && Math.abs(dl) <= band) adj = {ok: "no", why: `delta ${dl > 0 ? "+" : ""}${fmt(dl, 1)} a lot, inside ±${band}: nothing to adjust`};
     else if (dte <= 10) adj = {ok: "reduce", why: `${dte} DTE: only adjustments that reduce risk; otherwise let the target, stop or time stop decide`};
     else if (dte <= 21) adj = {ok: "roll out", why: `${dte} DTE: inside 10–21, roll out to a new expiry or close; no reshaping (yours there helped 38%)`};
-    else adj = {ok: "yes", why: `${p < 0 ? "red" : "moved"}${ok(move) ? `, ${t.underlying} ${pctS(move)} from entry` : ""}, ${dte} DTE`};
-    adj.vs = vs;
+    else adj = {ok: "yes", why: `${band ? `delta ${dl > 0 ? "+" : ""}${fmt(dl, 1)} a lot, beyond ±${band}` : p < 0 ? "red" : "moved"}${ok(move) ? `, ${t.underlying} ${pctS(move)} from entry` : ""}, ${dte} DTE`};
+    adj.vs = band ? `${pctS(p)}${ok(dl) ? `, delta ${dl > 0 ? "+" : ""}${fmt(dl, 1)} a lot` : ""}` : vs;
     if (adj.ok !== "no") how = ok(move) && move >= 1.5 ? (c.sameLots ? "roll the shorts up, same lots; new risk is a new id" : "roll the shorts up or add a call side (+2 to +3% median)")
       : ok(move) && move <= -1.5 && dte > 21 ? "roll out in time (+6% median, 75% helped); don't roll the shorts down (−6%)"
       : "roll out in time or reduce; reshaping in the same expiry is a coin flip";
   }
-  t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, adj, how, basis: t.basis, asOf: t.basis === "full" ? t.full_at : null,
+  t.plan = {act, label, why, pri: PRI[act], tp, decide: c.decide, stop: c.stop, dte, timeDte: c.timeDte, move, adj, how, delta: dl, delta_band: band, shortK: sk, basis: t.basis, asOf: t.basis === "full" ? t.full_at : null,
     lv: {tp: usd(tp), decide: ok(c.decide) ? usd(c.decide) : null, stop: ok(c.stop) ? usd(c.stop) : null},
     band: ok(t.entry_spot) ? [t.entry_spot * 0.985, t.entry_spot * 1.015] : null,
     order: closeAt(t, tp), at: {decide: ok(c.decide) ? levelAt(t, c.decide) : null, stop: ok(c.stop) ? levelAt(t, c.stop) : null,
@@ -494,7 +509,7 @@ function planView(T) {
     <p class="note">Checked in this order every day: hard stop → target → time stop → slow (under ${fmt(SPEED().slow, 2)}%/day after 3+ weeks, or 25% past your usual hold) → decide line → otherwise hold.
     <b>Marks</b>: a trade is labelled only from a total with every leg priced. When a leg has no live quote (after the close, or RUT overnight), the plan uses this session's last fully priced total and says <i>as of</i> when; with neither, it shows <b>Marks incomplete</b> (only the time stop still applies), and that is never written to the Journal's plan log.
     <b>Adjust?</b> for A14 and Allantis needs all of: under +3%; red, <i>or</i> the underlying ±1.5% from entry; more than 21 DTE to reshape (Allantis at 10–21: roll out or close only; under 10: reduce risk only); not past the stop or time stop.
-    A14 also waits for a window day (Monday, Wednesday, Friday in New York), has no adjustments at 21 DTE or less, and never adds size: new risk is a new id. Targets and stops are watched every day. See Guide → A14 rules.
+    A14 instead of the ±1.5% test waits for the id's delta to be beyond ±3 a lot, has no adjustments at 21 DTE or less, and never adds size: new risk is a new id. Targets and stops are watched every day. See Guide → A14 rules.
     How: market up → roll the shorts up (Allantis can add a call side); market down with 21+ DTE → roll out in time; never roll the shorts down. Targets and stops don't move after an adjustment.
     Calendars: one adjustment, then a further breach is an exit. A14's target, stop and time stop come from the rule page: +${RULE().target}%, −${RULE().stop}%, out by ${RULE().time_dte} DTE, whatever the entry DTE.
     A14's time stop moved from 2 to 7 DTE on 2 Nov 2026. A14 hard stop is −20% (the card says −10%): replayed on every Friday since 2009, the −10% stop was hit in 28–46% of A14s (14–60 DTE) and cost more than it saved at every SPX entry DTE from 14 to 60; −20% keeps a cap on runaway losses (a stop-free A14 lost over half its margin in 2–5% of trades). Allantis keeps the card's −10% (not backtested). See Evidence → Since 2009.

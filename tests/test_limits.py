@@ -87,6 +87,22 @@ def test_the_worst_case_cap_alerts_and_marks_the_account_over():
     assert risk.limits(TR, {"U1": "MGN"}, BOOK, grid_for(-11000.0, 0.0), cfg={"limit_pct": 10, "cap_pct": 20})[0]["over"] is True  # stress alone
 
 
+def test_each_strategy_has_its_own_cap_and_one_cap_covers_them_all():
+    g, tent = grid_for(-1000.0, 0.0), {**bwb(strategy="F49"), "ib_account": "U1", "group": "x"}
+    L = risk.limits(TR * 2 + [tent] * 2, {"U1": "MGN"}, BOOK, g, cfg={"cap_pct": 20, "cap_f49": 5, "cap_total": 30})[0]  # 9.4% A14, 9.4% F49, 18.9% in all
+    caps = {c["key"]: c for c in L["caps"]}
+    assert (caps["A14"]["pct"], caps["A14"]["over"]) == (9.4, False) and (caps["F49"]["pct"], caps["F49"]["cap"], caps["F49"]["over"]) == (9.4, 5, True)
+    assert (caps["total"]["pct"], caps["total"]["n"], caps["total"]["over"]) == (18.9, 4, False)
+    assert L["over"] is True and L["alerts"] == ["all F49 worst cases add to 9.4% of NAV, over your 5% cap"]
+    tot = risk.limits(TR * 2 + [tent] * 2, {"U1": "MGN"}, BOOK, g, cfg={"cap_pct": 20, "cap_total": 15})[0]
+    assert tot["over"] is True and tot["alerts"] == ["all strategies together add to 18.9% of NAV, over your 15% cap"]
+    assert [c["key"] for c in tot["caps"]] == ["A14", "F49", "total"] and tot["caps"][1]["cap"] is None  # an F49 id with no cap set is shown, not alerted
+    none = risk.limits(TR, {"U1": "MGN"}, BOOK, g, cfg={})[0]
+    assert [c["key"] for c in none["caps"]] == ["A14", "total"] and none["over"] is False
+    naked = {**tent, "legs": [leg(-1, 7400, "C")]}
+    assert risk.limits([naked], {"U1": "MGN"}, BOOK, g, cfg={"cap_f49": 5})[0]["alerts"] == ["an F49 id has no ceiling: over your 5% cap"]
+
+
 def test_stress_without_a_nav_reads_nothing_and_rule_alerts_still_come_through():
     L = risk.limits(TR * 5, {"U1": "MGN"}, {"margin": []}, grid_for(-21000.0, 0.0), cfg={"limit_pct": 10})[0]
     assert L["stress"]["pct"] is None and L["nav_usd"] is None and L["alerts"] == ["5 SPX ids open: the rule's cap is 4"]

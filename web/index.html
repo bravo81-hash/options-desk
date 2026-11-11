@@ -44,6 +44,7 @@
   </section>
   <section class="tab" id="tab-rules" hidden>
     <div class="row" style="gap:10px;margin-bottom:8px"><input id="rbFind" type="search" placeholder="Find a rule…" aria-label="Find a rule" style="max-width:260px"><span class="small muted" id="rbMeta"></span></div>
+    <section class="panel" id="rbLimits" style="margin-bottom:10px"><header><h2>Change your limits</h2><span class="small muted">% of NAV or ids per ticker/account</span></header><div id="rbLimBody"><div class="state loading">Reading your limits…</div></div></section>
     <div id="rbBody"><div class="state loading">Reading the rules…</div></div>
   </section>
   <section class="tab" id="tab-actions" hidden>
@@ -215,6 +216,7 @@
       <section class="panel c4" data-sub="Scanner"><header><h2>Where the edge is</h2><span class="small muted" id="a14HeatNote"></span></header><div class="chart" id="a14Heat"></div></section>
       <section class="panel c8 scrollp" data-sub="Scanner"><header><h2>Top setups</h2><span class="small muted">put BWB, 1 lot = +1 upper / −2 short / +1 lower · $ per lot · click a column to rank, a row for its risk graph</span></header><div id="a14Table"></div>
         <p class="note">Priced from a live TWS chain (frozen closing quotes outside market hours): own IV from mids off the put-call-parity forward, one smile per expiry, every leg priced from it. The exit scenario holds each strike's IV (sticky strike) and lets time pass; the odds use a lognormal with the chosen volatility, which understates crash risk, so check the −1σ and Stress columns and the risk graph too. Stress = index −5% by the exit date with every strike's IV 5 points higher, a typical sell-off. Exit date = your average days held for that entry DTE (Journal) unless you type one. "Your usual" = upper long within ±1% of spot and short 0.5–3.5% below, like your A14 entries in ONE. Risk = the loss below the lower wing (or the debit, if larger).</p></section>
+      <section class="panel c12" data-sub="F49 tent"><header><h2>F49: far-OTM put tent</h2><span class="small muted" id="f49Meta"></span></header><div id="f49Body"><div class="state loading">Pricing the tent…</div></div></section>
       <section class="panel modalp" id="a14DetailPanel" hidden><header><h2>Selected setup</h2><button type="button" class="ghost mclose">Close</button></header><div id="a14Detail"></div></section>
       <section class="panel c12" data-sub="Your history"><header><h2>Your A14 history</h2><span class="small muted">entries from your newest ONE report</span></header><div id="a14Hist"><div class="state">Loading…</div></div></section>
     </div>
@@ -480,21 +482,21 @@
           <li><b>Lots:</b> The same lots in every account, worked out on the smallest NAV, so none goes over 1.5%.</li>
           <li><b>Exit:</b> +7% target, −20% stop, out by 7 DTE. Watched every day.</li>
           <li><b>Adds:</b> None. New risk is always a new id.</li>
-          <li><b>Ladder:</b> At most 4 ids per ticker and account. Adjustment days are Monday, Wednesday and Friday in New York. Risk grid → What-if → Book limits checks the open book against the cap and the 7.5%, and Actions shows any breach at the top.</li>
-          <li><b>Entry:</b> Friday, one id per ticker, the Friday expiry nearest 49 DTE (42–56). Skip it with 4 open.</li>
+          <li><b>Ladder:</b> At most 4 ids per ticker and account. Risk grid → What-if → Book limits checks the open book against the cap and the 7.5%, and Actions shows any breach at the top.</li>
+          <li><b>Entry:</b> One id per ticker a week, the Friday expiry nearest 49 DTE (42–56): on the Friday, or earlier in the week when the readiness bar reads full or three-quarter size for that ticker and every account is inside its limits (from 12 Nov 2026). A midweek id replaces that week's Friday entry. Skip it with 4 open.</li>
           <li><b>Regime:</b> One structure. The tent sits 0.2 sd higher with the index more than 1% above its 20-day average, 0.2 sd lower more than 1% below, centred otherwise.</li>
           <li><b>Strikes:</b> The desk's sd shape, shown in Actions → New trades. No hand-picking.</li>
-          <li><b>Adjust:</b> Reshapes only on a window day, on the Trade plan's gates. None at 21 DTE or less.</li>
+          <li><b>Adjust:</b> Only with the id's delta beyond ±3 a lot (from 12 Nov 2026; before that, on Monday, Wednesday or Friday), never on a trade up 3% or more, and none at 21 DTE or less.</li>
           <li><b>Scoreboard, not a target:</b> since 10 Nov 2026 the desk scores drawdown from each account's peak, rules followed and your reads of the week ahead (P&amp;L → Scoreboard). The 1%-a-week target is retired. Your own limits sit above the rule page: all A14 worst cases under your cap and a 5% day under your stress limit, per account; over either, the ladder shows no new id.</li>
         </ul>
-        <p class="note">Ids entered before 2 Nov keep their own lots and strikes and aren't scored against this page, though the Trade plan applies the 7 DTE exit and the windows to them from now on. The Journal shows how older trades would have scored only with hindsight switched on. Flags, not orders.</p>
+        <p class="note">Ids entered before 2 Nov keep their own lots and strikes and aren't scored against this page, though the Trade plan applies the 7 DTE exit and the delta band to them from now on. The Journal shows how older trades would have scored only with hindsight switched on. Flags, not orders.</p>
       </section>
       <section class="panel c6" id="g-a14why" data-sub="A14 rules"><header><h2>What the numbers said</h2><span class="small muted">model, every Friday since 2009</span></header>
         <ul class="gl">
           <li><b>Exit at 7 DTE:</b> beat 2 DTE at every entry DTE and halved the losses over 50% of margin.</li>
           <li><b>Entry at 42–56 DTE:</b> beat entries at 35 DTE or less. A −5% and +10 vol shock costs about $3,100 per $10k of worst case at 45 DTE, against $6,000 at 14 and $8,500 at 7.</li>
           <li><b>Cap of 4:</b> cost almost nothing against no cap, with less swing.</li>
-          <li><b>Daily stops:</b> checking stops only on window days raised losses over 50% of margin from 0.6% to 1.8% of trades, so targets and stops aren't on the window timetable.</li>
+          <li><b>Daily stops:</b> checking stops only three days a week raised losses over 50% of margin from 0.6% to 1.8% of trades, so targets and stops are watched every day.</li>
           <li><b>Vega and gamma:</b> vega is about 2–3% of worst case at every DTE, so capping worst case caps vega. A 1% index move costs about a day's theta; the 7 DTE exit keeps gamma out of the last week.</li>
           <li><b>One structure:</b> three regime versions added under a point a trade. Regime pays through size, which is the readiness bar's job.</li>
         </ul>
@@ -622,6 +624,7 @@
 <script src="backtest.js"></script>
 <script src="heads.js"></script>
 <script src="actions.js"></script>
+<script src="f49.js"></script>
 <script src="now.js"></script>
   <script src="update.js"></script>
 </body>

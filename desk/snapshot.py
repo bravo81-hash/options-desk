@@ -35,8 +35,8 @@ _lock = threading.Lock()
 KEEP = {"calendar": ["symbol"], "pair": ["symbol", "front", "back"], "pair/curve": ["symbol", "front", "back", "strike"],
         "skew": ["symbol", "tenor"], "pick": ["vol"], "a14/scan": ["sym", "vol"], "a14/curve": ["sym", "expiry", "u", "s", "l"]}
 PLAIN = ["risk", "a14/stats", "a14/history", "a14/rules", "journal", "journal/due", "evidence", "status", "pnl/weekly", "pnl/today", "recon", "em",
-         "md/account", "freshness", "backtest", "conditions", "heads", "process", "rulebook"]
-SHAPE = 2  # raise when PLAIN or KEEP changes, so the next publish carries the new entries
+         "md/account", "freshness", "backtest", "conditions", "heads", "process", "rulebook", "limits", "f49"]
+SHAPE = 3  # raise when PLAIN or KEEP changes, so the next publish carries the new entries
 A14_CURVES = 30  # risk curves for the top candidates per underlying (default sort: since-2009 return per day)
 
 
@@ -184,7 +184,7 @@ def fingerprint():
         parts.append(f and f"{f}:{os.path.getmtime(f)}")
     typed = [f"SELECT COUNT(*) || ':' || COALESCE(MAX(updated), '') v FROM {t}" for t in journal.MANUAL]  # what was typed into the journal can't be rebuilt, so it travels at once
     parts.append(SHAPE)
-    for sql in ["SELECT MAX(date) v FROM account_daily", "SELECT COUNT(*) v FROM executions", "SELECT COUNT(*) || ':' || COALESCE(MAX(made), '') v FROM market_calls", *typed]:
+    for sql in ["SELECT MAX(date) v FROM account_daily", "SELECT COUNT(*) v FROM executions", "SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) v FROM limit_changes", "SELECT COUNT(*) || ':' || COALESCE(MAX(made), '') v FROM market_calls", *typed]:
         try:
             parts.append(q(sql))
         except Exception:

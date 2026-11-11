@@ -562,16 +562,21 @@ def jump_freq(vix=None, since="1990-01-02"):
 
 
 def limits(trades, labels, book, gaps, cfg=None):
-    """Each account's open book against the A14 rule page (ids per ticker, worst case an id) and against the stress limit: the loss on a
-    day the index moves `move` % either way with IVs moving with it (the Gap what-if's joint column in its default MODE), as % of
-    NAV. Both limits are personal (config.local.json risk.stress: limit_pct for the stress day, cap_pct for all A14 worst cases added up; one
-    number or {label: number}); unset, the figure is shown, not alerted. "over" marks an account past either: no new id fits until it is back under.
+    """Each account's open book against the A14 rule page (ids per ticker, worst case an id), against your worst-case caps (one per
+    strategy and one on every strategy together: each open trade at its worst case, added up) and against the stress limit: the loss
+    on a day the index moves `move` % either way with IVs moving with it (the Gap what-if's joint column in its default MODE). All
+    are % of NAV and personal (desk/limitcfg.py: set on the Rules page, starting from config.local.json); unset, the figure is shown,
+    not alerted. "over" marks an account past any of them: no new id fits until it is back under.
     Information only: nothing here closes, blocks or sizes anything."""
-    from . import a14rules
-    cfg = (load_config()["risk"].get("stress") or {}) if cfg is None else cfg
-    move, lim, capw = float(cfg.get("move") or 5), cfg.get("limit_pct"), cfg.get("cap_pct")
+    from . import a14rules, limitcfg
+    if cfg is None:
+        cur = limitcfg.current()
+        vals, move = cur["values"], cur["move"]
+    else:
+        vals, move = {"cap:A14": cfg.get("cap_pct"), "cap:F49": cfg.get("cap_f49"), "cap:total": cfg.get("cap_total"), "stress": cfg.get("limit_pct")}, float(cfg.get("move") or 5)
     navs = {m["label"]: m["nav"] / m["rate"] for m in (book or {}).get("margin") or [] if m.get("nav") and m.get("rate")}
-    rule = a14rules.book([{**t, "acct": labels.get(t["ib_account"]) or t["group"]} for t in trades], navs)
+    rows = [{**t, "acct": labels.get(t["ib_account"]) or t["group"]} for t in trades]
+    rule, by = a14rules.book(rows, navs), a14rules.worst_by(rows, navs)
     gi = {g: i for i, g in enumerate(gaps.get("gaps") or []) if g is not None}
     j = (gaps.get("vols") or []).index("joint") if "joint" in (gaps.get("vols") or []) else None
     strike = {x["label"]: x["cells"] for x in ((gaps.get("modes") or {}).get("strike") or {}).get("accounts") or []}
@@ -583,17 +588,25 @@ def limits(trades, labels, book, gaps, cfg=None):
         down, up = cell(-move), cell(move)
         pct = round(100 * worst(acc["cells"]) / nav, 1) if nav else None
         hard = round(100 * worst(strike[a]) / nav, 1) if nav and a in strike and gaps.get("mode") != "strike" else None  # each strike keeping its IV
-        cap = lim.get(a) if isinstance(lim, dict) else lim
+        cap = limitcfg.value("stress", a, vals)
         r = rule.get(a) or {}
         alerts = list(r.get("alerts") or [])
         if cap is not None and pct is not None and pct > cap:
             alerts.append(f"a {move:g}% day with IVs moving with it would cost {pct:.1f}% of NAV, over your {cap:g}% limit")
-        tot, wp = (capw.get(a) if isinstance(capw, dict) else capw), r.get("worst_pct")
-        if tot is not None and r and (wp is None or wp > tot):  # None with ids open: an id has no ceiling
-            alerts.append(f"all A14 worst cases add to {wp:.1f}% of NAV, over your {tot:g}% cap" if wp is not None else f"an A14 id has no ceiling: over your {tot:g}% cap")
-        over = bool((cap is not None and pct is not None and pct > cap) or (tot is not None and r and (wp is None or wp > tot)))
+        caps = []
+        for key in ("A14", "F49", "total"):
+            w, lim = (by.get(a) or {}).get(key), limitcfg.value(f"cap:{key}", a, vals)
+            if not w and (key != "total" and lim is None):
+                continue
+            w = w or {"n": 0, "pct": 0.0 if nav else None, "open_ended": 0, "unpriced": 0}
+            name = "all strategies together" if key == "total" else f"all {key} worst cases"
+            over = lim is not None and w["n"] > 0 and (w["open_ended"] > 0 or (w["pct"] is not None and w["pct"] > lim))
+            if over:
+                alerts.append(f"{name} add to {w['pct']:.1f}% of NAV, over your {lim:g}% cap" if not w["open_ended"] else f"{'a trade' if key == 'total' else f'an {key} id'} has no ceiling: over your {lim:g}% cap")
+            caps.append({"key": key, "pct": w["pct"], "cap": lim, "over": over, "n": w["n"], "open_ended": w["open_ended"], "unpriced": w["unpriced"]})
+        over = bool((cap is not None and pct is not None and pct > cap) or any(c["over"] for c in caps))
         out.append({"label": a, "nav_usd": round(nav) if nav else None, "a14": r or None, "stress": {"move": move, "down": down, "up": up, "pct": pct, "limit": cap,
-                    "ten": [cell(-10.0), cell(10.0)], "mode": gaps.get("mode") or "strike", "strike_pct": hard}, "cap": tot, "over": over, "alerts": alerts})
+                    "ten": [cell(-10.0), cell(10.0)], "mode": gaps.get("mode") or "strike", "strike_pct": hard}, "cap": limitcfg.value("cap:A14", a, vals), "caps": caps, "over": over, "alerts": alerts})
     return out
 
 
@@ -646,6 +659,19 @@ def _book(m, spots, labels):
     return {"vix": last("VIX"), "rvx": last("RVX"), "spx": spots.get("SPX") or last("SPX"), "margin": sorted(margin, key=lambda x: x["label"])}
 
 
+def cached_close(symbol, entered=None, now=None):
+    """Last completed daily index close, never an intraday spot (no network fetch)."""
+    from .recorder import ET
+    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ET)
+    latest = now.date() if (now.hour, now.minute) >= (16, 0) else now.date() - dt.timedelta(days=1)
+    rows = db.query("SELECT date, close FROM index_daily WHERE symbol=? AND date<=? AND close>0 ORDER BY date DESC LIMIT 1",
+                    (symbol, latest.isoformat()))
+    r = rows[0] if rows else None
+    if not r or (entered and r["date"] < entered):
+        return None
+    return {"date": r["date"], "price": r["close"], "source": "cached daily index close"}
+
+
 def payload():
     trades, path = load_open_trades()
     raw = db.get_meta("risk_marks")
@@ -687,6 +713,10 @@ def payload():
             t["opened_iso"] = _local_dt(t["opened"]).isoformat()
         except Exception:
             t["opened_iso"] = None
+        if t["strategy"] == "F49":
+            from .recorder import ET
+            entered = dt.datetime.fromisoformat(t["opened_iso"]).astimezone(ET).date().isoformat() if t["opened_iso"] else None
+            t["index_close"] = cached_close(t["underlying"], entered)
         t["last_pnl"] = last_pnl.get(t["id"])
         t["new_since_close"] = t["last_pnl"] is None and bool(last_date) and (t["opened_iso"] or "")[:10] > last_date
     cal = [t for t in trades if t["strategy"] in CALENDAR_FAMILY]

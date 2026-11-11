@@ -4,7 +4,7 @@ Information only: nothing here sizes, blocks or places anything."""
 import datetime as dt
 import json
 
-from . import db, load_config
+from . import db
 from .recorder import session_date
 
 FROM = "2026-11-11"  # limits are scored against entries from here
@@ -12,7 +12,7 @@ CALLS = ("quiet", "normal", "rough")
 AHEAD, QUIET, ROUGH = 5, -0.5, -2.0  # SPX's worst close over the next 5 sessions against the call day's close, %
 # since 1990 the week after any day was quiet 48% of the time, normal 32%, rough 20%
 WHY = {"aside": "entered with VIX/VIX3M in backwardation", "a14size": "loss at the stop above the rule's share of NAV", "a14add": "size added after entry",
-       "a14dte": "entered outside the DTE window", "a14day": "not entered on a Friday", "a14cap": "more ids on the ticker than the cap",
+       "a14dte": "entered outside the DTE window", "a14day": "entered on a day the entry rule didn't allow", "a14week": "a second id on the ticker in one week", "a14cap": "more ids on the ticker than the cap",
        "a14window": "adjusted on a non-window day", "cap": "risk above the Journal's cap", "stop": "held past the hard stop", "time": "held past the time stop",
        "adjust": "more adjustments than the card allows", "gate": "calendar entered outside its gates", "limits": "the account was over your limits at entry"}
 
@@ -20,6 +20,7 @@ WHY = {"aside": "entered with VIX/VIX3M in backwardation", "a14size": "loss at t
 def init():
     db.write("CREATE TABLE IF NOT EXISTS market_calls (date TEXT PRIMARY KEY, mine TEXT, app TEXT, risk REAL, made TEXT)")
     db.write("CREATE TABLE IF NOT EXISTS process_day (date TEXT PRIMARY KEY, over TEXT, updated TEXT)")
+    db.write("CREATE TABLE IF NOT EXISTS process_sizes (date TEXT PRIMARY KEY, sizes TEXT, updated TEXT)")
 
 
 def _stamp():
@@ -92,6 +93,26 @@ def snap_day(limits, now=None):
         db.write("INSERT OR REPLACE INTO process_day VALUES (?,?,?)", (session_date(now).isoformat(), json.dumps(sorted(a["label"] for a in limits or [] if a.get("over"))), _stamp()))
     except Exception:
         pass  # a read-only copy or a locked file: the Risk grid still loads
+
+
+def snap_sizes(ready, now=None):
+    """The readiness bar's size per strategy this session ({"A14 SPX": "Half size", ...}), kept so a midweek entry can be read against it.
+    The last read of the session stands: entries are made in its last hour."""
+    try:
+        sizes = {x["name"]: x["size"] for x in (ready or {}).get("strategies") or []}
+        if sizes:
+            init()
+            db.write("INSERT OR REPLACE INTO process_sizes VALUES (?,?,?)", (session_date(now).isoformat(), json.dumps(sizes), _stamp()))
+    except Exception:
+        pass
+
+
+def size_on(date, name):
+    try:
+        r = db.query("SELECT sizes FROM process_sizes WHERE date=?", (date,))
+    except Exception:
+        return None
+    return json.loads(r[0]["sizes"]).get(name) if r else None
 
 
 def over_on(date):
@@ -168,5 +189,7 @@ def payload(risk=None):
         dd = drawdown()
     except Exception as e:
         dd = {"error": str(e)}
-    lim = (load_config().get("risk", {}).get("stress") or {})
-    return {"calls": c, "log": lg, "drawdown": dd, "limits": {"cap_pct": lim.get("cap_pct"), "limit_pct": lim.get("limit_pct")}, "from": FROM}
+    from . import limitcfg
+    v = limitcfg.current()["values"]
+    one = lambda x: max(x.values()) if isinstance(x, dict) and x else x  # noqa: E731
+    return {"calls": c, "log": lg, "drawdown": dd, "limits": {"cap_pct": one(v.get("cap:A14")), "limit_pct": one(v.get("stress")), "caps": {k: one(x) for k, x in v.items()}}, "from": FROM}

@@ -24,8 +24,9 @@ from .chain import LOCK, connect, dte, option_params, snapshot, underlying
 from .history import series
 from .recorder import ET, fit_rows
 
-GRID = {"SPX": {"step": 25, "lo": 0.92, "hi": 1.02, "up": [50, 75, 100, 125], "extra": [25, 50, 75]},
-        "RUT": {"step": 10, "lo": 0.89, "hi": 1.02, "up": [30, 40, 50, 60, 75], "extra": [10, 20, 30, 50]}}
+GRID = {"SPX": {"step": 25, "lo": 0.92, "far": 0.84, "hi": 1.02, "up": [50, 75, 100, 125], "extra": [25, 50, 75]},
+        "RUT": {"step": 10, "lo": 0.89, "far": 0.80, "hi": 1.02, "up": [30, 40, 50, 60, 75], "extra": [10, 20, 30, 50]}}
+# "far": how low the puts go on expiries in the rule's entry window, for the F49 tent's lower long (desk/f49.py)
 status = {"running": False, "log": [], "last": None}
 
 
@@ -93,7 +94,8 @@ def fetch_chain(symbols=("SPX", "RUT"), dte_min=7, dte_max=110):
             for e in exps:
                 cls, strikes, ib_e = params[e]
                 back[ib_e] = e
-                put_k = [k for k in strikes if k % g["step"] == 0 and g["lo"] * spot <= k <= g["hi"] * spot]
+                lo = g["far"] if a14rules.DTE_LO <= dte(e) <= a14rules.DTE_HI else g["lo"]
+                put_k = [k for k in strikes if k % g["step"] == 0 and lo * spot <= k <= g["hi"] * spot]
                 call_k = [k for k in strikes if k % g["step"] == 0 and 0.995 * spot <= k <= g["hi"] * spot]
                 cons += [Option(sym, ib_e, k, "P", "SMART", tradingClass=cls) for k in put_k]
                 cons += [Option(sym, ib_e, k, "C", "SMART", tradingClass=cls) for k in call_k]

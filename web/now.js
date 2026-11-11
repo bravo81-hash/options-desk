@@ -14,6 +14,25 @@ const day = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-AU", {weekd
 const big = (word, k, sub) => `<div class="nwbig"><b class="${k}">${esc(word)}</b><span>${sub}</span></div>`;
 let D = {};
 
+/* the entry rule for one ticker today (desk/a14rules.py entry_ok): the week's Friday entry, or a midweek one that replaces it */
+const etDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-CA", {timeZone: "America/New_York"}) : null;
+window.a14Entry = function (u, LAD, Rk, Rd) {
+  if (!Rk || !Array.isArray(Rk.trades) || !Array.isArray(Rk.limits)) return {ok: false, why: "the book limits are unread"};
+  const P = LAD.rule, s = ((Rd && Rd.strategies) || []).find((x) => x.name === `A14 ${u}`), size = s ? s.size : null;
+  const over = ((Rk && Rk.limits) || []).filter((a) => a.over).map((a) => a.label);
+  const wk = ((Rk && Rk.trades) || []).filter((t) => t.strategy === "A14" && t.underlying === u && (etDate(t.opened_iso) || "") >= LAD.week_start);
+  if (over.length) return {ok: false, why: `${over.join(" and ")} over your limits`};
+  if (!LAD.session) return {ok: false, why: "the market is shut"};
+  const entered = ((LAD.week_opened || {})[u] || []);
+  if (entered.length) return {ok: false, why: `this week's id is already on (opened ${day(entered[0])})`};
+  if (wk.length) return {ok: false, why: `this week's id is already on (opened ${day(etDate(wk[0].opened_iso))})`};
+  if (!size) return {ok: false, why: "the readiness size is unread"};
+  if (size === "Stand aside") return {ok: false, why: "the readiness bar says stand aside"};
+  if (LAD.entry_day) return {ok: true, kind: "friday", why: "the week's entry day"};
+  if (LAD.today >= P.mid_from && (P.mid_sizes || []).includes(size)) return {ok: true, kind: "midweek", why: `${size.toLowerCase()} on the readiness bar and every account inside its limits`};
+  return {ok: false, why: `midweek needs full or three-quarter size; the bar reads ${size.toLowerCase()}`};
+};
+
 /* ---------- 1. can I open anything? ---------- */
 function canOpen() {
   const el = $("nwOpen"), Rd = D.Rd, Rk = D.Rk, LAD = D.LAD;
@@ -34,20 +53,19 @@ function canOpen() {
     head = big("…", "muted", "pricing the next id");
   } else if (LAD.error) {
     head = big("?", "muted", esc(LAD.error));
-  } else if (LAD.entry_next !== etToday) {
-    head = big("Not today", "muted", `the rules open new ids on Fridays: next entry ${day(LAD.entry_next)}`);
-    lines = [`If it were today: ${sizes}`];
   } else {
-    const P = LAD.rule, known = Rk && Rk.trades, rows = [];
-    ["SPX", "RUT"].forEach((u) => { const n = LAD.next[u], s = a14.find((x) => x.name === `A14 ${u}`), lots = n && s ? n.lots[s.size] : null;
+    const P = LAD.rule, known = Rk && Rk.trades, rows = [], kinds = [];
+    ["SPX", "RUT"].forEach((u) => { const n = LAD.next[u], s = a14.find((x) => x.name === `A14 ${u}`), lots = n && s ? n.lots[s.size] : null, e = window.a14Entry(u, LAD, Rk, Rd);
       const most = known ? Math.max(0, ...Object.keys(LAD.navs).map((a) => Rk.trades.filter((t) => t.strategy === "A14" && t.underlying === u && t.acctLabel === a).length)) : null;
-      if (ok(most) && most >= P.cap) rows.push(`<b>${u}</b>: no, ${most} ids open (cap ${P.cap})`);
+      if (!e.ok) rows.push(`<b>${u}</b>: no, ${esc(e.why)}`);
+      else if (ok(most) && most >= P.cap) rows.push(`<b>${u}</b>: no, ${most} ids open (cap ${P.cap})`);
       else if (!n) rows.push(`<b>${u}</b>: no Friday expiry in ${P.dte_lo}–${P.dte_hi} DTE on the chain`);
       else if (!lots) rows.push(`<b>${u}</b>: no, ${esc(s ? s.size.toLowerCase() : "no size")} rounds to 0 lots`);
-      else rows.push(`<b>${u}</b>: yes, <b>${lots} lot${lots > 1 ? "s" : ""}</b> at ${esc(s.size.toLowerCase())} · ${n.dte}d <span class="mono">${Math.round(n.upper)}/${Math.round(n.short)}/${Math.round(n.lower)}</span>`); });
-    const yes = rows.some((r) => / yes, /.test(r));
-    head = big(yes ? "Yes" : "No", yes ? "pos" : "neg", yes ? "one id per ticker, same lots in every account" : "nothing fits today");
+      else { kinds.push(e.kind); rows.push(`<b>${u}</b>: yes, <b>${lots} lot${lots > 1 ? "s" : ""}</b> at ${esc(s.size.toLowerCase())} · ${n.dte}d <span class="mono">${Math.round(n.upper)}/${Math.round(n.short)}/${Math.round(n.lower)}</span>${e.kind === "midweek" ? ` <span class="chip sz" title="${esc(e.why)}">midweek: replaces Friday's</span>` : ""}`); } });
+    const yes = kinds.length > 0;
+    head = yes ? big("Yes", "pos", "one id per ticker this week, same lots in every account") : !LAD.session ? big("Not today", "muted", "the market is shut") : LAD.entry_day ? big("No", "neg", "nothing fits today") : big("Not today", "muted", `no ticker meets the midweek conditions: next Friday entry ${day(LAD.entry_next)}`);
     lines = rows;
+    if (!yes && !LAD.entry_day) lines.push(`Sizes now: ${sizes}`);
   }
   el.innerHTML = `${head}<ul class="nwlist">${lines.map((x) => `<li>${x}</li>`).join("")}</ul>
     <p class="small muted">${esc(Rd.size)}: ${esc(Rd.why)}. ${go("actions", "A14 ladder")}</p>`;
@@ -81,14 +99,18 @@ function limits() {
   if (!Lm || !Lm.length) { el.innerHTML = `<div class="state">${D.loaded ? "No marked trades to measure." : "Measuring the book…"}</div>`; return; }
   const bar = (v, cap, label) => !ok(v) ? "–" : bulletSvg(v, {w: 220, lo: 0, hi: Math.max((cap || 10) * 2, v * 1.1), color: ok(cap) && v > cap ? "var(--down)" : "var(--up)", label,
     zones: ok(cap) ? [{from: 0, to: cap, color: "var(--up)"}, {from: cap, to: Math.max(cap * 2, v * 1.1), color: "var(--down)"}] : [], marks: ok(cap) ? [{v: cap, color: "var(--ink)", label: `your limit ${cap}%`}] : []});
-  const anyOver = Lm.some((a) => a.over);
+  const anyOver = Lm.some((a) => a.over), move = fmt((Lm[0].stress || {}).move, 0);
+  const NAME = {A14: "All A14 worst cases", F49: "All F49 worst cases", total: "Every strategy together"};
+  const keys = ["A14", "F49", "total"].filter((k) => Lm.some((a) => (a.caps || []).some((c) => c.key === k && (ok(c.cap) || (k !== "total" && c.n)))));
+  const capCell = (a, k) => { const c = (a.caps || []).find((x) => x.key === k);
+    if (!c) return `<td class="small muted">none open</td>`;
+    return `<td><b class="${c.over ? "neg" : ""}">${c.open_ended ? "no ceiling" : ok(c.pct) ? fmt(c.pct, 1) + "%" : "–"}</b> <span class="small muted">of ${ok(c.cap) ? c.cap + "%" : "no cap set"}</span><br>${bar(c.pct, c.cap, `${a.label} ${NAME[k]} ${c.pct}% of NAV`)}</td>`; };
   el.innerHTML = `${big(anyOver ? "Over" : "Within", anyOver ? "neg" : "pos", anyOver ? "no new ids until back under" : "room for the next id")}
-    <div class="tbl"><table><thead><tr><th>Account</th><th title="every open A14 id at its worst case, added up, as % of NAV">All worst cases · your cap</th><th title="the whole book on a ${fmt((Lm[0].stress || {}).move, 0)}% day either way with IVs moving, as % of NAV">A ${fmt((Lm[0].stress || {}).move, 0)}% day · your limit</th></tr></thead><tbody>
-    ${Lm.map((a) => { const r = a.a14 || {}, s = a.stress || {};
-      return `<tr><td><b>${esc(a.label)}</b></td>
-        <td><b class="${ok(a.cap) && r.worst_pct > a.cap ? "neg" : ""}">${ok(r.worst_pct) ? fmt(r.worst_pct, 1) + "%" : "–"}</b> <span class="small muted">of ${ok(a.cap) ? a.cap + "%" : "no cap set"}</span><br>${bar(r.worst_pct, a.cap, `${a.label} worst cases ${r.worst_pct}% of NAV`)}</td>
-        <td><b class="${ok(s.limit) && s.pct > s.limit ? "neg" : ""}">${ok(s.pct) ? fmt(s.pct, 1) + "%" : "–"}</b> <span class="small muted">of ${ok(s.limit) ? s.limit + "%" : "no limit set"}</span><br>${bar(s.pct, s.limit, `${a.label} stress ${s.pct}% of NAV`)}</td></tr>`; }).join("")}</tbody></table></div>
-    <p class="small muted">${go("risk", "Book what-if", "What-if")}</p>`;
+    <div class="tbl"><table><thead><tr><th>Limit</th>${Lm.map((a) => `<th>${esc(a.label)}</th>`).join("")}</tr></thead><tbody>
+    ${keys.map((k) => `<tr><td title="each open trade at its worst case, added up, as % of NAV">${NAME[k]}</td>${Lm.map((a) => capCell(a, k)).join("")}</tr>`).join("")}
+    <tr><td title="the whole book on a ${move}% day either way with IVs moving, as % of NAV">A ${move}% day, whole book</td>${Lm.map((a) => { const s = a.stress || {};
+      return `<td><b class="${ok(s.limit) && s.pct > s.limit ? "neg" : ""}">${ok(s.pct) ? fmt(s.pct, 1) + "%" : "–"}</b> <span class="small muted">of ${ok(s.limit) ? s.limit + "%" : "no limit set"}</span><br>${bar(s.pct, s.limit, `${a.label} stress ${s.pct}% of NAV`)}</td>`; }).join("")}</tr></tbody></table></div>
+    <p class="small muted">${go("risk", "Book what-if", "What-if")} ${go("rules", "Change a limit")}</p>`;
 }
 
 /* ---------- the daily read: one tap, scored a week later ---------- */
@@ -163,7 +185,30 @@ function rules() {
       <div class="rbwho"><span>Set by: ${esc(r.who)}</span><span>${esc(r.where || "")}</span></div></div>`).join("")}</div></div>`; }).join("") || `<div class="state">No rule matches "${esc(q)}".</div>`;
   $("rbMeta").textContent = `${n} rule${n === 1 ? "" : "s"} · numbers read from the live settings · reference only`;
 }
-window.loadRules = async () => { RB = await api("/api/rulebook").catch(() => ({error: "Rules unavailable"})); rules(); };
+let LC = null;
+function limitsEdit() {
+  const el = $("rbLimBody"); if (!el) return;
+  if (!LC || LC.error || !LC.values) { $("rbLimits").hidden = true; return; }
+  $("rbLimits").hidden = false;
+  const RO = !!window.DESK_CLOUD, one = (v) => v && typeof v === "object" ? Math.max(...Object.values(v)) : v;
+  const HELP = {"cap:A14": "every open A14 id at its worst case, added up", "cap:F49": "every open F49 id at its worst case, added up", "cap:total": "every open trade of every strategy at its worst case, added up",
+    "ids:A14": "open ids per ticker and account, separate from the NAV cap",
+    stress: `the whole book on a ${fmt(LC.move, 0)}% day either way, with volatility moving with it`};
+  const wait = Object.fromEntries((LC.pending || []).map((p) => [p.key, p]));
+  const cell = (k) => { const v = one(LC.values[k]), p = wait[k];
+    return `<div><span class="lbl">${esc(LC.names[k])}</span><span class="row" style="gap:4px"><input type="number" class="rbnum" data-key="${k}" value="${ok(v) ? v : ""}" placeholder="not set" min="1" max="100" step="${k === "ids:A14" ? 1 : 0.5}" style="width:84px"${RO ? " disabled" : ""}> <b>${k === "ids:A14" ? "ids" : "%"}</b></span>
+      <span class="small muted">${esc(HELP[k])}</span>${p ? `<span class="small wrn">${ok(p.new) ? `${p.new}${k === "ids:A14" ? " ids" : "%"}` : "no limit"} from ${day(p.effective)}</span>` : ""}</div>`; };
+  const txt = (v, k) => ok(v) ? `${v}${k === "ids:A14" ? " ids" : "%"}` : "not set";
+  el.innerHTML = `<div class="kv mini">${Object.keys(LC.names).map(cell).join("")}</div><div id="rbLimMsg" class="small"></div>
+    <p class="small muted">${RO ? "Limits are changed on the laptop desk: this copy can't save. " : "Type a number and press Enter; clear the box to remove a limit. "}A tighter limit applies at once. A looser one, or removing one, applies from the next US session, so a cap can't be raised in the minute you want to open a trade. The stress limit covers the whole book because a 5% day hits every strategy at once.</p>
+    ${(LC.log || []).length ? `<details><summary class="small">Changes made (${LC.log.length})</summary><div class="tbl"><table><tbody>${LC.log.map((r) => `<tr><td class="small">${new Date(r.made).toLocaleString([], {day: "numeric", month: "short", hour: "numeric", minute: "2-digit"})}</td><td>${esc(LC.names[r.key] || r.key)}</td><td class="mono">${txt(r.old, r.key)} → ${txt(r.new, r.key)}</td><td class="small muted">in force from ${day(r.effective)}</td></tr>`).join("")}</tbody></table></div></details>` : ""}`;
+  el.querySelectorAll(".rbnum").forEach((i) => i.addEventListener("change", async () => {
+    const r = await api("/api/limits", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: i.dataset.key, value: i.value === "" ? null : +i.value})}).catch(() => ({error: "Could not save."}));
+    if (r.error) { $("rbLimMsg").innerHTML = `<span class="neg">${esc(r.error)}</span>`; return; }
+    LC = r; limitsEdit(); if (window.riskStale) window.riskStale();
+    RB = await api("/api/rulebook").catch(() => RB); rules(); }));
+}
+window.loadRules = async () => { [RB, LC] = await Promise.all([api("/api/rulebook").catch(() => ({error: "Rules unavailable"})), api("/api/limits").catch(() => null)]); limitsEdit(); rules(); };
 document.addEventListener("input", (e) => { if (e.target.id === "rbFind") rules(); });
 
 /* ---------- Detail switch: the other tabs stay, out of the way until wanted ---------- */

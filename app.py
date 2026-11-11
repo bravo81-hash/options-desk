@@ -23,7 +23,7 @@ if sys.stdout is None or sys.stderr is None:
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from desk import ROOT, a14, a14rules, accounts, backtest, conditions, flex, heads, journal, pick, process, readiness, rulebook, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
+from desk import ROOT, a14, a14rules, accounts, backtest, conditions, f49, flex, heads, limitcfg, journal, pick, process, readiness, rulebook, season, snapshot, vixcond, analytics, db, expected, history, load_config, market, recorder, risk, updater
 from desk.recorder import ET, session_date
 
 app = Flask(__name__, static_folder=str(ROOT / "web"), static_url_path="")
@@ -336,6 +336,7 @@ def api_readiness():
             upd = updater.status["finished"]  # a finished desk update makes the cached verdict stale
             if _READY["v"] is None or (time.time() - _READY["t"]) > 300 or request.args.get("fresh") or _READY.get("u") != upd:
                 _READY["v"], _READY["t"], _READY["u"] = readiness.now(), time.time(), upd
+                process.snap_sizes(_READY["v"])  # the bar's size per strategy this session, for the midweek entry check
             return ok(_READY["v"])
     except Exception as e:
         return ok({"error": f"Readiness unavailable: {e}"})
@@ -442,6 +443,25 @@ def api_a14_history():
 @app.get("/api/rulebook")
 def api_rulebook():
     return ok(rulebook.book())
+
+
+@app.get("/api/limits")
+def api_limits():
+    return ok(limitcfg.current())
+
+
+@app.post("/api/limits")
+def api_limits_save():
+    b = request.get_json(force=True) or {}
+    return ok(limitcfg.save(b.get("key", ""), b.get("value")))
+
+
+@app.get("/api/f49")
+def api_f49():
+    try:
+        return ok(f49.state((_READY.get("v") or {})))
+    except Exception as e:
+        return ok({"error": f"F49 scanner unavailable: {e}"})
 
 
 @app.get("/api/process")
@@ -630,7 +650,8 @@ if __name__ == "__main__":
     except Exception as e:
         print("NAV history import skipped:", e)
     snapshot.FLASK = app
-    threading.Thread(target=scheduler, daemon=True).start()
+    if "--no-background-jobs" not in sys.argv:
+        threading.Thread(target=scheduler, daemon=True).start()
     url = f"http://127.0.0.1:{CFG['port']}/"
     if "--no-browser" not in sys.argv:
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()

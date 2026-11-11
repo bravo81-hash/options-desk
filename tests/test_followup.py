@@ -182,3 +182,41 @@ def test_an_empty_name_stays_empty(monkeypatch):
     monkeypatch.setattr(trades, "load_config", lambda: {})
     assert trades.fix_name("") == ""
     assert trades.fix_name(None) is None
+
+
+# ------------------------------------------------------------------ F49: the far-OTM tent off the chain's quotes
+def _chain(spot=7500.0, dte=49):
+    import numpy as np
+    from desk import a14
+    rows, T = [], dte / 365
+    for k in range(6300, 7701, 25):
+        iv = 0.16 + 0.9 * max(0.0, (spot - k) / spot) ** 1.1
+        p = float(a14.put_price(spot, k, T, iv))
+        rows.append({"expiry": "20261231", "dte": dte, "strike": float(k), "right": "P", "trading_class": "SPXW", "bid": round(p - 0.4, 2), "ask": round(p + 0.4, 2), "mid": round(p, 2), "iv": iv, "fwd": spot})
+        if k >= 7475:
+            rows.append({**rows[-1], "right": "C", "mid": round(p + spot - k, 2), "bid": round(p + spot - k - 0.4, 2), "ask": round(p + spot - k + 0.4, 2)})
+    return {"spot": spot, "rows": rows}
+
+
+def test_the_f49_tent_sits_one_straddle_below_the_index_with_the_lower_wing_wider():
+    from desk import a14, f49
+    sb = _chain()
+    k, em = f49.straddle(sb, "20261231")
+    assert k == 7500.0 and 300 < em < 400
+    sm = a14._smiles(sb)["20261231"]
+    c = f49.candidate("SPX", sb, sm, "20261231", em, 1.0)
+    assert abs(c["short"] - (7500 - em)) <= 12.5 and c["upper"] > c["short"] > c["lower"] and c["L"] > c["U"]
+    assert c["risk"] == round((c["L"] - c["U"] - c["credit"]) * 100) and c["quoted"] and c["credit_nat"] == pytest.approx(c["credit"] - 1.6, abs=0.02)  # four legs at 0.40 a side
+    assert c["at_shorts"]["now"] < 0 and c["at_shorts"]["wk2_iv5"] < c["at_shorts"]["wk2"]  # it loses at the shorts, more with IV up
+    assert c["curve"]["exp"][0] == pytest.approx(-c["risk"], abs=1) and max(c["curve"]["exp"]) == pytest.approx((c["U"] + c["credit"]) * 100, abs=1)
+    S = f49.scan({"symbols": {"SPX": sb}}, {"SPX": "Half size"}, 120000.0)
+    rule = next(x for x in S["SPX"]["cands"] if x["rule"])
+    assert rule["lots_full"] == int(9000 / rule["risk"]) and rule["lots"] == int(4500 / rule["risk"]) and S["RUT"]["note"].startswith("No chain")
+    short = {"spot": 7500.0, "rows": [r for r in sb["rows"] if r["strike"] >= 7150]}
+    assert "stops above the lower long" in f49.scan({"symbols": {"SPX": short}}, {}, None)["SPX"]["note"]
+
+
+def test_f49_is_a_strategy_with_a_card():
+    from desk import positions, trades
+    assert trades.classify("MGN", "SPX F49 31 DEC 2 LOTS") == "F49" and trades.classify("MGN", "SPX A14 F490") == "A14"
+    assert positions.CARDS["F49"] == {"stop": None, "time": 14, "adjust": "never"}

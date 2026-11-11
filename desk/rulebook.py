@@ -1,10 +1,10 @@
 """The rule book: every rule the desk applies, in one place, each with what it is, why it is there and who set it. The numbers are
 read from the code that enforces them (a14rules, the strategy cards, readiness, the personal limits), so this page can't drift.
 Reference only: it changes nothing."""
-from . import a14rules, load_config, process, readiness
+from . import a14rules, f49, limitcfg, process, readiness
 from .positions import CARDS
 
-YOU2, YOU10, DESK = "You, 2 Nov 2026", "You, 10 Nov 2026", "Desk default"
+YOU2, YOU10, YOU11, DESK = "You, 2 Nov 2026", "You, 10 Nov 2026", "You, 11 Nov 2026", "Desk default"
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
@@ -13,22 +13,34 @@ def _r(name, rule, what, why, who, where=""):
 
 
 def book():
-    R, lim = a14rules.rule(), (load_config().get("risk", {}).get("stress") or {})
-    cap, stress, move = lim.get("cap_pct"), lim.get("limit_pct"), lim.get("move") or 5
+    R, L = a14rules.rule(), limitcfg.current()
+    one = lambda v: max(v.values()) if isinstance(v, dict) and v else v  # noqa: E731
+    V = {k: one(v) for k, v in L["values"].items()}
+    cap, capf, capt, stress, move = V["cap:A14"], V["cap:F49"], V["cap:total"], V["stress"], L["move"]
     pc = lambda v: "not set" if v is None else f"{v:g}%"  # noqa: E731
-    win = ", ".join(DAYS[d] for d in R["windows"])
     full2 = int((cap or 0) // R["worst_nav"]) if cap else None
+    wait = {p["key"]: p for p in L["pending"]}
+    soon = lambda k: f" Changes to {pc(wait[k]['new'])} from {wait[k]['effective']}." if k in wait else ""  # noqa: E731
 
     limits = [
-        _r("Worst-case cap", f"All open A14 ids, each at its worst case, add to no more than {pc(cap)} of NAV, per account.",
+        _r("A14 worst-case cap", f"All open A14 ids, each at its worst case, add to no more than {pc(cap)} of NAV, per account." + soon("cap:A14"),
            "Worst case is what an id loses if the index finishes at the worst possible price, whatever happens to volatility. The cap adds those up.",
            f"Before the cap, the ladder's worst cases could add up to most of an account, and one bad session could take a large part of it. The cap sets the most a bad month can take. At full size it fits {full2} ids." if full2 is not None else "Sets the most a bad month can take.",
-           YOU10, "Now → Am I within my limits?"),
-        _r("Stress limit", f"A {move:g}% day either way, with volatility moving with it, costs no more than {pc(stress)} of NAV, per account.",
-           "The desk reprices the whole book for a sudden move up or down and takes the worse side.",
-           "The worst-case cap is about expiry. This one is about tomorrow morning: a fall like 5 Nov 2026 (SPX −4.4%) comes in a single session, long before expiry.", YOU10, "Now → Am I within my limits?"),
-        _r("Over either limit", "No new id while an account is over the cap or the stress limit.", "The ladder shows 0 lots and the ribbon says the book is over your limits.",
+           YOU10 + " (yours to change, above)", "Now → Am I within my limits?"),
+        _r("F49 worst-case cap", f"All open F49 ids, each at its worst case, add to no more than {pc(capf)} of NAV, per account." + soon("cap:F49"),
+           "The same measure as the A14 cap, kept apart so each strategy has its own room.",
+           "A far-from-the-money tent loses differently from an A14, so you asked for a cap per strategy. Set it before the first F49 trade: while it is not set, nothing limits them.", YOU11, "Now → Am I within my limits?"),
+        _r("Cap on every strategy together", f"Every open trade of every strategy, each at its worst case, adds to no more than {pc(capt)} of NAV, per account." + soon("cap:total"),
+           "The strategy caps added up, with the strategies that have no cap of their own counted too.",
+           "Separate caps can each look fine while the account as a whole carries more than you meant. My suggestion, not yet set by you.", "My suggestion, 11 Nov 2026 (yours to set)", "Now → Am I within my limits?"),
+        _r("Stress limit", f"A {move:g}% day either way, with volatility moving with it, costs no more than {pc(stress)} of NAV, per account." + soon("stress"),
+           "The desk reprices the whole book, every strategy, for a sudden move up or down and takes the worse side.",
+           "The worst-case caps are about expiry. This one is about tomorrow morning: a fall like 5 Nov 2026 (SPX −4.4%) comes in a single session, long before expiry, and hits every strategy at once.", YOU10, "Now → Am I within my limits?"),
+        _r("Over any limit", "No new id while an account is over a cap or the stress limit.", "The ladder shows 0 lots and the ribbon says the book is over your limits.",
            "Both accounts trade the same lots, so one account over its limit stops new ids in both.", YOU10, "Actions → A14 ladder"),
+        _r("Changing a limit", "A tighter limit applies at once. A looser one, or removing one, applies from the next US session. Every change is kept with its date.",
+           "You change them in the panel at the top of this page.",
+           "A cap that can be raised in the minute you want to open a trade stops nothing. The one-session wait keeps the decision apart from the trade.", YOU11 + " (the wait was my suggestion)", "Rules → Change your limits"),
     ]
 
     a14 = [
@@ -46,22 +58,44 @@ def book():
            "Leaving at 7 DTE beat 2 DTE at every entry length and halved the big losses.", YOU2 + " (my choice between 7 and 2)", "Risk grid → Trade plan"),
         _r("No added size", "Never add lots to an open id. New risk is always a new id.", "An id keeps the lots it was opened with for its whole life.",
            "Adding to open ids more than doubled the book's worst case in the weeks before the 5 Nov 2026 fall.", YOU2),
-        _r("Ladder cap", f"At most {R['cap']} open ids per ticker and account.", "The ladder skips a Friday when a ticker already has that many.",
+        _r("Ladder cap", f"At most {R['cap']} open ids per ticker and account.", "No new id on a ticker that already has that many.",
            "Capping at 4 cost almost nothing in the model and cut the swings. Your worst-case cap now usually binds first.", YOU2, "Actions → A14 ladder"),
-        _r("Entry", f"{DAYS[R['entry_day']]} only, one id per ticker, the Friday expiry nearest {R['entry_dte']} days ({R['dte_lo']}–{R['dte_hi']}).", "One scheduled decision a week instead of one whenever the market looks inviting.",
-           f"Entries at {R['dte_lo']}–{R['dte_hi']} days beat shorter ones, and a −5% shock costs about half as much at 45 days as at 14. A fixed day takes timing out of it.", YOU2, "Now → Can I open anything?"),
+        _r("Entry", f"One id per ticker a week, at the Friday expiry nearest {R['entry_dte']} days ({R['dte_lo']}–{R['dte_hi']}): on the {DAYS[R['entry_day']]}, or earlier in the week when the readiness bar reads full or three-quarter size for that ticker and every account is inside its limits.",
+           "A midweek id replaces that week's Friday entry: it changes the timing, not the amount of risk. Now says 'midweek' when the conditions are met.",
+           f"Entries at {R['dte_lo']}–{R['dte_hi']} days beat shorter ones, and a −5% shock costs about half as much at 45 days as at 14. You wanted to act on a good market without waiting for Friday; the two fixed conditions define 'good' in advance so it isn't judged in the moment. The entry day itself was never tested.",
+           f"{YOU11} (Friday only from 2 Nov; midweek from {R['mid_from']})", "Now → Can I open anything?"),
         _r("Strikes", "The desk's shape: upper long at spot, shorts about 0.3 sd below, lower long further down (SPX 0.38 sd under the shorts, RUT 0.44). No hand-picking.",
            "sd is the model's one-standard-deviation move to expiry, about 7% for SPX over 49 days. The shape is your own median A14 from ONE, in those units.",
-           "Wider and narrower shapes were tested; none beat it per unit of drawdown. Fixing it removes one more decision.", YOU2, "Actions → A14 ladder"),
+           "Wider and narrower shapes were tested; none beat it per unit of drawdown. Fixing it removes one more decision. The far-from-the-money tent is a separate strategy, F49, with its own section below.", YOU2, "Actions → A14 ladder"),
         _r("Tilt", f"The tent sits {R['tilt_sd']:g} sd higher when the index is more than {R['tilt_line']:g}% above its 20-day average, {R['tilt_sd']:g} sd lower when more than {R['tilt_line']:g}% below.",
            "A small lean with the short-term trend. Otherwise centred.", "Three separate regime structures added under a point a trade, so the regime acts through size and this small tilt only.", YOU2),
         _r("Decide line", "At −6% the Trade plan says Decide: adjust if the gates pass, otherwise hold to the stop.", "It is a prompt to look, not an exit.",
            "In the model, leaving A14 this early cost more than it saved; adjusting helped only under the conditions below.", DESK + " (from your ONE history, 24 Oct)", "Risk grid → Trade plan"),
-        _r("Adjustment gates", f"Adjust only on {win} (New York), only when the trade is under +3%, only after the index has moved 1.5% or more if the trade is green, and never at 21 days or less.",
-           "Reshaping means moving strikes at the same lots. The Trade plan's Adjust? column reads yes, wait or no from these.",
-           "From your 365 adjustments: on winners they helped 36% of the time, on small moves 44–47%, inside 21 days 38%. Shorts moved down hurt; roll-outs and shorts up helped.", YOU2, "Risk grid → Trade plan"),
+        _r("Adjustment gates", f"Adjust only when the id's delta is beyond ±{R['delta_band']:g} a lot, only when the trade is under +3%, and never at 21 days or less.",
+           "Delta a lot is how many dollars one lot gains or loses for a one-point move in the index. Reshaping means moving strikes at the same lots. The Trade plan's Adjust? column reads yes or no from these.",
+           f"You asked for a delta trigger in place of fixed weekdays. ±{R['delta_band']:g} a lot is about what a 1.5% index move does to an SPX id; a ±2 band breaks after a 0.8–1.2% fall and would have you adjusting constantly. From your 365 adjustments: on winners they helped 36% of the time, on small moves 44–47%, inside 21 days 38%. Shorts moved down hurt; roll-outs and shorts up helped. The band itself is untested.",
+           f"{YOU11} (Monday, Wednesday, Friday until {R['delta_from']})", "Risk grid → Trade plan"),
         _r("Pace exit", "A trade 3 weeks in whose return per day is under half your pace target is flagged 'Exit at next green'.", "It asks you to free the capital at the next close at 0% or better.",
-           "You asked on 23 Oct for capital to turn over fast. It is outside the 2 Nov rule page, and whether to keep it for A14 is still an open question.", "You, 23 Oct 2026 (open question)", "Risk grid → Capital use"),
+           "You asked on 23 Oct for capital to turn over fast. Tested on 11 Nov in the model since 2009, at the approved size: with this exit the return was about the same (8.1% a year against 8.5%) and the deepest fall smaller (39% against 47%), though it earned less in 2018–26 (5.5% against 7.2%). "
+           "Your other idea, closing a slow id only when the ladder is full and a new id is waiting, made no difference (8.4%, 43%): a fresh id did not earn more than the slow one it replaced. So the flag stays as it is.",
+           "You, 23 Oct 2026 (tested 11 Nov)", "Risk grid → Capital use"),
+    ]
+
+    F = f49
+    tent = [
+        _r("What it is", f"A put butterfly 1/−2/1 whose shorts sit one at-the-money straddle below the index (about 0.8 sd), at the Friday expiry nearest {R['entry_dte']} days. Upper long {F.UP_X:g} straddles above the shorts, lower long {F.LOW_X:g} below.",
+           "The straddle is the at-the-money call plus put for that expiry: the market's own expected move. On 9 Nov that put the SPX tent at 7050/6950/6800.",
+           "Your idea of 9 Nov: stay far enough below the market that an ordinary fall doesn't reach the shorts. Name a trade F49 in ONE and the desk reads it on this card.", "You, 9 and 11 Nov 2026", "A14 scanner → F49 tent"),
+        _r("Exits", f"Close at +{F.TARGET:g}% of the worst case, on a close below the shorts, or at {F.TIME_DTE} days to expiry, whichever comes first. Never adjusted.",
+           "Below the shorts the trade loses until its last two weeks, so the card leaves there.",
+           f"In the model the index closed below the shorts in 20% of trades, with a median loss of about 9% of the worst case at that close; held to expiry instead, the deepest fall was 86%. The target was reached first in only 9% of trades: most end at the {F.TIME_DTE}-day exit with about 4–5%.",
+           "You, 9 Nov 2026 (as tested)", "Risk grid → Trade plan"),
+        _r("Size and entry", f"An id's worst case is {F.WORST_NAV:g}% of NAV at full size, scaled by the readiness bar, the same lots in every account. Fridays only, at most {F.CAP} ids a ticker.",
+           "The same sizing as A14, because that is what the test used. The F49 cap in Your limits sits above it.",
+           "These are the test's settings carried over, not choices you have made yet: change them if you want different ones. The midweek entry rule is A14's only.", "Carried over from the 9 Nov test (yours to confirm)", "A14 scanner → F49 tent"),
+        _r("How much to trust it", "SPX, 2009–2026, desk model: +4.6% a year, deepest fall 10.5%, 82% winners averaging +3.6% against losers averaging −7.7%.",
+           "A rally pays at most the credit, about 6% of the worst case.",
+           "The result rests on a skew fitted to 18 recorded days and on fills at mid. With the desk's older skew it was +1.8% a year; with doubled costs +0.4%. Treat the first trades as a trial at the smallest size.", "Model, 9 Nov 2026", "A14 scanner → F49 tent"),
     ]
 
     market = [
@@ -85,7 +119,7 @@ def book():
     cards = []
     how = {"gated": "adjust only on the gates", "one": "one adjustment, then exit", "never": "never adjusted"}
     for name, c in CARDS.items():
-        if name == "A14":
+        if name in ("A14", "F49"):
             continue
         bits = [f"stop −{c['stop']}%" if c.get("stop") else "no fixed stop", f"out by {c['time']} DTE" if c.get("time") is not None else "no time stop", how.get(c.get("adjust"), "")]
         cards.append(_r(name, " · ".join(b for b in bits if b) + ".", "The Trade plan labels each open trade from its card.",
@@ -113,6 +147,7 @@ def book():
     return {"sections": [
         {"title": "Your limits", "note": "These sit above everything else.", "rules": limits},
         {"title": "A14", "note": f"SPX and RUT put broken-wing butterflies. In force from {R['from']}.", "rules": a14},
+        {"title": "F49", "note": "The far-from-the-money put tent. A trial: tested once, not yet traded.", "rules": tent},
         {"title": "Reading the market", "note": "How the readiness bar gets its size.", "rules": market},
         {"title": "Other strategies", "note": "Card rules only, not yet reviewed in depth.", "rules": cards},
         {"title": "How you are scored", "note": "", "rules": score},

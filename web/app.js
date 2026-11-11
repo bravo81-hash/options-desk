@@ -59,7 +59,7 @@ function showTab(name) {
   $("sideNav").classList.remove("open");
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + name; });
   try { sessionStorage.setItem("od.tab", name); } catch (e) {}
-  if (!loaded[name]) { loaded[name] = true; ({now: () => window.loadNow(), rules: () => window.loadRules(), actions: () => window.loadActions(), market: () => { if (mdStale) { mdStale = false; try { $("mdFrame").contentWindow.location.reload(); } catch (e) {} } }, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => window.loadA14(), pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }
+  if (!loaded[name]) { loaded[name] = true; ({now: () => window.loadNow(), rules: () => window.loadRules(), actions: () => window.loadActions(), market: () => { if (mdStale) { mdStale = false; try { $("mdFrame").contentWindow.location.reload(); } catch (e) {} } }, pick: () => window.loadPick(), season: () => window.loadSeason(), journal: () => window.loadJournal(), today: loadToday, cal: loadCal, skew: loadSkew, risk: () => window.loadRisk(), em: () => window.loadEm(), a14: () => { window.loadA14(); if (window.loadF49) window.loadF49(); }, pnl: () => window.loadPnl(), evidence: loadEvidence, rec: loadRec, guide: () => {}})[name](); }
   else document.querySelectorAll(`#tab-${name} .chart`).forEach((c) => c._draw && c._draw());
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));

@@ -249,6 +249,7 @@ $("a14Fetch").addEventListener("click", async () => {
   $("a14Fetch").disabled = true; $("a14Meta").textContent = "fetching the SPX/RUT put chains from TWS (about a minute)…";
   await api("/api/a14/refresh", {method: "POST"});
   await poll("/api/a14/status", scan, $("a14Meta"));
+  if (window.loadF49) window.loadF49();
   $("a14Fetch").disabled = false;
 });
 $("a14Sort").innerHTML = Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");

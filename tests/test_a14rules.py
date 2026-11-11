@@ -136,8 +136,30 @@ def test_each_rule_fails_on_its_own(field, value, rule):
     assert [k for k, v in C.items() if not v[0]] == [rule]
 
 
-def test_entry_must_be_a_friday():
-    assert _by(ar.checks(_row(), "2026-11-04"))["a14day"][0] is False
+def test_entry_was_friday_only_until_the_midweek_rule():
+    assert _by(ar.checks(_row(), "2026-11-04"))["a14day"][0] is False  # before 12 Nov a Wednesday is off the rule
+    assert _by(ar.checks(_row(size_then="Full size"), "2026-11-09"))["a14day"][0] is False  # and the bar's size doesn't excuse it
+
+
+def test_a_midweek_entry_needs_full_or_three_quarter_size_and_is_the_weeks_only_id():
+    wed = "2026-11-18"
+    assert _by(ar.checks(_row(size_then="Three-quarter size"), wed))["a14day"] == [True, True]
+    assert _by(ar.checks(_row(size_then="Half size"), wed))["a14day"] == [False, True]
+    assert "a14day" not in _by(ar.checks(_row(), wed))  # the bar wasn't read that session: not scored either way
+    assert _by(ar.checks(_row(size_then="Half size"), "2026-11-20"))["a14day"] == [True, True]  # a Friday needs no size test
+    assert _by(ar.checks(_row(week_n=2), "2026-11-20"))["a14week"] == [False, True] and _by(ar.checks(_row(week_n=1), wed))["a14week"] == [True, True]
+    assert _by(ar.checks(_row(week_n=2), "2026-11-06"))["a14week"][1] is False  # two in a week before the rule: hindsight only
+    assert _by(ar.checks(_row(), wed))["a14window"][1] is False  # the weekday windows ended with the delta band
+
+
+def test_entry_ok_says_why():
+    d = dt.date
+    assert ar.entry_ok(d(2026, 11, 20), "Half size", False)[:2] == (True, "friday")
+    assert ar.entry_ok(d(2026, 11, 18), "Full size", False)[:2] == (True, "midweek") and ar.entry_ok(d(2026, 11, 18), "Three-quarter size", False)[0]
+    assert ar.entry_ok(d(2026, 11, 18), "Half size", False) == (False, None, "midweek needs full or three-quarter size; the bar reads half size")
+    assert ar.entry_ok(d(2026, 11, 20), "Full size", True)[2] == "this week's id is already on"
+    assert ar.entry_ok(d(2026, 11, 20), "Full size", False, over_limits=True)[0] is False and ar.entry_ok(d(2026, 11, 21), "Full size", False)[2] == "the market is shut"
+    assert ar.entry_ok(d(2026, 11, 20), "Stand aside", False)[0] is False and ar.week_of(d(2026, 11, 20)) == d(2026, 11, 16)
 
 
 def test_a_trade_is_never_marked_down_by_a_later_rule():
@@ -162,6 +184,9 @@ def test_score_fields_counts_the_ladder_and_off_window_adjustments():
     ar.score_fields(rows, pos)
     assert [x["ladder_n"] for x in rows] == [1, 2, 2]
     assert [x["off_window"] for x in rows] == [1, 0, 0]
+    late = [{**r("d", "2026-11-13 06:00"), "entry_us": "2026-11-12"}, {**r("e", "2026-11-14 06:00"), "entry_us": "2026-11-13"}, {**r("f", "2026-11-21 06:00"), "entry_us": "2026-11-20"}]
+    ar.score_fields(late, {"d": {"events": [at("2026-11-13 06:00"), at("2026-11-18 07:00")], "flat": False}})  # a Tuesday adjustment after the delta band began
+    assert [x["off_window"] for x in late] == [0, 0, 0] and [x["week_n"] for x in late] == [1, 2, 1]
 
 
 def test_a_holiday_friday_moves_the_week_to_thursday():
@@ -183,3 +208,15 @@ def test_the_chain_fetch_keeps_a_holiday_weeks_thursday(monkeypatch):
     monkeypatch.setattr(a14, "dte", lambda e: (dt.datetime.strptime(e, "%Y%m%d").date() - today).days)
     params = {e: ("SPXW", [], e) for e in ("20261217", "20261218", "20261223", "20261224", "20261230", "20261231")}
     assert a14._expiries(params, 7, 110) == ["20261218", "20261224", "20261231"]
+
+
+def test_midweek_entry_does_not_start_before_12_november():
+    assert ar.entry_ok(dt.date(2026, 11, 11), "Full size", False)[0] is False
+    assert ar.entry_ok(dt.date(2026, 11, 12), "Full size", False)[:2] == (True, "midweek")
+
+
+def test_an_id_closed_this_week_still_uses_the_weeks_entry():
+    rows = [{"strategy": "A14", "ticker": "SPX", "entry_us": "2026-11-16", "close": "2026-11-17"},
+            {"strategy": "A14", "ticker": "RUT", "entry_us": "2026-11-13"},
+            {"strategy": "F49", "ticker": "RUT", "entry_us": "2026-11-16"}]
+    assert ar.week_opened(rows, dt.date(2026, 11, 18)) == {"SPX": ["2026-11-16"], "RUT": []}

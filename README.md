@@ -157,3 +157,7 @@ Only one copy of the app runs at a time (a named mutex; a second start just open
 * TimeEdge / TimeZone / Triple Calendar rule checks: `Calendar-Scanner/docs/STRATEGIES.md`.
 * Pair enumeration idea (every short × long DTE): Calendar-Scanner `buddy_atm`.
 * Forward vol / contango concepts: Forward-Vol-Scanner.
+
+### Local validation without background work
+
+`python app.py --no-browser --no-background-jobs` runs the desk UI without the scheduler (no automatic TWS capture/update or encrypted snapshot publication). Restart normally to re-enable background jobs.

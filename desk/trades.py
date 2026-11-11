@@ -15,6 +15,7 @@ STRATS = [  # (label, patterns matched against group + name, upper-case)
     ("TimeZone", [r"\bTZ\b", r"TIMEZONE", r"TIME ZONE"]),
     ("Triple Cal", [r"TRIPLE", r"TRIPPLE"]),
     ("Flyagonal", [r"FLYAGONAL", r"FLYDIAG"]),
+    ("F49", [r"\bF49\b"]),
     ("A14", [r"\bA14\b"]),
     ("HV7", [r"\bHV7\b"]),
     ("Allantis", [r"ALLANTIS"]),

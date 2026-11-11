@@ -18,11 +18,12 @@ from . import a14rules, db, load_config, one
 GAP = 900  # seconds: fills closer than this are one ticket
 OCC = re.compile(r"(\d{6})([CP])(\d{8})$")
 # The Trade plan cards in web/risk.js (a test keeps these equal): stop % of ONE margin, time stop in DTE, adjustments allowed.
-# Other, IF, M200, Earnings and Batman have no card; Flyagonal has no stop.
+# Other, IF, M200, Earnings and Batman have no card; Flyagonal and F49 have no % stop.
 CARDS = {"A14": {"stop": 20, "time": 7, "adjust": "gated"}, "Allantis": {"stop": 10, "time": 2, "adjust": "gated"},
          "HV7": {"stop": 10, "time": 2, "adjust": "never"}, "TimeEdge": {"stop": 15, "time": 1, "adjust": "one"},
          "Triple Cal": {"stop": 15, "time": 1, "adjust": "one"}, "TimeZone": {"stop": 5, "time": 7, "adjust": "one"},
-         "Flyagonal": {"stop": None, "time": None, "adjust": "one"}}
+         "Flyagonal": {"stop": None, "time": None, "adjust": "one"},
+         "F49": {"stop": None, "time": 14, "adjust": "never"}}  # far-OTM tent: also out on a close below its shorts (desk/f49.py)
 CARD_FROM, GATE_FROM, CAP_FROM = "2026-10-24", "2026-10-25", "2026-11-01"  # when the cards, the entry gates and the cap began
 _cache = {}
 

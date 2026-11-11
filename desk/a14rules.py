@@ -2,8 +2,10 @@
 
 One structure, sized by what the stop can lose: at Full size an id loses STOP_NAV % of NAV at the card's stop, which makes its worst
 case 7.5% of NAV. Both accounts trade the same lots, worked out on the smaller NAV, so neither goes over; the readiness bar scales it
-and nothing else does. A new id goes on each Friday per ticker at the Friday expiry nearest ENTRY_DTE, unless CAP ids are open. Risk is
-never added to an id: new risk is a new id. Adjustments wait for a window day; targets and stops are watched every day. An id is out
+and nothing else does. One new id a week per ticker at the Friday expiry nearest ENTRY_DTE, unless CAP ids are open: on the Friday, or
+earlier in the week when the readiness bar reads one of MID_SIZES for that ticker and every account is inside its limits (from
+MID_FROM; before that, Fridays only). Risk is never added to an id: new risk is a new id. Adjustments wait for the id's delta to
+leave ±DELTA_BAND a lot (from DELTA_FROM; before that, for a window day); targets and stops are watched every day. An id is out
 by the card's time stop. The tent shifts TILT_SD with the index more than TILT_LINE % from its 20-day average.
 
 The target is 1% of NAV a week per account, judged on a TARGET_WEEKS average because a single week is mostly noise.
@@ -21,11 +23,20 @@ STOP_NAV = 1.5  # % of NAV lost at the card's stop, at Full size
 ENTRY_DTE, DTE_LO, DTE_HI = 49, 42, 56
 TIME_BEFORE = 2  # the card's time stop for ids entered before FROM
 CAP = 4  # open ids per ticker and account
-WINDOWS = (0, 2, 4)  # adjustments: Monday, Wednesday, Friday, US dates
+WINDOWS = (0, 2, 4)  # adjustments before DELTA_FROM: Monday, Wednesday, Friday, US dates
+DELTA_BAND, DELTA_FROM = 3.0, "2026-11-12"  # adjust only with the id's delta beyond ± this a lot; replaces the window days (user, 11 Nov 2026)
 ENTRY_DAY = 4  # Friday
+MID_SIZES, MID_FROM = ("Full size", "Three-quarter size"), "2026-11-12"  # a midweek entry needs one of these on the readiness bar (user, 11 Nov 2026)
 TILT_SD, TILT_LINE = 0.2, 1.0
 WEEK_TARGET, TARGET_WEEKS = 1.0, 13
 STEP_SIZE = {"Full size": 1.0, "Three-quarter size": 0.75, "Half size": 0.5, "Quarter size": 0.25, "Stand aside": 0.0}
+
+
+def id_cap():
+    """Count per ticker/account, separate from the worst-case NAV percentage."""
+    from . import limitcfg
+    v = limitcfg.value("ids:A14")
+    return CAP if v is None else int(v)
 
 
 def rule():
@@ -33,7 +44,7 @@ def rule():
     from .positions import CARDS
     stop = CARDS["A14"]["stop"]
     return {"from": FROM, "target": TARGET, "stop_nav": STOP_NAV, "stop": stop, "worst_nav": round(100 * STOP_NAV / stop, 2), "entry_dte": ENTRY_DTE, "dte_lo": DTE_LO, "dte_hi": DTE_HI, "time_dte": CARDS["A14"]["time"],
-            "cap": CAP, "windows": list(WINDOWS), "entry_day": ENTRY_DAY, "tilt_sd": TILT_SD, "tilt_line": TILT_LINE, "week_target": WEEK_TARGET, "target_weeks": TARGET_WEEKS}
+            "cap": id_cap(), "delta_band": DELTA_BAND, "delta_from": DELTA_FROM, "mid_sizes": list(MID_SIZES), "mid_from": MID_FROM, "entry_day": ENTRY_DAY, "tilt_sd": TILT_SD, "tilt_line": TILT_LINE, "week_target": WEEK_TARGET, "target_weeks": TARGET_WEEKS}
 
 
 def tilt(vs20):
@@ -60,6 +71,33 @@ def entry_next(d):
     while not entry_day(d):
         d += dt.timedelta(days=1)
     return d
+
+
+def session(d):
+    """A US trading day."""
+    return d.weekday() < 5 and not _shut(d)
+
+
+def week_of(d):
+    """The Monday of d's week: the rule opens one id per ticker in each."""
+    return d - dt.timedelta(days=d.weekday())
+
+
+def entry_ok(d, size, opened_this_week, over_limits=False):
+    """(allowed, kind, why) for a new id on a ticker on US date d: the week's Friday entry, or a midweek one that replaces it."""
+    if over_limits:
+        return False, None, "an account is over your limits"
+    if not session(d):
+        return False, None, "the market is shut"
+    if opened_this_week:
+        return False, None, "this week's id is already on"
+    if STEP_SIZE.get(size, 0.0) <= 0:
+        return False, None, "the readiness bar says stand aside"
+    if entry_day(d):
+        return True, "friday", "the week's entry day"
+    if d.isoformat() >= MID_FROM and size in MID_SIZES:
+        return True, "midweek", f"{size.lower()} on the readiness bar: it replaces this week's Friday entry"
+    return False, None, f"midweek needs full or three-quarter size; the bar reads {size.lower()}"
 
 
 def expiry_for(smiles):
@@ -168,11 +206,12 @@ def book(rows, navs):
     Information only: nothing here closes, blocks or sizes anything."""
     from .positions import CARDS
     lim = 100 * STOP_NAV / CARDS["A14"]["stop"]
+    cap = id_cap()
     out = {}
     for t in rows:
         if t.get("strategy") != "A14":
             continue
-        a = out.setdefault(t["acct"], {"ids": {}, "cap": CAP, "lim": lim, "over": [], "worst_usd": 0.0, "unpriced": 0, "largest": None})
+        a = out.setdefault(t["acct"], {"ids": {}, "cap": cap, "lim": lim, "over": [], "worst_usd": 0.0, "unpriced": 0, "largest": None})
         a["ids"][t["underlying"]] = a["ids"].get(t["underlying"], 0) + 1
         w, nav = id_worst(t), navs.get(t["acct"])
         if w is None:
@@ -191,7 +230,29 @@ def book(rows, navs):
         a["worst_pct"] = None if not nav or a["worst_usd"] == float("inf") else round(100 * a["worst_usd"] / nav, 1)
         a["largest"] = None if a["largest"] is None or a["largest"] == float("inf") else round(a["largest"], 1)
         a["worst_usd"] = None if a["worst_usd"] == float("inf") else round(a["worst_usd"])
-        a["alerts"] = [f"{n} {u} ids open: the rule's cap is {CAP}" for u, n in sorted(a["ids"].items()) if n > CAP] + [_over_txt(o, lim) for o in a["over"]]
+        a["alerts"] = [f"{n} {u} ids open: the rule's cap is {cap}" for u, n in sorted(a["ids"].items()) if n > cap] + [_over_txt(o, lim) for o in a["over"]]
+    return out
+
+
+def worst_by(rows, navs):
+    """{account: {strategy or "total": {n, usd, pct, open_ended, unpriced}}}: every open trade at its worst case (id_worst), added up
+    per strategy and across all of them, for the caps in desk/limitcfg.py. A trade with no ceiling is counted in open_ended, not in usd."""
+    out = {}
+    for t in rows:
+        w = id_worst(t)
+        for key in (t.get("strategy") or "Other", "total"):
+            a = out.setdefault(t["acct"], {}).setdefault(key, {"n": 0, "usd": 0.0, "open_ended": 0, "unpriced": 0})
+            a["n"] += 1
+            if w is None:
+                a["unpriced"] += 1
+            elif w == float("-inf"):
+                a["open_ended"] += 1
+            else:
+                a["usd"] += -min(w, 0.0)
+    for name, d in out.items():
+        for a in d.values():
+            a["pct"] = round(100 * a["usd"] / navs[name], 1) if navs.get(name) else None
+            a["usd"] = round(a["usd"])
     return out
 
 
@@ -202,15 +263,21 @@ def _over_txt(o, lim):
 
 def score_fields(rows, pos):
     """On each A14 position, what its fills alone can't say: how many ids it joined, and its adjustments outside the windows."""
+    from . import process
     mine = [r for r in rows if r["strategy"] == "A14"]
     for r in mine:
+        r["size_then"] = process.size_on(r["entry_us"], f"A14 {r['ticker']}") if r.get("entry_us") else None
         r["ladder_n"] = sum(1 for x in mine if x["acct"] == r["acct"] and x["ticker"] == r["ticker"] and x["entry"] <= r["entry"] and (x["close"] is None or x["close"] > r["entry"]))
         ev = []
         for k in r["keys"]:
             p = pos.get(k)
             if p:
                 ev += p["events"][1:-1] if p["flat"] else p["events"][1:]
-        r["off_window"] = sum(1 for e in ev if (e - dt.timedelta(hours=14)).weekday() not in WINDOWS)
+        us = lambda e: e - dt.timedelta(hours=14)  # noqa: E731
+        r["off_window"] = sum(1 for e in ev if us(e).date().isoformat() < DELTA_FROM and us(e).weekday() not in WINDOWS)  # the delta rule can't be read from fills
+        wk = week_of(dt.date.fromisoformat(r["entry_us"])) if r.get("entry_us") else None
+        r["week_n"] = None if wk is None else sum(1 for x in mine if x["acct"] == r["acct"] and x["ticker"] == r["ticker"] and x.get("entry_us") and x["entry"] <= r["entry"]
+                                                  and week_of(dt.date.fromisoformat(x["entry_us"])) == wk)
 
 
 def checks(r, entered):
@@ -222,12 +289,25 @@ def checks(r, entered):
         out.append(["a14add", r["lots_peak"] <= r["lots0"], live])
     if r.get("dte0") is not None:
         out.append(["a14dte", DTE_LO <= r["dte0"] <= DTE_HI, live])
-    out.append(["a14day", entry_day(dt.date.fromisoformat(entered)), live])
+    d = dt.date.fromisoformat(entered)
+    if entry_day(d) or entered < MID_FROM:
+        out.append(["a14day", entry_day(d), live])
+    elif r.get("size_then") is not None:  # midweek: the bar's size for the ticker that session, kept by desk/process.py
+        out.append(["a14day", r["size_then"] in MID_SIZES, live])
+    if r.get("week_n") is not None:
+        out.append(["a14week", r["week_n"] <= 1, entered >= MID_FROM])
     if r.get("ladder_n") is not None:
         out.append(["a14cap", r["ladder_n"] <= CAP, live])
     if r.get("off_window") is not None:
-        out.append(["a14window", r["off_window"] == 0, live])
+        out.append(["a14window", r["off_window"] == 0, live and entered < DELTA_FROM])  # after it the delta band gates, which fills can't show
     return out
+
+
+def week_opened(rows, today):
+    """Include closed ids too: exiting early does not permit a second entry that week."""
+    start = week_of(today).isoformat()
+    return {u: sorted({r["entry_us"] for r in rows if r.get("strategy") == "A14" and r.get("ticker") == u
+                       and start <= (r.get("entry_us") or "") <= today.isoformat()}) for u in ("SPX", "RUT")}
 
 
 def state():
@@ -242,5 +322,6 @@ def state():
     raw = db.get_meta("a14_chain")
     blob = json.loads(raw) if raw else {}
     D = backtest.data()
-    return {"rule": rule(), "entry_next": entry_next(dt.datetime.now(ET).date()).isoformat(), "navs": navs, "nav": nav, "worst": round(nav * STOP_NAV / stop) if nav else None, "stop_usd": round(nav * STOP_NAV / 100) if nav else None,
+    today = dt.datetime.now(ET).date()
+    return {"rule": rule(), "entry_next": entry_next(today).isoformat(), "today": today.isoformat(), "session": session(today), "entry_day": entry_day(today), "week_start": week_of(today).isoformat(), "week_opened": week_opened(J["book"], today), "navs": navs, "nav": nav, "worst": round(nav * STOP_NAV / stop) if nav else None, "stop_usd": round(nav * STOP_NAV / 100) if nav else None,
             "chain_ts": blob.get("ts"), "next": {u: next_id(u, blob, D, nav) for u in ("SPX", "RUT")}, "target": target(accounts.weekly(60), traded)}

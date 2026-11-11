@@ -156,7 +156,9 @@ function xyChart(el, cfg) {
     niceTicks(lo, hi, 4).forEach((v) => { if (v >= lo && v <= hi) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${mL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end">${v}</text>`; });
     niceTicks(x0, x1, Math.max(2, Math.floor(pw / 70))).forEach((v) => { if (v >= x0 && v <= x1) s += `<text x="${X(v).toFixed(1)}" y="${H - 8}" text-anchor="middle">${v}${cfg.xUnit || ""}</text>`; });
     cfg.series.forEach((se) => { const pts = se.pts.filter((p) => ok(p[1])); s += `<polyline points="${pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}" fill="none" stroke="${se.color}" stroke-width="2" ${se.dash ? `stroke-dasharray="${se.dash}"` : ""}/>`;
-      pts.forEach((p) => { s += `<circle class="pt" cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3.5" fill="${se.color}" stroke="var(--panel)" stroke-width="1.5" data-t="${esc(`${se.name}: ${p[2] || p[0] + (cfg.xUnit || "")} → ${fmt(p[1])}`)}"/>`; }); });
+      if (cfg.dots !== false) pts.forEach((p) => { s += `<circle class="pt" cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3.5" fill="${se.color}" stroke="var(--panel)" stroke-width="1.5" data-t="${esc(`${se.name}: ${p[2] || p[0] + (cfg.xUnit || "")} → ${fmt(p[1])}`)}"/>`; }); });
+    if (lo < 0 && hi > 0) s += `<line x1="${mL}" x2="${mL + pw}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="var(--muted)" stroke-width="1"/>`;
+    (cfg.vlines || []).forEach((v) => { if (v.x >= x0 && v.x <= x1) s += `<line x1="${X(v.x).toFixed(1)}" x2="${X(v.x).toFixed(1)}" y1="${mT}" y2="${mT + ph}" stroke="${v.color}" stroke-dasharray="3 3"/><text x="${(X(v.x) - 4).toFixed(1)}" y="${mT + 10}" text-anchor="end" fill="${v.color}">${esc(v.label || "")}</text>`; });
     el.innerHTML = s + `</svg>`;
     bindTip(el, ".pt", (n) => esc(n.dataset.t));
   });
