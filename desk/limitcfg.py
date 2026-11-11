@@ -53,6 +53,15 @@ def current(now=None):
             "move": float((load_config().get("risk", {}).get("stress") or {}).get("move") or 5), "today": today}
 
 
+def on(key, date):
+    """One limit as it stood on a US session date (ISO): what a trade entered that day is scored against, whatever was set later."""
+    v = _base().get(key)
+    for r in _rows():
+        if r["key"] == key and r["effective"] <= date:
+            v = r["new"]
+    return v
+
+
 def value(key, acct=None, vals=None):
     """One limit for one account: a config value may be {label: number}; a value set in the desk is one number for every account."""
     v = (vals if vals is not None else current()["values"]).get(key)

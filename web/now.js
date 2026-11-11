@@ -200,10 +200,12 @@ function limitsEdit() {
       <span class="small muted">${esc(HELP[k])}</span>${p ? `<span class="small wrn">${ok(p.new) ? `${p.new}${k === "ids:A14" ? " ids" : "%"}` : "no limit"} from ${day(p.effective)}</span>` : ""}</div>`; };
   const txt = (v, k) => ok(v) ? `${v}${k === "ids:A14" ? " ids" : "%"}` : "not set";
   el.innerHTML = `<div class="kv mini">${Object.keys(LC.names).map(cell).join("")}</div><div id="rbLimMsg" class="small"></div>
-    <p class="small muted">${RO ? "Limits are changed on the laptop desk: this copy can't save. " : "Type a number and press Enter; clear the box to remove a limit. "}A tighter limit applies at once. A looser one, or removing one, applies from the next US session, so a cap can't be raised in the minute you want to open a trade. The stress limit covers the whole book because a 5% day hits every strategy at once.</p>
+    <p class="small muted">${RO ? "Limits are changed on the laptop desk: this copy can't save. " : "Type a number and press Enter to save it (nothing is saved until you do); clear the box and press Enter to remove a limit. "}A tighter limit applies at once. A looser one, or removing one, applies from the next US session, so a cap can't be raised in the minute you want to open a trade. The stress limit covers the whole book because a 5% day hits every strategy at once.</p>
     ${(LC.log || []).length ? `<details><summary class="small">Changes made (${LC.log.length})</summary><div class="tbl"><table><tbody>${LC.log.map((r) => `<tr><td class="small">${new Date(r.made).toLocaleString([], {day: "numeric", month: "short", hour: "numeric", minute: "2-digit"})}</td><td>${esc(LC.names[r.key] || r.key)}</td><td class="mono">${txt(r.old, r.key)} → ${txt(r.new, r.key)}</td><td class="small muted">in force from ${day(r.effective)}</td></tr>`).join("")}</tbody></table></div></details>` : ""}`;
-  el.querySelectorAll(".rbnum").forEach((i) => i.addEventListener("change", async () => {
-    const r = await api("/api/limits", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: i.dataset.key, value: i.value === "" ? null : +i.value})}).catch(() => ({error: "Could not save."}));
+  // saved on Enter only: the box's arrows fire "change" on every click, and each step down would apply at once
+  el.querySelectorAll(".rbnum").forEach((i) => i.addEventListener("keydown", async (ev) => {
+    if (ev.key !== "Enter") return;
+    const r =await api("/api/limits", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: i.dataset.key, value: i.value === "" ? null : +i.value})}).catch(() => ({error: "Could not save."}));
     if (r.error) { $("rbLimMsg").innerHTML = `<span class="neg">${esc(r.error)}</span>`; return; }
     LC = r; limitsEdit(); if (window.riskStale) window.riskStale();
     RB = await api("/api/rulebook").catch(() => RB); rules(); }));

@@ -164,3 +164,14 @@ def test_f49_exit_source_is_a_completed_daily_close_after_entry(desk):
     assert risk.cached_close("SPX", "2026-11-09", midday)["price"] == 7500
     assert risk.cached_close("SPX", "2026-11-11", midday) is None
     assert risk.cached_close("SPX", "2026-11-11", close)["price"] == 7100
+
+
+def test_an_id_is_scored_against_the_id_cap_in_force_the_day_it_was_entered(desk, monkeypatch):
+    from desk import a14rules, limitcfg
+    monkeypatch.setattr(limitcfg, "load_config", lambda: {"risk": {"stress": {}}})
+    row = {"plan_pct": 1, "lots0": 1, "lots_peak": 1, "dte0": 49, "ladder_n": 4, "off_window": 0}
+    cap = lambda day: {c[0]: c[1] for c in a14rules.checks(row, day)}["a14cap"]  # noqa: E731
+    assert cap("2026-11-13") is True  # nothing set: the rule page's 4
+    limitcfg.save("ids:A14", 3, dt.datetime(2026, 11, 16, 20, 0, tzinfo=dt.timezone.utc))  # tighter, from Monday 16 Nov
+    assert limitcfg.on("ids:A14", "2026-11-13") is None and limitcfg.on("ids:A14", "2026-11-16") == 3
+    assert cap("2026-11-13") is True and cap("2026-11-20") is False  # the fourth id on the 13th stands; one on the 20th is over

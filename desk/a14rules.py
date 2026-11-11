@@ -297,7 +297,9 @@ def checks(r, entered):
     if r.get("week_n") is not None:
         out.append(["a14week", r["week_n"] <= 1, entered >= MID_FROM])
     if r.get("ladder_n") is not None:
-        out.append(["a14cap", r["ladder_n"] <= CAP, live])
+        from . import limitcfg
+        cap = limitcfg.on("ids:A14", entered)  # the id cap in force the day it was entered: a later change never marks it down
+        out.append(["a14cap", r["ladder_n"] <= (CAP if cap is None else int(cap)), live])
     if r.get("off_window") is not None:
         out.append(["a14window", r["off_window"] == 0, live and entered < DELTA_FROM])  # after it the delta band gates, which fills can't show
     return out
