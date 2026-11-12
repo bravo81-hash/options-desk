@@ -15,7 +15,7 @@ let L = null;
 function third(S) { return S.now <= S.cuts[0] ? "low" : S.now <= S.cuts[1] ? "mid" : "high"; }
 function reading(S, goodLow) {
   const t = third(S), a = S.after[t];
-  const k = t === "mid" ? ["sz", "middle third"] : (t === "low") === goodLow ? ["pos", `${t === "low" ? "lowest" : "highest"} third: has tended to move in the structure's favour`] : ["neg", `${t === "low" ? "lowest" : "highest"} third: has tended to move against it`];
+  const k = t === "mid" ? ["sz", "middle third"] : (t === "low") === goodLow ? ["pos", `${t === "low" ? "lowest" : "highest"} third: the stand-in has tended to rise from here`] : ["neg", `${t === "low" ? "lowest" : "highest"} third: the stand-in has tended to fall from here`];
   return {t, a, cls: k[0], txt: k[1]};
 }
 
@@ -41,7 +41,7 @@ function render() {
   const tile = (lbl, big, cls, sub) => `<div><span class="lbl">${lbl}</span><b class="${cls || ""}">${big}</b><span class="small muted">${sub}</span></div>`;
   const evid = (S, r, unit, what) => `After days in the lowest third it rose over the next ${f.ahead} sessions ${S.after.low.up}% of the time (${S.after.low.chg > 0 ? "+" : ""}${S.after.low.chg}${unit} on average); after the highest third, ${S.after.high.up}% (${S.after.high.chg > 0 ? "+" : ""}${S.after.high.chg}${unit}). ${what}`;
   el.innerHTML = `<div class="kv mini">
-      ${tile("Cost a lot", money(B.cost), "", `butterfly ${money(B.cost_fly)} + call calendar ${money(B.cost_cal)} · the most it can lose`)}
+      ${tile("Cost a lot", money(B.cost), "", `butterfly ${money(B.cost_fly)} + call calendar ${money(B.cost_cal)} · ${B.call_gap > 0 ? `not the most it can lose: the long call is ${fmt(B.call_gap / 100, 0)} points above the short call, so a rally into the front expiry can cost up to ${money(B.call_gap)} more` : "the most it can lose while the long call sits at or below the short call's strike"}`)}
       ${tile("Theta", `${money(B.theta)} a day`, "", `${fmt(B.theta_pct, 2)}% of the cost a day`)}
       ${tile("Expiry gap, stand-in", slope ? `${fmt(S.slope.now, 2)} pts` : "–", slope ? slope.cls : "", slope ? `VIX6M less VIX3M · ${nth(S.slope.pct)} percentile since 2009 · ${slope.txt}` : "no history")}
       ${tile("Put skew, stand-in", skew ? fmt(S.skew.now, 0) : "–", skew ? skew.cls : "", skew ? `CBOE SKEW · ${nth(S.skew.pct)} percentile since 2009 · ${skew.txt}` : "no history")}
@@ -63,7 +63,7 @@ function render() {
       <div class="c12"><h3 style="margin:0 0 4px">The desk's own record: ${H.length} recorded days</h3><div class="chart" id="ldHist"></div>
         <span class="small"><b style="color:var(--accent)">━</b> skew, vol points (left) · <b style="color:var(--up)">━</b> theta, US$ a day ÷ 3 · <b style="color:var(--warn)">━</b> expiry gap, vol points × 5, on the days both monthlies were recorded</span></div>
     </div>
-    <p class="note"><b>How to read it for timing.</b> Theta is the smallest line in the table: a one-point change in the gap between the two expiries is worth about ${Math.round(Math.abs(B.front_up1) / Math.max(B.theta, 0.1) / 21)} months of it. So the two readings that matter are the expiry gap (you buy the back month and sell the front: better when the back is cheap against the front, the stand-in in its lowest third) and put skew (better when flat, the stand-in in its lowest third).
+    <p class="note"><b>How to read it for timing.</b> ${B.theta > 0 ? `Theta is the smallest line in the table: a one-point change in the gap between the two expiries is worth about ${Math.round(Math.abs(B.front_up1) / B.theta / 21)} months of it.` : `Theta is ${B.theta < 0 ? "negative" : "nil"} today: the structure pays nothing for waiting, and a one-point change in the gap between the two expiries is worth ${money(Math.abs(B.front_up1))}.`} So the two readings that matter are the expiry gap (you buy the back month and sell the front, so the idea is to buy when the back is cheap against the front: the stand-in in its lowest third) and put skew (the idea is to buy when it is flat: the stand-in in its lowest third). The colours and the "tended to rise or fall" lines describe the stand-ins only, not this structure's profit and loss.
       <b>What this is not.</b> The thirds are from the stand-ins, not from this structure: VIX6M less VIX3M covers 3 to 6 months, not these two expiries, and SKEW is a 30-day measure. The desk's own figures have ${H.length} days behind them, too few to rank. No timing rule here has been tested on the structure itself, and the cost shown moves by several hundred dollars when a strike steps 25 points, so judge the gap and skew, not the cost. Prices are from the fitted smile; five long-dated legs will cost more than this to get in and out of.</p>`;
   // the expiry line peaks far above the others (the butterfly's full width): cut it so today's and the 30- and 60-day lines can be read
   const near = [...B.curve.now, ...B.curve.d30, ...B.curve.d60], cap = Math.max(...near.map(Math.abs)) * 2.5, peak = Math.max(...B.curve.exp);

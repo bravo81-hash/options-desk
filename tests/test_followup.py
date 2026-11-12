@@ -240,6 +240,7 @@ def test_the_130_day_structure_is_a_balanced_put_fly_and_a_delta_neutral_call_ca
     assert B["front_up1"] < 0 < B["back_up1"] and B["skew_up1"] > 0 and abs(B["vega"]) < abs(B["front_up1"]) / 3  # the gap, not the level
     assert 0 < B["theta"] < abs(B["front_up1"]) / 20  # theta is the small number
     assert B["curve"]["now"][B["curve"]["xs"].index(min(B["curve"]["xs"], key=lambda x: abs(x - 7700)))] == pytest.approx(0, abs=40)
+    assert B["call_gap"] == max(lc["strike"] - sc["strike"], 0) * 100  # a long call above the short one can lose more than the debit
     est = ld.build(_smile(128))
     assert est["back_est"] and est["gap"] is None and est["back_dte"] == 156
 

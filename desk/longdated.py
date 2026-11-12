@@ -104,6 +104,7 @@ def build(front, back=None):
             "gap": None if est else round(100 * (iv_at(back, lc) - iv_at(front, cs)), 2),  # back less front IV at the call strikes, vol points
             "skew": round(100 * (iv_at(front, lo) - iv_at(front, up)), 2),  # IV at the lower long less the upper long, vol points
             "max_fly": round((up - sh) * 100 - val(fly)),
+            "call_gap": round(max(lc - cs, 0.0) * 100),  # the long call struck above the short one: what a rally into the front expiry can cost beyond the debit
             "scen": {"down5": round(val(legs, 0.95, dv1=0.05, dv2=0.05) - v0), "up5_30": round(val(legs, 1.05, 30, -0.03, -0.03) - v0), "flat30": round(val(legs, days=30) - v0)},
             "curve": {"xs": [round(F1 * x) for x in xs], "now": [round(val(legs, x) - v0) for x in xs], "d30": [round(val(legs, x, 30) - v0) for x in xs],
                       "d60": [round(val(legs, x, 60) - v0) for x in xs], "exp": [round(val(legs, x, left) - v0) for x in xs]}}
